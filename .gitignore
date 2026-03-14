@@ -1,0 +1,40 @@
+# Flutter
+mobile/build/
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.packages
+mobile/pubspec.lock
+admin-dashboard/build/
+admin-dashboard/.dart_tool/
+admin-dashboard/.flutter-plugins
+admin-dashboard/.packages
+admin-dashboard/pubspec.lock
+superadmin-dashboard/build/
+superadmin-dashboard/.dart_tool/
+superadmin-dashboard/.flutter-plugins
+superadmin-dashboard/.packages
+superadmin-dashboard/pubspec.lock
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Node
+donation-drive/node_modules/
+donation-drive/.next/
+donation-drive/dist/
+donation-drive/.env
+donation-drive/package-lock.json
+
+# OS
+*.log
+Thumbs.db
