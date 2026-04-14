@@ -7,10 +7,14 @@ class SupabaseConfig {
   static Future<void> initialize() async {
     if (_initialized) return;
 
-    final url = dotenv.env['SUPABASE_URL'] ?? const String.fromEnvironment('SUPABASE_URL');
-    final anonKey = dotenv.env['SUPABASE_ANON_KEY'] ?? const String.fromEnvironment('SUPABASE_ANON_KEY');
+    final url =
+        dotenv.env['SUPABASE_URL'] ??
+        const String.fromEnvironment('SUPABASE_URL');
+    final anonKey =
+        dotenv.env['SUPABASE_ANON_KEY'] ??
+        const String.fromEnvironment('SUPABASE_ANON_KEY');
 
-    if (url == null || url.isEmpty || anonKey == null || anonKey.isEmpty) {
+    if (url.isEmpty || anonKey.isEmpty) {
       throw Exception(
         'Missing Supabase configuration. Add SUPABASE_URL and SUPABASE_ANON_KEY to .env or pass as --dart-define',
       );

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import '../../services/file_upload_service.dart';
 
 class BookAppointmentPage extends StatefulWidget {
   const BookAppointmentPage({super.key});
@@ -11,8 +14,12 @@ class BookAppointmentPage extends StatefulWidget {
 class _BookAppointmentPageState extends State<BookAppointmentPage> {
   DateTime? _selectedDate;
   String? _selectedTime;
-  bool _medicalCertificateUploaded = false;
+  XFile? _uploadedImage;
+  bool _isUploadingImage = false;
+  String? _uploadError;
   bool _isLoading = false;
+
+  final FileUploadService _fileUploadService = FileUploadService();
 
   final _availableTimes = [
     '8:30 A.M',
@@ -38,15 +45,97 @@ class _BookAppointmentPageState extends State<BookAppointmentPage> {
     }
   }
 
-  Future<void> _uploadMedicalCertificate() async {
-    await Future.delayed(const Duration(milliseconds: 500));
+  Future<void> _uploadImage() async {
     setState(() {
-      _medicalCertificateUploaded = true;
+      _isUploadingImage = true;
+      _uploadError = null;
     });
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Medical certificate uploaded')),
+
+    try {
+      final pickedFile = await _fileUploadService.pickImage(
+        source: ImageSource.gallery,
       );
+
+      if (pickedFile != null) {
+        setState(() {
+          _uploadedImage = pickedFile;
+          _isUploadingImage = false;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Image uploaded successfully'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        setState(() {
+          _isUploadingImage = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isUploadingImage = false;
+        _uploadError = 'Failed to upload image: $e';
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_uploadError!),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _replaceImage() async {
+    setState(() {
+      _isUploadingImage = true;
+      _uploadError = null;
+    });
+
+    try {
+      final pickedFile = await _fileUploadService.pickImage(
+        source: ImageSource.gallery,
+      );
+
+      if (pickedFile != null) {
+        setState(() {
+          _uploadedImage = pickedFile;
+          _isUploadingImage = false;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Image replaced successfully'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        setState(() {
+          _isUploadingImage = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isUploadingImage = false;
+        _uploadError = 'Failed to replace image: $e';
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_uploadError!),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
   }
 
@@ -54,6 +143,13 @@ class _BookAppointmentPageState extends State<BookAppointmentPage> {
     if (_selectedDate == null || _selectedTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select date and time')),
+      );
+      return;
+    }
+
+    if (_uploadedImage == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please upload a medical certificate')),
       );
       return;
     }
@@ -97,6 +193,12 @@ class _BookAppointmentPageState extends State<BookAppointmentPage> {
                 Text(
                   'Your appointment has been confirmed.',
                   style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Date: ${DateFormat('MMM dd, yyyy').format(_selectedDate!)} at $_selectedTime',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[700]),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
@@ -270,26 +372,35 @@ class _BookAppointmentPageState extends State<BookAppointmentPage> {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: _medicalCertificateUploaded
+                        color: _uploadedImage != null
                             ? Colors.green.shade50
                             : const Color(0xFFF0F7F8),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: _medicalCertificateUploaded
+                          color: _uploadedImage != null
                               ? Colors.green.shade300
                               : Colors.grey.shade300,
                         ),
                       ),
                       child: Column(
                         children: [
-                          if (!_medicalCertificateUploaded)
+                          if (_uploadedImage == null)
                             Column(
                               children: [
-                                Icon(
-                                  Icons.cloud_upload_outlined,
-                                  size: 30,
-                                  color: Colors.grey[500],
-                                ),
+                                if (_isUploadingImage)
+                                  const SizedBox(
+                                    width: 30,
+                                    height: 30,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                else
+                                  Icon(
+                                    Icons.cloud_upload_outlined,
+                                    size: 30,
+                                    color: Colors.grey[500],
+                                  ),
                                 const SizedBox(height: 8),
                                 const Text(
                                   'Upload a Medical Certificate',
@@ -297,24 +408,49 @@ class _BookAppointmentPageState extends State<BookAppointmentPage> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'Drag or click to upload',
+                                  'Click to select an image',
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: Colors.grey[600],
                                   ),
                                 ),
+                                if (_uploadError != null) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    _uploadError!,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.red,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
                                 const SizedBox(height: 12),
                                 SizedBox(
                                   width: double.infinity,
                                   child: ElevatedButton(
-                                    onPressed: _uploadMedicalCertificate,
+                                    onPressed: _isUploadingImage
+                                        ? null
+                                        : _uploadImage,
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: const Color(0xFF2C9B9E),
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                     ),
-                                    child: const Text('Upload Image'),
+                                    child: _isUploadingImage
+                                        ? const SizedBox(
+                                            height: 20,
+                                            width: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              valueColor:
+                                                  AlwaysStoppedAnimation<Color>(
+                                                    Colors.white,
+                                                  ),
+                                            ),
+                                          )
+                                        : const Text('Select Image'),
                                   ),
                                 ),
                               ],
@@ -322,23 +458,70 @@ class _BookAppointmentPageState extends State<BookAppointmentPage> {
                           else
                             Column(
                               children: [
-                                Icon(
-                                  Icons.check_circle,
-                                  size: 30,
-                                  color: Colors.green.shade700,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Medical certificate uploaded',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.green.shade700,
+                                Container(
+                                  width: double.infinity,
+                                  height: 200,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.green.shade200,
+                                    ),
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: _uploadedImage != null
+                                        ? Image.file(
+                                            _getImageFile(),
+                                            fit: BoxFit.cover,
+                                          )
+                                        : const SizedBox.shrink(),
                                   ),
                                 ),
-                                const SizedBox(height: 8),
-                                TextButton(
-                                  onPressed: _uploadMedicalCertificate,
-                                  child: const Text('Replace File'),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.check_circle,
+                                      size: 20,
+                                      color: Colors.green.shade700,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Medical certificate uploaded',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.green.shade700,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton(
+                                    onPressed: _isUploadingImage
+                                        ? null
+                                        : _replaceImage,
+                                    style: OutlinedButton.styleFrom(
+                                      side: const BorderSide(
+                                        color: Color(0xFF2C9B9E),
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    child: _isUploadingImage
+                                        ? const SizedBox(
+                                            height: 20,
+                                            width: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Text('Replace Image'),
+                                  ),
                                 ),
                               ],
                             ),
@@ -372,5 +555,10 @@ class _BookAppointmentPageState extends State<BookAppointmentPage> {
         ),
       ),
     );
+  }
+
+  // Helper method to get the image file
+  File _getImageFile() {
+    return File(_uploadedImage!.path);
   }
 }

@@ -14,6 +14,7 @@ class _LoginPageState extends State<LoginPage> {
   final _authService = AuthService();
   bool _isLoading = false;
   String? _errorMessage;
+  bool _isPasswordVisible = false; // Add this for toggle
 
   @override
   void dispose() {
@@ -94,7 +95,7 @@ class _LoginPageState extends State<LoginPage> {
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
+                      color: Colors.black.withValues(alpha: 0.08),
                       blurRadius: 20,
                       offset: const Offset(0, 8),
                     ),
@@ -133,11 +134,23 @@ class _LoginPageState extends State<LoginPage> {
                       decoration: InputDecoration(
                         labelText: 'Password',
                         prefixIcon: const Icon(Icons.lock),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _isPasswordVisible
+                                ? Icons.visibility
+                                : Icons.visibility_off,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _isPasswordVisible = !_isPasswordVisible;
+                            });
+                          },
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      obscureText: true,
+                      obscureText: !_isPasswordVisible, // Toggle based on state
                     ),
                     const SizedBox(height: 12),
                     Align(
