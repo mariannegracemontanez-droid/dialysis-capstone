@@ -1,15 +1,41 @@
 import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
 import '../../services/auth/auth_service.dart';
+import '../notifications/notification_page.dart';
 import 'edit_profile_page.dart';
+import 'medical_info_page.dart';
 import 'privacy_security_page.dart';
 
-class ProfileTab extends StatelessWidget {
+class ProfileTab extends StatefulWidget {
   final UserModel? user;
 
   const ProfileTab({super.key, this.user});
 
+  @override
+  State<ProfileTab> createState() => _ProfileTabState();
+}
+
+class _ProfileTabState extends State<ProfileTab> {
+  late UserModel? _currentUser;
+  final AuthService _authService = AuthService();
+
+  @override
+  void initState() {
+    super.initState();
+    _currentUser = widget.user;
+  }
+
+  Future<void> _refreshUser() async {
+    final refreshed = await _authService.getCurrentUser();
+    if (mounted && refreshed != null) {
+      setState(() {
+        _currentUser = refreshed;
+      });
+    }
+  }
+
   void _logout(BuildContext context) async {
+    final navigator = Navigator.of(context);
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) {
@@ -32,7 +58,8 @@ class ProfileTab extends StatelessWidget {
 
     if (confirm == true) {
       await AuthService().signOut();
-      Navigator.of(context).pushReplacementNamed('/login');
+      if (!mounted) return;
+      navigator.pushReplacementNamed('/login');
     }
   }
 
@@ -45,11 +72,12 @@ class ProfileTab extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
               decoration: BoxDecoration(
                 color: const Color(0xFF2C5F7D),
                 borderRadius: BorderRadius.circular(24),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
               child: Column(
                 children: [
                   const Text(
@@ -72,30 +100,30 @@ class ProfileTab extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Patient Name',
+                    _currentUser?.fullName ?? 'Patient Name',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Patient Id: Pat-001',
-                    style: TextStyle(color: Colors.white70),
+                  const SizedBox(height: 6),
+                  Text(
+                    _currentUser?.email ?? 'No email',
+                    style: const TextStyle(color: Colors.white70),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 14),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
-                      vertical: 6,
+                      vertical: 8,
                     ),
                     decoration: BoxDecoration(
                       color: Colors.orange.shade700,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: const Text(
-                      'No Data Yet',
+                      'Pending Donation',
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -111,16 +139,44 @@ class ProfileTab extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildInfoRow(
-                    Icons.check_circle_outline,
-                    'Current Status',
-                    'Eligible',
-                  ),
-                  const SizedBox(height: 12),
-                  _buildInfoRow(
-                    Icons.account_balance_wallet_outlined,
-                    'Last Amount Receive',
-                    'PHP 1,268.50',
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF5F5F5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.inbox_outlined,
+                          color: Colors.grey[500],
+                          size: 32,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: const [
+                              Text(
+                                'No Donation Aid Yet',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Join a donation drive to receive aid',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 20),
                   SizedBox(
@@ -133,7 +189,7 @@ class ProfileTab extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Text('Registration History'),
+                      child: const Text('View Available Donations'),
                     ),
                   ),
                 ],
@@ -145,25 +201,43 @@ class ProfileTab extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildInfoRow(Icons.email_outlined, 'Email', 'Not set yet'),
+                  _buildInfoRow(
+                    Icons.person_outline,
+                    'Full Name',
+                    _currentUser?.fullName ?? 'Not set',
+                  ),
                   const SizedBox(height: 12),
-                  _buildInfoRow(Icons.phone_outlined, 'Phone', 'Not set yet'),
+                  _buildInfoRow(
+                    Icons.email_outlined,
+                    'Email',
+                    _currentUser?.email ?? 'Not set',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildInfoRow(
+                    Icons.phone_outlined,
+                    'Phone',
+                    _currentUser?.phone ?? 'Not set',
+                  ),
                   const SizedBox(height: 12),
                   _buildInfoRow(
                     Icons.location_on_outlined,
                     'Location',
-                    'Not set yet',
+                    _currentUser?.location ?? 'No location set',
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 18),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.of(context).push(
+                      onPressed: () async {
+                        final updated = await Navigator.of(context).push<bool>(
                           MaterialPageRoute(
-                            builder: (context) => const EditProfilePage(),
+                            builder: (context) =>
+                                EditProfilePage(user: _currentUser),
                           ),
                         );
+                        if (updated == true) {
+                          await _refreshUser();
+                        }
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2C9B9E),
@@ -185,32 +259,57 @@ class ProfileTab extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      _buildStatCard('Blood Type', 'Not set'),
+                      _buildStatCard(
+                        'Blood Type',
+                        _currentUser?.bloodType ?? 'Not set',
+                      ),
                       const SizedBox(width: 12),
-                      _buildStatCard('Weight', 'Not set'),
+                      _buildStatCard(
+                        'Weight',
+                        _currentUser?.weight != null
+                            ? '${_currentUser!.weight} kg'
+                            : 'Not set',
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      _buildStatCard('Height', 'Not set'),
+                      _buildStatCard(
+                        'Height',
+                        _currentUser?.height != null
+                            ? '${_currentUser!.height} cm'
+                            : 'Not set',
+                      ),
                       const SizedBox(width: 12),
-                      _buildStatCard('Last Dialysis', 'Not set'),
+                      _buildStatCard(
+                        'Last Dialysis',
+                        _currentUser?.lastDialysisDate != null
+                            ? '${_currentUser!.lastDialysisDate!.month}/${_currentUser!.lastDialysisDate!.day}/${_currentUser!.lastDialysisDate!.year}'
+                            : 'Not set',
+                      ),
                     ],
                   ),
                   const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: () {},
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFF2C5F7D)),
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                MedicalInfoPage(user: _currentUser),
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2C9B9E),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
-                      child: const Text('View Full Record'),
+                      child: const Text('Edit Medical Info'),
                     ),
                   ),
                 ],
@@ -218,7 +317,7 @@ class ProfileTab extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             _buildSectionCard(
-              title: '',
+              title: 'Quick Actions',
               child: Column(
                 children: [
                   _buildLinkTile(
@@ -231,7 +330,13 @@ class ProfileTab extends StatelessWidget {
                     context,
                     'Notifications',
                     Icons.notifications_outlined,
-                    () {},
+                    () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const NotificationPage(),
+                        ),
+                      );
+                    },
                   ),
                   _buildLinkTile(
                     context,
@@ -290,7 +395,7 @@ class ProfileTab extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: const Color.fromRGBO(0, 0, 0, 0.04),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),

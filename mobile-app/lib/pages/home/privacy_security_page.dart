@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'login_history_page.dart';
 
 class PrivacySecurityPage extends StatefulWidget {
   const PrivacySecurityPage({super.key});
@@ -166,7 +167,11 @@ class _PrivacySecurityPageState extends State<PrivacySecurityPage> {
                           label: 'Login History',
                           subtitle: 'View recent login activity',
                           icon: Icons.history,
-                          onTap: () {},
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => const LoginHistoryPage(),
+                            ),
+                          ),
                         ),
                         const Divider(),
                         _buildActionTile(

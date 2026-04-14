@@ -107,7 +107,9 @@ class _SignupPageState extends State<SignupPage> {
 
   @override
   Widget build(BuildContext context) {
-    final requirements = AuthService.passwordRequirements(_passwordController.text);
+    final requirements = AuthService.passwordRequirements(
+      _passwordController.text,
+    );
 
     return Scaffold(
       backgroundColor: const Color(0xFFEAF6F7),
@@ -153,7 +155,7 @@ class _SignupPageState extends State<SignupPage> {
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
+                      color: Colors.black.withValues(alpha: 0.08),
                       blurRadius: 20,
                       offset: const Offset(0, 8),
                     ),
@@ -222,7 +224,10 @@ class _SignupPageState extends State<SignupPage> {
                             .map(
                               (entry) => Padding(
                                 padding: const EdgeInsets.only(bottom: 10),
-                                child: _buildRequirement(entry.key, entry.value),
+                                child: _buildRequirement(
+                                  entry.key,
+                                  entry.value,
+                                ),
                               ),
                             )
                             .toList(),
@@ -243,7 +248,8 @@ class _SignupPageState extends State<SignupPage> {
                           ),
                           onPressed: () {
                             setState(() {
-                              _obscureConfirmPassword = !_obscureConfirmPassword;
+                              _obscureConfirmPassword =
+                                  !_obscureConfirmPassword;
                             });
                           },
                         ),
@@ -290,7 +296,9 @@ class _SignupPageState extends State<SignupPage> {
                         const Text('Already have an account? '),
                         GestureDetector(
                           onTap: () {
-                            Navigator.of(context).pushReplacementNamed('/login');
+                            Navigator.of(
+                              context,
+                            ).pushReplacementNamed('/login');
                           },
                           child: const Text(
                             'Sign In',
