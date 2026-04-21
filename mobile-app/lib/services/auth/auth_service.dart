@@ -50,6 +50,7 @@ class AuthService {
   Future<UserModel> signIn({
     required String email,
     required String password,
+    List<String> allowedRoles = const ['patient'],
   }) async {
     try {
       final response = await _supabase.auth.signInWithPassword(
@@ -67,7 +68,15 @@ class AuthService {
           .eq('id', response.user!.id)
           .single();
 
-      return UserModel.fromJson(userData);
+      final user = UserModel.fromJson(userData);
+      if (!allowedRoles.contains(user.role)) {
+        await _supabase.auth.signOut();
+        throw Exception(
+          'Access denied. Your account role (${user.role}) cannot sign in to this app.',
+        );
+      }
+
+      return user;
     } catch (e) {
       throw Exception('Sign in error: $e');
     }
@@ -113,7 +122,13 @@ class AuthService {
         .eq('id', user.id)
         .single();
 
-    return UserModel.fromJson(userData);
+    final currentUser = UserModel.fromJson(userData);
+    if (currentUser.role != 'patient') {
+      await _supabase.auth.signOut();
+      return null;
+    }
+
+    return currentUser;
   }
 
   static String? validatePassword(String password) {

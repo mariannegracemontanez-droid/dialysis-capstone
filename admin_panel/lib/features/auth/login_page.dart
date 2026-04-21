@@ -14,7 +14,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _loading = false;
-  bool _obscurePassword = true; 
+  bool _obscurePassword = true;
   String? _message;
   late AnimationController _fadeController;
   late AnimationController _scaleController;
@@ -32,9 +32,10 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 800),
       vsync: this,
     );
-    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeIn),
-    );
+    _fadeAnimation = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeIn));
     _scaleAnimation = Tween<double>(begin: 0.8, end: 1).animate(
       CurvedAnimation(parent: _scaleController, curve: Curves.easeOutCubic),
     );
@@ -66,6 +67,22 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       if (res.user == null || res.session == null) {
         setState(() {
           _message = 'Sign-in failed: no user session returned.';
+        });
+        return;
+      }
+
+      final profile = await Supabase.instance.client
+          .from('profiles')
+          .select()
+          .eq('id', res.user!.id)
+          .maybeSingle();
+
+      final role = (profile as Map<String, dynamic>?)?['role'] as String?;
+      if (role != 'admin') {
+        await Supabase.instance.client.auth.signOut();
+        setState(() {
+          _message =
+              'Access denied. This account is not authorized for the admin dashboard.';
         });
         return;
       }
@@ -104,8 +121,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     try {
       final userRes = await Supabase.instance.client.auth.getUser();
       setState(() {
-        _message =
-            'Connected. Current user: ${userRes.user?.email ?? 'none'}';
+        _message = 'Connected. Current user: ${userRes.user?.email ?? 'none'}';
       });
     } on AuthException catch (e) {
       setState(() {
@@ -131,10 +147,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              const Color(0xFF4A9FB5),
-              const Color(0xFF2A7A8F),
-            ],
+            colors: [const Color(0xFF4A9FB5), const Color(0xFF2A7A8F)],
           ),
         ),
         child: Center(
@@ -173,7 +186,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                             ),
                             const SizedBox(height: 16),
                             const Row(
-                              
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Text(
@@ -200,210 +212,221 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                         ),
                       ),
                       // Login Card
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(24),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                        child: Container(
-                          padding: const EdgeInsets.all(24),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.15), // glass effect
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.2),
-                            ),
-                          ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // Email Input
-                            TextField(
-                              controller: _emailController,
-                              keyboardType: TextInputType.emailAddress,
-                              style: const TextStyle(fontSize: 16),
-                              decoration: InputDecoration(
-                                hintText: 'Email',
-                                hintStyle: TextStyle(
-                                  color: Colors.grey[400],
-                                ),
-                                prefixIcon: Icon(
-                                  Icons.email,
-                                  color: const Color(0xFF4A9FB5),
-                                  size: 20,
-                                ),
-                                filled: true,
-                                fillColor: Colors.white.withOpacity(0.2),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(
-                                    color: Colors.grey[300]!,
-                                  ),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(
-                                    color: Colors.grey[300]!,
-                                  ),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: const BorderSide(
-                                    color: Color(0xFF4A9FB5),
-                                    width: 2,
-                                  ),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 14,
-                                ),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                          child: Container(
+                            padding: const EdgeInsets.all(24),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(
+                                0.15,
+                              ), // glass effect
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.2),
                               ),
                             ),
-                            const SizedBox(height: 16),
-                            // Password Input
-                            TextField(
-                              controller: _passwordController,
-                              obscureText: _obscurePassword,
-                              style: const TextStyle(fontSize: 16),
-                              decoration: InputDecoration(
-                                hintText: 'Password',
-                                hintStyle: TextStyle(
-                                  color: Colors.grey[400],
-                                ),
-                                prefixIcon: Icon(
-                                  Icons.lock,
-                                  color: const Color(0xFF4A9FB5),
-                                  size: 20,
-                                ),
-
-                                suffixIcon: IconButton(
-                                icon: Icon(
-                                  _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                                  color: Color(0xFF4A9FB5),
-                                ),
-                                color: _obscurePassword 
-                                ? Colors.grey 
-                                : const Color(0xFF4A9FB5),
-                                onPressed: () {
-                                  setState(() {
-                                    _obscurePassword = !_obscurePassword;
-                                    print(_obscurePassword); // 👈 check console
-                                  });
-                                },
-                              ),
-
-                              
-                              
-                                filled: true,
-                                fillColor: Colors.white.withOpacity(0.2),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(
-                                    color: Colors.grey[300]!,
-                                  ),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(
-                                    color: Colors.grey[300]!,
-                                  ),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: const BorderSide(
-                                    color: Color(0xFF4A9FB5),
-                                    width: 2,
-                                  ),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 14,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            // Login Button
-                            ElevatedButton(
-                              onPressed: _loading ? null : _signIn,
-                              style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: const Color(0xFF2A5298),
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              elevation: 0,
-                              ),
-                              child: _loading
-                                  ? const SizedBox(
-                                      height: 24,
-                                      width: 24,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.5,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                          Colors.white,
-                                        ),
-                                      ),
-                                    )
-                                  : const Text(
-                                      'Login',
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.white,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // Email Input
+                                TextField(
+                                  controller: _emailController,
+                                  keyboardType: TextInputType.emailAddress,
+                                  style: const TextStyle(fontSize: 16),
+                                  decoration: InputDecoration(
+                                    hintText: 'Email',
+                                    hintStyle: TextStyle(
+                                      color: Colors.grey[400],
+                                    ),
+                                    prefixIcon: Icon(
+                                      Icons.email,
+                                      color: const Color(0xFF4A9FB5),
+                                      size: 20,
+                                    ),
+                                    filled: true,
+                                    fillColor: Colors.white.withOpacity(0.2),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Colors.grey[300]!,
                                       ),
                                     ),
-                            ),
-                            const SizedBox(height: 12),
-                            // Test Connection Button
-                            TextButton(
-                              onPressed: _loading ? null : _testConnection,
-                              style: TextButton.styleFrom(
-                                foregroundColor: const Color(0xFF4A9FB5),
-                              ),
-                              child: const Text(
-                                'Test Supabase Connection',
-                                style: TextStyle(fontSize: 14),
-                              ),
-                            ),
-                            // Error/Success Message
-                            if (_message != null) ...[
-                              const SizedBox(height: 16),
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: _message!.toLowerCase().contains('error')
-                                      ? Colors.red.withOpacity(0.1)
-                                      : Colors.green.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: _message!
-                                            .toLowerCase()
-                                            .contains('error')
-                                        ? Colors.red
-                                        : Colors.green,
-                                    width: 1,
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Colors.grey[300]!,
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: const BorderSide(
+                                        color: Color(0xFF4A9FB5),
+                                        width: 2,
+                                      ),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 14,
+                                    ),
                                   ),
                                 ),
-                                child: Text(
-                                  _message!,
-                                  style: TextStyle(
-                                    color: _message!
-                                            .toLowerCase()
-                                            .contains('error')
-                                        ? Colors.red[700]
-                                        : Colors.green[700],
-                                    fontSize: 13,
+                                const SizedBox(height: 16),
+                                // Password Input
+                                TextField(
+                                  controller: _passwordController,
+                                  obscureText: _obscurePassword,
+                                  style: const TextStyle(fontSize: 16),
+                                  decoration: InputDecoration(
+                                    hintText: 'Password',
+                                    hintStyle: TextStyle(
+                                      color: Colors.grey[400],
+                                    ),
+                                    prefixIcon: Icon(
+                                      Icons.lock,
+                                      color: const Color(0xFF4A9FB5),
+                                      size: 20,
+                                    ),
+
+                                    suffixIcon: IconButton(
+                                      icon: Icon(
+                                        _obscurePassword
+                                            ? Icons.visibility_off
+                                            : Icons.visibility,
+                                        color: Color(0xFF4A9FB5),
+                                      ),
+                                      color: _obscurePassword
+                                          ? Colors.grey
+                                          : const Color(0xFF4A9FB5),
+                                      onPressed: () {
+                                        setState(() {
+                                          _obscurePassword = !_obscurePassword;
+                                          print(
+                                            _obscurePassword,
+                                          ); // 👈 check console
+                                        });
+                                      },
+                                    ),
+
+                                    filled: true,
+                                    fillColor: Colors.white.withOpacity(0.2),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Colors.grey[300]!,
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Colors.grey[300]!,
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: const BorderSide(
+                                        color: Color(0xFF4A9FB5),
+                                        width: 2,
+                                      ),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 14,
+                                    ),
                                   ),
-                                  textAlign: TextAlign.center,
                                 ),
-                              ),
-                            ]
-                          ],
+                                const SizedBox(height: 24),
+                                // Login Button
+                                ElevatedButton(
+                                  onPressed: _loading ? null : _signIn,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: const Color(0xFF2A5298),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 16,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    elevation: 0,
+                                  ),
+                                  child: _loading
+                                      ? const SizedBox(
+                                          height: 24,
+                                          width: 24,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2.5,
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                  Colors.white,
+                                                ),
+                                          ),
+                                        )
+                                      : const Text(
+                                          'Login',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                ),
+                                const SizedBox(height: 12),
+                                // Test Connection Button
+                                TextButton(
+                                  onPressed: _loading ? null : _testConnection,
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: const Color(0xFF4A9FB5),
+                                  ),
+                                  child: const Text(
+                                    'Test Supabase Connection',
+                                    style: TextStyle(fontSize: 14),
+                                  ),
+                                ),
+                                // Error/Success Message
+                                if (_message != null) ...[
+                                  const SizedBox(height: 16),
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          _message!.toLowerCase().contains(
+                                            'error',
+                                          )
+                                          ? Colors.red.withOpacity(0.1)
+                                          : Colors.green.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color:
+                                            _message!.toLowerCase().contains(
+                                              'error',
+                                            )
+                                            ? Colors.red
+                                            : Colors.green,
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      _message!,
+                                      style: TextStyle(
+                                        color:
+                                            _message!.toLowerCase().contains(
+                                              'error',
+                                            )
+                                            ? Colors.red[700]
+                                            : Colors.green[700],
+                                        fontSize: 13,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
                         ),
                       ),
-                      ),
-                    ),
                     ],
                   ),
                 ),

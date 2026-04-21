@@ -8,6 +8,7 @@ class AuthService {
   Future<UserModel> signIn({
     required String email,
     required String password,
+    List<String> allowedRoles = const ['superadmin'],
   }) async {
     try {
       final response = await _supabase.auth.signInWithPassword(
@@ -27,12 +28,26 @@ class AuthService {
           .maybeSingle();
 
       if (profile == null) {
-        await _supabase.from('profiles').insert({
+        if (!allowedRoles.contains('superadmin')) {
+          await _supabase.auth.signOut();
+          throw Exception(
+            'Access denied. Your account cannot sign in to this dashboard.',
+          );
+        }
+
+        final profileInsert = await _supabase.from('profiles').insert({
           'id': user.id,
           'email': email,
           'full_name': 'Super Admin',
           'role': 'superadmin',
         });
+
+        if (profileInsert.error != null) {
+          await _supabase.auth.signOut();
+          throw Exception(
+            'Failed to create superadmin profile: ${profileInsert.error!.message}',
+          );
+        }
 
         return UserModel(
           id: user.id,
@@ -43,7 +58,15 @@ class AuthService {
         );
       }
 
-      return UserModel.fromJson(profile);
+      final loggedInUser = UserModel.fromJson(profile);
+      if (!allowedRoles.contains(loggedInUser.role)) {
+        await _supabase.auth.signOut();
+        throw Exception(
+          'Access denied. Your account role (${loggedInUser.role}) cannot sign in to this dashboard.',
+        );
+      }
+
+      return loggedInUser;
     } catch (error) {
       throw Exception('Sign in error: ${error.toString()}');
     }
