@@ -29,10 +29,7 @@ class _LoginPageState extends State<LoginPage> {
       );
 
       if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed(
-        '/dashboard',
-        arguments: user,
-      );
+      Navigator.of(context).pushReplacementNamed('/dashboard', arguments: user);
     } catch (e) {
       setState(() {
         _errorMessage = e.toString().replaceFirst('Exception: ', '');
@@ -100,10 +97,7 @@ class _LoginPageState extends State<LoginPage> {
                       const SizedBox(height: 8),
                       const Text(
                         'Super Admin Login',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.black87,
-                        ),
+                        style: TextStyle(fontSize: 16, color: Colors.black87),
                       ),
                       const SizedBox(height: 28),
                       if (_errorMessage != null)
@@ -172,7 +166,10 @@ class _LoginPageState extends State<LoginPage> {
                                       )
                                     : const Text(
                                         'Login',
-                                        style: TextStyle(fontSize: 16),
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                               ),
                             ),
