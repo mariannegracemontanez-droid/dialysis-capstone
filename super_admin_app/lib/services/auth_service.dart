@@ -35,18 +35,16 @@ class AuthService {
           );
         }
 
-        final profileInsert = await _supabase.from('profiles').insert({
-          'id': user.id,
-          'email': email,
-          'full_name': 'Super Admin',
-          'role': 'superadmin',
-        });
-
-        if (profileInsert.error != null) {
+        try {
+          await _supabase.from('profiles').insert({
+            'id': user.id,
+            'email': email,
+            'full_name': 'Super Admin',
+            'role': 'superadmin',
+          });
+        } catch (error) {
           await _supabase.auth.signOut();
-          throw Exception(
-            'Failed to create superadmin profile: ${profileInsert.error!.message}',
-          );
+          throw Exception('Failed to create superadmin profile: $error');
         }
 
         return UserModel(
