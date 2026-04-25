@@ -73,10 +73,10 @@ class _AdminAccountsPageState extends State<AdminAccountsPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFFEA5353),
             ),
+            child: const Text('Delete'),
           ),
         ],
       ),

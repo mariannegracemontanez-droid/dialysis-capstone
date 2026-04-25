@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use, prefer_final_fields, unused_field
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/supabase_service.dart';

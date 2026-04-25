@@ -77,7 +77,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           .eq('id', res.user!.id)
           .maybeSingle();
 
-      final role = (profile as Map<String, dynamic>?)?['role'] as String?;
+      final role = profile?['role'];
       if (role != 'admin') {
         await Supabase.instance.client.auth.signOut();
         setState(() {

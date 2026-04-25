@@ -304,7 +304,7 @@ class _LoginHistoryPageState extends State<LoginHistoryPage> {
                       ],
                     ),
                   );
-                }).toList(),
+                }),
               ],
             );
           },

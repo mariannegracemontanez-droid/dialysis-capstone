@@ -31,9 +31,9 @@ class ProfileUpdateService {
     await _supabase
         .from('profiles')
         .update({
-          if (bloodType != null) 'blood_type': bloodType,
-          if (weight != null) 'weight': weight,
-          if (height != null) 'height': height,
+          'blood_type': ?bloodType,
+          'weight': ?weight,
+          'height': ?height,
           if (lastDialysisDate != null)
             'last_dialysis_date': lastDialysisDate.toIso8601String(),
         })

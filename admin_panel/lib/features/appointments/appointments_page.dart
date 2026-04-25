@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../services/supabase_service.dart';
 import '../../models/appointment.dart';
 import 'package:intl/intl.dart';
 import '../dashboard/dashboard_page.dart';
@@ -14,7 +13,6 @@ class AppointmentsPage extends ConsumerStatefulWidget {
 }
 
 class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
-  final SupabaseService _service = SupabaseService();
   String _search = '';
   int _selectedNavIndex = 1;
   late List<Appointment> _appointments;
