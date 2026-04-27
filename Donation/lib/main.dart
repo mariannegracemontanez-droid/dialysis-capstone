@@ -1,162 +1,61 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'pages/login_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  String? initError;
+  String? dotenvError;
   try {
     await dotenv.load();
-    final url = dotenv.env['SUPABASE_URL'];
-    final anonKey = dotenv.env['SUPABASE_ANON_KEY'];
-
-    if (url == null || anonKey == null) {
-      throw Exception('Missing Supabase credentials in .env file');
-    }
-
-    await Supabase.initialize(
-      url: url,
-      anonKey: anonKey,
-      debug: true,
-    );
   } catch (e) {
-    initError = e.toString();
+    dotenvError = 'Failed to load .env file: $e';
   }
 
-  runApp(MyApp(initError: initError));
-}
+  final url = dotenv.env['SUPABASE_URL']?.trim();
+  final anonKey = dotenv.env['SUPABASE_ANON_KEY']?.trim();
 
-class MyApp extends StatelessWidget {
-  final String? initError;
+  if (dotenvError != null || url == null || anonKey == null || url.isEmpty || anonKey.isEmpty) {
+    // Shows a helpful message instead of crashing.
+    final message = dotenvError != null
+        ? '$dotenvError\n\nMake sure you have a .env file in the project root.'
+        : 'Missing .env values.\nMake sure .env contains SUPABASE_URL and SUPABASE_ANNON_KEY.';
 
-  const MyApp({super.key, this.initError});
-
-  @override
-  Widget build(BuildContext context) {
-    if (initError != null) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          appBar: AppBar(title: const Text('Initialization Error')),
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Text(
-                'Initialization failed:\n$initError',
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: LoginPage(),
-    );
-  }
-}
-
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
-
-  @override
-  State<LoginPage> createState() => _LoginPageState();
-}
-
-class _LoginPageState extends State<LoginPage> {
-  final emailController = TextEditingController();
-  final passwordController = TextEditingController();
-
-  final supabase = Supabase.instance.client;
-
-  Future<void> login() async {
-    try {
-      final response = await supabase.auth.signInWithPassword(
-        email: emailController.text.trim(),
-        password: passwordController.text.trim(),
-      );
-
-      if (response.user != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Login successful")),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e")),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Color(0xFF1E6F78),
-              Color(0xFF2C8C95),
-            ],
-          ),
-        ),
-        child: Center(
-          child: Container(
-            width: 350,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text("Login", style: TextStyle(fontSize: 20)),
-
-                const SizedBox(height: 20),
-
-                TextField(
-                  controller: emailController,
-                  decoration: InputDecoration(
-                    hintText: "Email",
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 15),
-
-                TextField(
-                  controller: passwordController,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    hintText: "Password",
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: login, // 👈 CONNECTED HERE
-                    child: const Text("Login"),
-                  ),
-                ),
-              ],
-            ),
+    runApp(MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: Text(
+            message,
+            textAlign: TextAlign.center,
           ),
         ),
       ),
+    ));
+    return;
+  }
+
+  await Supabase.initialize(
+    url: url,
+    anonKey: anonKey,
+  );
+
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Donation App',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        useMaterial3: true,
+      ),
+      home: const LoginPage(),
     );
   }
 }
