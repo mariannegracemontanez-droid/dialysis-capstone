@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'models/signup_data.dart';
 import 'pages/auth/change_password_page.dart';
+import 'pages/auth/confirm_info_page.dart';
 import 'pages/auth/forgot_password_page.dart';
+import 'pages/auth/location_page.dart';
 import 'pages/auth/login_page.dart';
+import 'pages/auth/setup_page.dart';
 import 'pages/auth/signup_page.dart';
 import 'pages/home/home_page.dart';
 import 'pages/home/privacy_security_page.dart';
@@ -69,6 +73,27 @@ class MyApp extends StatelessWidget {
         '/change-password': (context) => const ChangePasswordPage(),
         '/home': (context) => const HomePage(),
         '/privacy-security': (context) => const PrivacySecurityPage(),
+      },
+      onGenerateRoute: (settings) {
+        switch (settings.name) {
+          case '/setup':
+            final args = settings.arguments as SignupData;
+            return MaterialPageRoute(
+              builder: (_) => SetupPage(signupData: args),
+            );
+          case '/location':
+            final args = settings.arguments as SignupData;
+            return MaterialPageRoute(
+              builder: (_) => LocationPage(signupData: args),
+            );
+          case '/confirm-info':
+            final args = settings.arguments as SignupData;
+            return MaterialPageRoute(
+              builder: (_) => ConfirmInfoPage(signupData: args),
+            );
+          default:
+            return null;
+        }
       },
     );
   }

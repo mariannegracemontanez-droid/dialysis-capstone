@@ -22,23 +22,17 @@ Future<void> main() async {
         ? '$dotenvError\n\nMake sure you have a .env file in the project root.'
         : 'Missing .env values.\nMake sure .env contains SUPABASE_URL and SUPABASE_ANNON_KEY.';
 
-    runApp(MaterialApp(
-      home: Scaffold(
-        body: Center(
-          child: Text(
-            message,
-            textAlign: TextAlign.center,
-          ),
+    runApp(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(child: Text(message, textAlign: TextAlign.center)),
         ),
       ),
-    ));
+    );
     return;
   }
 
-  await Supabase.initialize(
-    url: url,
-    anonKey: anonKey,
-  );
+  await Supabase.initialize(url: url, anonKey: anonKey);
 
   runApp(const MyApp());
 }

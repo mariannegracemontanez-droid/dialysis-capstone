@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/supabase_service.dart';
 import '../../models/appointment.dart';
 import '../appointments/appointments_page.dart';
+import '../auth/login_page.dart';
 import '../patients/patients_page.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
@@ -65,10 +66,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
     );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic));
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(
+          CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+        );
     _scaleAnimation = Tween<double>(begin: 0.95, end: 1.0).animate(
       CurvedAnimation(parent: _scaleController, curve: Curves.easeOutBack),
     );
@@ -94,8 +95,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
   }
 
   void _loadWeeklyAppointments() {
-    final startOfWeek =
-        _focusedDay.subtract(Duration(days: _focusedDay.weekday - 1));
+    final startOfWeek = _focusedDay.subtract(
+      Duration(days: _focusedDay.weekday - 1),
+    );
     final endOfWeek = startOfWeek.add(const Duration(days: 6));
     _weeklyAppointments = _service.getAppointments(startOfWeek, endOfWeek);
   }
@@ -131,9 +133,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
   Widget _buildSidebar() {
     return Container(
       width: 220,
-      decoration: const BoxDecoration(
-        color: Color(0xFF2A5F7E),
-      ),
+      decoration: const BoxDecoration(color: Color(0xFF2A5F7E)),
       child: Column(
         children: [
           const SizedBox(height: 24),
@@ -189,10 +189,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
               ),
               Text(
                 'Admin Panel',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 11,
-                ),
+                style: TextStyle(color: Colors.white70, fontSize: 11),
               ),
             ],
           ),
@@ -218,8 +215,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
                       const AppointmentsPage(),
                   transitionsBuilder:
                       (context, animation, secondaryAnimation, child) {
-                    return FadeTransition(opacity: animation, child: child);
-                  },
+                        return FadeTransition(opacity: animation, child: child);
+                      },
                 ),
               );
             } else if (index == 2) {
@@ -230,8 +227,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
                       const PatientsPage(),
                   transitionsBuilder:
                       (context, animation, secondaryAnimation, child) {
-                    return FadeTransition(opacity: animation, child: child);
-                  },
+                        return FadeTransition(opacity: animation, child: child);
+                      },
                 ),
               );
             }
@@ -241,9 +238,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: isSelected
-                  ? const Color(0xFF1A4A63)
-                  : Colors.transparent,
+              color: isSelected ? const Color(0xFF1A4A63) : Colors.transparent,
               borderRadius: BorderRadius.circular(12),
               border: isSelected
                   ? Border.all(color: Colors.white24, width: 1)
@@ -262,7 +257,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
                   style: TextStyle(
                     color: isSelected ? Colors.white : Colors.white70,
                     fontSize: 14,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                    fontWeight: isSelected
+                        ? FontWeight.w600
+                        : FontWeight.normal,
                   ),
                 ),
               ],
@@ -273,15 +270,51 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     );
   }
 
+  void _logout() {
+    Navigator.pushAndRemoveUntil(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const LoginPage(),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+      ),
+      (route) => false,
+    );
+  }
+
   Widget _buildFooter() {
     return Padding(
       padding: const EdgeInsets.all(20),
-      child: Text(
-        '© 2025 CureNurture',
-        style: TextStyle(
-          color: Colors.white.withOpacity(0.5),
-          fontSize: 11,
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _logout,
+              icon: const Icon(Icons.logout_rounded, size: 18),
+              label: const Text('Log out'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF2A5F7E),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '© 2025 CureNurture',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.5),
+              fontSize: 11,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -315,10 +348,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
               SizedBox(height: 4),
               Text(
                 'Welcome, Admin!',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 14,
-                ),
+                style: TextStyle(color: Colors.white70, fontSize: 14),
               ),
             ],
           ),
@@ -334,10 +364,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(
-              Icons.person_rounded,
-              color: Color(0xFF2A5F7E),
-            ),
+            child: const Icon(Icons.person_rounded, color: Color(0xFF2A5F7E)),
           ),
         ],
       ),
@@ -427,7 +454,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
   }
 
   Widget _buildStatCard(
-      String title, String value, IconData icon, Color color, int index) {
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+    int index,
+  ) {
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
       duration: Duration(milliseconds: 600 + (index * 200)),
@@ -435,10 +467,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
       builder: (context, animValue, child) {
         return Transform.scale(
           scale: 0.8 + (0.2 * animValue),
-          child: Opacity(
-            opacity: animValue,
-            child: child,
-          ),
+          child: Opacity(opacity: animValue, child: child),
         );
       },
       child: Container(
@@ -542,9 +571,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
                 return const Padding(
                   padding: EdgeInsets.all(40),
                   child: Center(
-                    child: CircularProgressIndicator(
-                      color: Color(0xFF2A5F7E),
-                    ),
+                    child: CircularProgressIndicator(color: Color(0xFF2A5F7E)),
                   ),
                 );
               }
@@ -814,29 +841,119 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     final weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu'];
     final now = DateTime.now();
     final startOfWeek = now.subtract(Duration(days: now.weekday % 7));
-    
+
     final appointments = [
-      Appointment(id: '1', patientId: 'PAT-01', patientName: 'John Smith', date: startOfWeek, time: '9:00 AM', status: 'Urgent', description: null),
-      Appointment(id: '2', patientId: 'PAT-02', patientName: 'Emma Wilson', date: startOfWeek, time: '10:00 AM', status: 'Urgent', description: null),
-      Appointment(id: '3', patientId: 'PAT-03', patientName: 'Sarah Davis', date: startOfWeek, time: '11:00 AM', status: 'Scheduled', description: null),
-      Appointment(id: '4', patientId: 'PAT-04', patientName: 'Xril Cyan Bernabe', date: startOfWeek.add(const Duration(days: 1)), time: '9:00 AM', status: 'Urgent', description: null),
-      Appointment(id: '5', patientId: 'PAT-05', patientName: 'Xril Cyan Bernabe', date: startOfWeek.add(const Duration(days: 1)), time: '9:00 AM', status: 'In Progress', description: null),
-      Appointment(id: '6', patientId: 'PAT-06', patientName: 'Kelvin Karl Klim', date: startOfWeek.add(const Duration(days: 2)), time: '10:00 AM', status: 'Scheduled', description: null),
-      Appointment(id: '7', patientId: 'PAT-07', patientName: 'Natali Cruz', date: startOfWeek.add(const Duration(days: 3)), time: '11:00 AM', status: 'Scheduled', description: null),
-      Appointment(id: '8', patientId: 'PAT-08', patientName: 'Ginevere Santos', date: startOfWeek.add(const Duration(days: 3)), time: '1:00 PM', status: 'In Progress', description: null),
-      Appointment(id: '9', patientId: 'PAT-09', patientName: 'Stephen Martiez', date: startOfWeek.add(const Duration(days: 4)), time: '9:00 AM', status: 'Scheduled', description: null),
-      Appointment(id: '10', patientId: 'PAT-10', patientName: 'John Smith', date: startOfWeek.add(const Duration(days: 4)), time: '11:00 AM', status: 'Urgent', description: null),
-      Appointment(id: '11', patientId: 'PAT-11', patientName: 'John Smith', date: startOfWeek.add(const Duration(days: 4)), time: '11:00 AM', status: 'Scheduled', description: null),
+      Appointment(
+        id: '1',
+        patientId: 'PAT-01',
+        patientName: 'John Smith',
+        date: startOfWeek,
+        time: '9:00 AM',
+        status: 'Urgent',
+        description: null,
+      ),
+      Appointment(
+        id: '2',
+        patientId: 'PAT-02',
+        patientName: 'Emma Wilson',
+        date: startOfWeek,
+        time: '10:00 AM',
+        status: 'Urgent',
+        description: null,
+      ),
+      Appointment(
+        id: '3',
+        patientId: 'PAT-03',
+        patientName: 'Sarah Davis',
+        date: startOfWeek,
+        time: '11:00 AM',
+        status: 'Scheduled',
+        description: null,
+      ),
+      Appointment(
+        id: '4',
+        patientId: 'PAT-04',
+        patientName: 'Xril Cyan Bernabe',
+        date: startOfWeek.add(const Duration(days: 1)),
+        time: '9:00 AM',
+        status: 'Urgent',
+        description: null,
+      ),
+      Appointment(
+        id: '5',
+        patientId: 'PAT-05',
+        patientName: 'Xril Cyan Bernabe',
+        date: startOfWeek.add(const Duration(days: 1)),
+        time: '9:00 AM',
+        status: 'In Progress',
+        description: null,
+      ),
+      Appointment(
+        id: '6',
+        patientId: 'PAT-06',
+        patientName: 'Kelvin Karl Klim',
+        date: startOfWeek.add(const Duration(days: 2)),
+        time: '10:00 AM',
+        status: 'Scheduled',
+        description: null,
+      ),
+      Appointment(
+        id: '7',
+        patientId: 'PAT-07',
+        patientName: 'Natali Cruz',
+        date: startOfWeek.add(const Duration(days: 3)),
+        time: '11:00 AM',
+        status: 'Scheduled',
+        description: null,
+      ),
+      Appointment(
+        id: '8',
+        patientId: 'PAT-08',
+        patientName: 'Ginevere Santos',
+        date: startOfWeek.add(const Duration(days: 3)),
+        time: '1:00 PM',
+        status: 'In Progress',
+        description: null,
+      ),
+      Appointment(
+        id: '9',
+        patientId: 'PAT-09',
+        patientName: 'Stephen Martiez',
+        date: startOfWeek.add(const Duration(days: 4)),
+        time: '9:00 AM',
+        status: 'Scheduled',
+        description: null,
+      ),
+      Appointment(
+        id: '10',
+        patientId: 'PAT-10',
+        patientName: 'John Smith',
+        date: startOfWeek.add(const Duration(days: 4)),
+        time: '11:00 AM',
+        status: 'Urgent',
+        description: null,
+      ),
+      Appointment(
+        id: '11',
+        patientId: 'PAT-11',
+        patientName: 'John Smith',
+        date: startOfWeek.add(const Duration(days: 4)),
+        time: '11:00 AM',
+        status: 'Scheduled',
+        description: null,
+      ),
     ];
 
     Map<int, List<Appointment>> dayAppointments = {};
     for (int i = 0; i < 5; i++) {
       final day = startOfWeek.add(Duration(days: i));
       dayAppointments[i] = appointments
-          .where((a) =>
-              a.date.year == day.year &&
-              a.date.month == day.month &&
-              a.date.day == day.day)
+          .where(
+            (a) =>
+                a.date.year == day.year &&
+                a.date.month == day.month &&
+                a.date.day == day.day,
+          )
           .toList();
     }
 
@@ -893,17 +1010,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
                       ),
                     ),
                   ),
-                  ...dayAppointments[i]!
-                      .map((a) => _buildCalendarAppointmentCard(a)),
+                  ...dayAppointments[i]!.map(
+                    (a) => _buildCalendarAppointmentCard(a),
+                  ),
                   if (dayAppointments[i]!.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(16),
                       child: Text(
                         'No appointments',
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontSize: 11,
-                        ),
+                        style: TextStyle(color: Colors.grey, fontSize: 11),
                         textAlign: TextAlign.center,
                       ),
                     ),
