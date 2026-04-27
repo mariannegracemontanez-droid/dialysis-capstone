@@ -341,15 +341,14 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                 ElevatedButton(
                                   onPressed: _loading ? null : _signIn,
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.white,
-                                    foregroundColor: const Color(0xFF2A5298),
+                                    backgroundColor: const Color(0xFF2A5298),
                                     padding: const EdgeInsets.symmetric(
                                       vertical: 16,
                                     ),
                                     shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
-                                    elevation: 0,
+                                    elevation: 5,
                                   ),
                                   child: _loading
                                       ? const SizedBox(
