@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'donation_page.dart';
+import 'landing_page.dart';
+import 'signup_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -44,8 +45,9 @@ class _LoginPageState extends State<LoginPage> {
       if (!mounted) return;
 
       if (response.user != null || response.session != null) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const DonationPage()),
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LandingPage()),
+          (route) => false,
         );
       } else {
         setState(() {
@@ -62,7 +64,8 @@ class _LoginPageState extends State<LoginPage> {
     } catch (e) {
       if (!mounted) return;
       final message = e.toString();
-      final isNetworkError = message.contains('Failed to fetch') ||
+      final isNetworkError =
+          message.contains('Failed to fetch') ||
           message.contains('Failed host lookup') ||
           message.contains('SocketException');
 
@@ -78,10 +81,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Donation App'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('Donation App'), centerTitle: true),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -90,10 +90,7 @@ class _LoginPageState extends State<LoginPage> {
             const SizedBox(height: 40),
             const Text(
               'Welcome to Donation App',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 40),
             TextField(
@@ -144,6 +141,22 @@ class _LoginPageState extends State<LoginPage> {
                       )
                     : const Text('Login'),
               ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('Don\'t have an account?'),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(builder: (_) => const SignupPage()),
+                    );
+                  },
+                  child: const Text('Sign Up'),
+                ),
+              ],
             ),
           ],
         ),
