@@ -1,22 +1,57 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Supabase.initialize(
-    url: 'https://YOUR_PROJECT_ID.supabase.co',
-    anonKey: 'YOUR_ANON_KEY',
-  );
+  String? initError;
+  try {
+    await dotenv.load();
+    final url = dotenv.env['SUPABASE_URL'];
+    final anonKey = dotenv.env['SUPABASE_ANON_KEY'];
 
-  runApp(const MyApp());
+    if (url == null || anonKey == null) {
+      throw Exception('Missing Supabase credentials in .env file');
+    }
+
+    await Supabase.initialize(
+      url: url,
+      anonKey: anonKey,
+      debug: true,
+    );
+  } catch (e) {
+    initError = e.toString();
+  }
+
+  runApp(MyApp(initError: initError));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final String? initError;
+
+  const MyApp({super.key, this.initError});
 
   @override
   Widget build(BuildContext context) {
+    if (initError != null) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          appBar: AppBar(title: const Text('Initialization Error')),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text(
+                'Initialization failed:\n$initError',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return const MaterialApp(
       debugShowCheckedModeBanner: false,
       home: LoginPage(),
