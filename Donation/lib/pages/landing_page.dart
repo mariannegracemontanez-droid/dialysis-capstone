@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -5,31 +7,90 @@ import 'login_page.dart';
 import 'signup_page.dart';
 import 'donation_page.dart';
 
-class LandingPage extends StatelessWidget {
+class LandingPage extends StatefulWidget {
   const LandingPage({super.key});
 
+  @override
+  State<LandingPage> createState() => _LandingPageState();
+}
+
+class _LandingPageState extends State<LandingPage> {
+  String? _displayName;
+  late final StreamSubscription _authSubscription;
+  final Color _primaryColor = const Color(0xFF0D6EFD);
+  final Color _secondaryColor = const Color(0xFF1C7ED6);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAuthState();
+    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen(
+      (event) {
+        _loadAuthState();
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _authSubscription.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadAuthState() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      setState(() {
+        _displayName = null;
+      });
+      return;
+    }
+
+    try {
+      final profile = await Supabase.instance.client
+          .from('profiles')
+          .select('full_name')
+          .eq('id', user.id)
+          .maybeSingle();
+      final name = profile?['full_name'] as String?;
+      setState(() {
+        _displayName = (name?.isNotEmpty == true) ? name : user.email;
+      });
+    } catch (_) {
+      setState(() {
+        _displayName = user.email;
+      });
+    }
+  }
+
   void _openLogin(BuildContext context) {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const LoginPage()));
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginPage()));
   }
 
   void _openSignup(BuildContext context) {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const SignupPage()));
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SignupPage()));
   }
 
   void _openDonation(BuildContext context) {
     final user = Supabase.instance.client.auth.currentUser;
 
     if (user != null) {
-      Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => const DonationPage()));
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DonationPage()));
     } else {
       _openLogin(context);
     }
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    await Supabase.instance.client.auth.signOut();
+    if (!mounted) return;
+    setState(() {
+      _displayName = null;
+    });
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LandingPage()),
+      (route) => false,
+    );
   }
 
   Widget _sectionCard({
@@ -121,22 +182,11 @@ class LandingPage extends StatelessWidget {
         centerTitle: false,
         title: Row(
           children: [
-            Container(
+            Image.asset(
+              'lib/assets/image/CureNurture_logo.png',
               width: 40,
               height: 40,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: primaryColor,
-              ),
-              child: const Center(
-                child: Text(
-                  'C',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
+              fit: BoxFit.contain,
             ),
             const SizedBox(width: 12),
             const Text(
@@ -149,88 +199,98 @@ class LandingPage extends StatelessWidget {
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => _openLogin(context),
-            child: const Text('Log In'),
-          ),
-          const SizedBox(width: 8),
-          TextButton(
-            onPressed: () => _openSignup(context),
-            child: const Text('Sign Up'),
-          ),
-          const SizedBox(width: 8),
-        ],
+        actions: _displayName == null
+            ? [
+                TextButton(
+                  onPressed: () => _openLogin(context),
+                  child: const Text('Log In'),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () => _openSignup(context),
+                  child: const Text('Sign Up'),
+                ),
+                const SizedBox(width: 8),
+              ]
+            : [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10.0),
+                  child: Center(
+                    child: Text(
+                      'Hi, ${_displayName ?? 'Friend'} 👋',
+                      style: const TextStyle(
+                        color: Colors.black87,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => _openDonation(context),
+                  child: const Text('Donate'),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () => _logout(context),
+                  child: const Text('Logout'),
+                ),
+                const SizedBox(width: 8),
+              ],
       ),
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              color: primaryColor,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Together, we nurture healing.',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Helping our community access care and support through transparent donations and trusted partners.',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 16,
-                      height: 1.6,
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  Row(
-                    children: [
-                      ElevatedButton(
-                        onPressed: () => _openDonation(context),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: primaryColor,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 28,
-                            vertical: 16,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          'Donate Now',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      OutlinedButton(
-                        onPressed: () => _openLogin(context),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Colors.white70),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 28,
-                            vertical: 16,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text('Login to Donate'),
-                      ),
-                    ],
-                  ),
-                ],
+           Container(
+  color: primaryColor,
+  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      // Tagline moved to the top
+      const Text(
+        'Together, we nurture healing.',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 32,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      const SizedBox(height: 16),
+      const Text(
+        'Helping our community access care and support through transparent donations and trusted partners.',
+        style: TextStyle(
+          color: Colors.white70,
+          fontSize: 16,
+          height: 1.6,
+        ),
+      ),
+      const SizedBox(height: 32),
+      Row(
+        children: [
+          ElevatedButton(
+            onPressed: () => _openDonation(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: primaryColor,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 28,
+                vertical: 16,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
+            child: const Text(
+              'Donate Now',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    ],
+  ),
+),
             const SizedBox(height: 24),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
