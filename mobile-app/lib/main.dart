@@ -6,8 +6,11 @@ import 'pages/auth/confirm_info_page.dart';
 import 'pages/auth/forgot_password_page.dart';
 import 'pages/auth/location_page.dart';
 import 'pages/auth/login_page.dart';
+import 'pages/auth/medical_documents_page.dart';
+import 'pages/auth/financial_page.dart';
 import 'pages/auth/setup_page.dart';
 import 'pages/auth/signup_page.dart';
+import 'pages/auth/welcome_page.dart';
 import 'pages/home/home_page.dart';
 import 'pages/home/privacy_security_page.dart';
 import 'config/supabase_config.dart';
@@ -65,8 +68,9 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'CureNurture App',
       theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
-      initialRoute: '/login',
+      initialRoute: '/welcome',
       routes: {
+        '/welcome': (context) => const WelcomePage(),
         '/login': (context) => const LoginPage(),
         '/signup': (context) => const SignupPage(),
         '/forgot-password': (context) => const ForgotPasswordPage(),
@@ -85,6 +89,16 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as SignupData;
             return MaterialPageRoute(
               builder: (_) => LocationPage(signupData: args),
+            );
+          case '/medical-documents':
+            final args = settings.arguments as SignupData;
+            return MaterialPageRoute(
+              builder: (_) => MedicalDocumentsPage(signupData: args),
+            );
+          case '/financial':
+            final args = settings.arguments as SignupData;
+            return MaterialPageRoute(
+              builder: (_) => FinancialPage(signupData: args),
             );
           case '/confirm-info':
             final args = settings.arguments as SignupData;

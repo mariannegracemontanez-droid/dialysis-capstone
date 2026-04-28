@@ -66,7 +66,10 @@ class _HomeTabState extends State<HomeTab> {
                             ),
                           );
                         },
-                        icon: const Icon(Icons.notifications_none, color: Colors.white),
+                        icon: const Icon(
+                          Icons.notifications_none,
+                          color: Colors.white,
+                        ),
                       ),
                     ],
                   ),
@@ -94,9 +97,14 @@ class _HomeTabState extends State<HomeTab> {
                       },
                       decoration: InputDecoration(
                         hintText: 'Search for booking...donation...etc...',
-                        prefixIcon: const Icon(Icons.search, color: Color(0xFF225E72)),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: Color(0xFF225E72),
+                        ),
                         border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                        ),
                       ),
                     ),
                   ),
@@ -105,20 +113,27 @@ class _HomeTabState extends State<HomeTab> {
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 20,
+                ),
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text(
                         'Upcoming Appointments',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       TextButton(
                         onPressed: () {
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (context) => const AppointmentHistoryPage(),
+                              builder: (context) =>
+                                  const AppointmentHistoryPage(),
                             ),
                           );
                         },
@@ -141,7 +156,10 @@ class _HomeTabState extends State<HomeTab> {
                           children: [
                             const Text(
                               'Dialysis Session',
-                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                             Container(
                               padding: const EdgeInsets.all(10),
@@ -149,14 +167,20 @@ class _HomeTabState extends State<HomeTab> {
                                 color: const Color(0xFF225E72),
                                 borderRadius: BorderRadius.circular(14),
                               ),
-                              child: const Icon(Icons.calendar_today, color: Colors.white),
+                              child: const Icon(
+                                Icons.calendar_today,
+                                color: Colors.white,
+                              ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 18),
                         const Text(
                           'Schedule is not available yet.',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         const Text(
@@ -168,15 +192,24 @@ class _HomeTabState extends State<HomeTab> {
                           children: [
                             Expanded(
                               child: ElevatedButton(
-                                onPressed: null,
+                                onPressed: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const AppointmentHistoryPage(),
+                                    ),
+                                  );
+                                },
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.grey.shade400,
+                                  backgroundColor: const Color(0xFF225E72),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(14),
                                   ),
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
                                 ),
-                                child: const Text('Book New Appointment'),
+                                child: const Text('View Appointment'),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -185,16 +218,21 @@ class _HomeTabState extends State<HomeTab> {
                                 onPressed: () {
                                   Navigator.of(context).push(
                                     MaterialPageRoute(
-                                      builder: (context) => const AppointmentHistoryPage(),
+                                      builder: (context) =>
+                                          const AppointmentHistoryPage(),
                                     ),
                                   );
                                 },
                                 style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: Color(0xFF225E72)),
+                                  side: const BorderSide(
+                                    color: Color(0xFF225E72),
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(14),
                                   ),
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
                                 ),
                                 child: const Text('View History'),
                               ),
@@ -219,17 +257,27 @@ class _HomeTabState extends State<HomeTab> {
                             children: const [
                               Text(
                                 'Donation Drive',
-                                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                               SizedBox(height: 8),
                               Text(
                                 'Help save lives today',
-                                style: TextStyle(color: Colors.white70, fontSize: 14),
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 14,
+                                ),
                               ),
                               SizedBox(height: 16),
                               TextButton(
                                 onPressed: null,
-                                child: Text('Learn More', style: TextStyle(color: Colors.white)),
+                                child: Text(
+                                  'Learn More',
+                                  style: TextStyle(color: Colors.white),
+                                ),
                               ),
                             ],
                           ),
@@ -241,7 +289,11 @@ class _HomeTabState extends State<HomeTab> {
                             color: const Color(0xFF1B4B5C),
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          child: const Icon(Icons.water_drop, color: Colors.white, size: 34),
+                          child: const Icon(
+                            Icons.water_drop,
+                            color: Colors.white,
+                            size: 34,
+                          ),
                         ),
                       ],
                     ),
@@ -261,7 +313,9 @@ class _HomeTabState extends State<HomeTab> {
                           ),
                         ],
                       ),
-                      child: Text('Search results for "$_searchText" will appear here.'),
+                      child: Text(
+                        'Search results for "$_searchText" will appear here.',
+                      ),
                     ),
                   ],
                 ],

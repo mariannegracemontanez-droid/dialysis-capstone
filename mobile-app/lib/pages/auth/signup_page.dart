@@ -15,10 +15,25 @@ class _SignupPageState extends State<SignupPage> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final FocusNode _passwordFocusNode = FocusNode();
+
   bool _isLoading = false;
   String? _errorMessage;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  bool _showPasswordRequirements = false;
+  Map<String, bool> _passwordValidation = AuthService.passwordRequirements('');
+
+  @override
+  void initState() {
+    super.initState();
+    _passwordFocusNode.addListener(() {
+      setState(() {
+        _showPasswordRequirements =
+            _passwordFocusNode.hasFocus || _passwordController.text.isNotEmpty;
+      });
+    });
+  }
 
   @override
   void dispose() {
@@ -27,7 +42,16 @@ class _SignupPageState extends State<SignupPage> {
     _phoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
+  }
+
+  void _updatePasswordRequirements(String password) {
+    setState(() {
+      _passwordValidation = AuthService.passwordRequirements(password);
+      _showPasswordRequirements =
+          _passwordFocusNode.hasFocus || password.isNotEmpty;
+    });
   }
 
   void _handleSignupNext() {
@@ -81,14 +105,39 @@ class _SignupPageState extends State<SignupPage> {
               fit: BoxFit.cover,
             ),
           ),
-          Container(color: const Color.fromRGBO(0, 0, 0, 0.32)),
+          Container(color: Colors.black.withOpacity(0.34)),
           SafeArea(
             child: SingleChildScrollView(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 20,
+                ),
                 child: Column(
                   children: [
                     const SizedBox(height: 16),
+                    Container(
+                      width: 120,
+                      height: 120,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.95),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.16),
+                            blurRadius: 18,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Image.asset(
+                          'lib/asset/Image/CureNurture_CircleLogo.png',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
                     const Text(
                       'Sign Up',
                       style: TextStyle(
@@ -106,12 +155,12 @@ class _SignupPageState extends State<SignupPage> {
                     const SizedBox(height: 32),
                     Container(
                       decoration: BoxDecoration(
-                        color: const Color.fromRGBO(255, 255, 255, 0.95),
+                        color: Colors.white.withOpacity(0.95),
                         borderRadius: BorderRadius.circular(28),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color.fromRGBO(0, 0, 0, 0.16),
-                            blurRadius: 18,
+                            color: Colors.black.withOpacity(0.16),
+                            blurRadius: 20,
                             offset: const Offset(0, 10),
                           ),
                         ],
@@ -166,7 +215,9 @@ class _SignupPageState extends State<SignupPage> {
                           const SizedBox(height: 16),
                           TextField(
                             controller: _passwordController,
+                            focusNode: _passwordFocusNode,
                             obscureText: _obscurePassword,
+                            onChanged: _updatePasswordRequirements,
                             decoration: InputDecoration(
                               hintText: 'Create Password',
                               prefixIcon: const Icon(Icons.lock),
@@ -190,7 +241,65 @@ class _SignupPageState extends State<SignupPage> {
                               fillColor: const Color(0xFFF4FBFB),
                             ),
                           ),
-                          const SizedBox(height: 16),
+                          if (_showPasswordRequirements) ...[
+                            const SizedBox(height: 14),
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF3F8FF),
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: const Color(0xFFD9E7FF),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Password must include:',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF2C5F7D),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  ..._passwordValidation.entries.map((entry) {
+                                    return Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: 10,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            entry.value
+                                                ? Icons.check_circle
+                                                : Icons.radio_button_unchecked,
+                                            size: 18,
+                                            color: entry.value
+                                                ? const Color(0xFF3BB54A)
+                                                : const Color(0xFF9CA8BB),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              entry.key,
+                                              style: TextStyle(
+                                                color: entry.value
+                                                    ? const Color(0xFF2C5F7D)
+                                                    : const Color(0xFF67768D),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (_showPasswordRequirements)
+                            const SizedBox(height: 16),
                           TextField(
                             controller: _confirmPasswordController,
                             obscureText: _obscureConfirmPassword,
@@ -205,7 +314,8 @@ class _SignupPageState extends State<SignupPage> {
                                 ),
                                 onPressed: () {
                                   setState(() {
-                                    _obscureConfirmPassword = !_obscureConfirmPassword;
+                                    _obscureConfirmPassword =
+                                        !_obscureConfirmPassword;
                                   });
                                 },
                               ),
@@ -242,7 +352,9 @@ class _SignupPageState extends State<SignupPage> {
                                 ),
                               ),
                               child: _isLoading
-                                  ? const CircularProgressIndicator(color: Colors.white)
+                                  ? const CircularProgressIndicator(
+                                      color: Colors.white,
+                                    )
                                   : const Text('Next'),
                             ),
                           ),
@@ -253,7 +365,9 @@ class _SignupPageState extends State<SignupPage> {
                               const Text('Already have an account? '),
                               GestureDetector(
                                 onTap: () {
-                                  Navigator.of(context).pushReplacementNamed('/login');
+                                  Navigator.of(
+                                    context,
+                                  ).pushReplacementNamed('/login');
                                 },
                                 child: const Text(
                                   'Sign In',
@@ -262,7 +376,7 @@ class _SignupPageState extends State<SignupPage> {
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                              )
+                              ),
                             ],
                           ),
                         ],
