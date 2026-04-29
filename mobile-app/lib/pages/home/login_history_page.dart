@@ -14,11 +14,27 @@ class LoginHistoryPage extends StatefulWidget {
 class _LoginHistoryPageState extends State<LoginHistoryPage> {
   late Future<List<LoginHistory>> _loginHistoryFuture;
   final LoginHistoryService _loginHistoryService = LoginHistoryService();
+  String _currentDeviceName = 'This device';
 
   @override
   void initState() {
     super.initState();
+    _loadCurrentDeviceInfo();
     _loadLoginHistory();
+  }
+
+  Future<void> _loadCurrentDeviceInfo() async {
+    try {
+      final currentDevice = await _loginHistoryService
+          .getCurrentDeviceDisplayName();
+      if (mounted) {
+        setState(() {
+          _currentDeviceName = currentDevice;
+        });
+      }
+    } catch (_) {
+      // keep default current device label
+    }
   }
 
   void _loadLoginHistory() {
@@ -100,6 +116,9 @@ class _LoginHistoryPageState extends State<LoginHistoryPage> {
             }
 
             final loginHistory = snapshot.data ?? [];
+            final hasSuspiciousActivity = loginHistory.any(
+              (login) => login.deviceModel != _currentDeviceName,
+            );
 
             if (loginHistory.isEmpty) {
               return Center(
@@ -123,45 +142,169 @@ class _LoginHistoryPageState extends State<LoginHistoryPage> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEAF6F7),
-                    borderRadius: BorderRadius.circular(12),
+                    color: hasSuspiciousActivity
+                        ? const Color(0xFFFAE7E6)
+                        : const Color(0xFFEAF6F7),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: hasSuspiciousActivity
+                          ? const Color(0xFFE16A5E)
+                          : const Color(0xFF2C5F7D),
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Row(
+                      Row(
                         children: [
                           Icon(
-                            Icons.verified,
-                            color: Color(0xFF2C5F7D),
+                            hasSuspiciousActivity
+                                ? Icons.warning_amber_rounded
+                                : Icons.check_circle,
+                            color: hasSuspiciousActivity
+                                ? const Color(0xFFE16A5E)
+                                : const Color(0xFF2C5F7D),
                             size: 20,
                           ),
-                          SizedBox(width: 8),
+                          const SizedBox(width: 8),
                           Text(
-                            'Account Security',
+                            hasSuspiciousActivity
+                                ? 'Suspicious Activity Detected'
+                                : 'No suspicious login activity',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              color: Color(0xFF2C5F7D),
+                              color: hasSuspiciousActivity
+                                  ? const Color(0xFFE16A5E)
+                                  : const Color(0xFF2C5F7D),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 10),
                       Text(
-                        "We've recorded ${loginHistory.length} login(s) to your account. Review the list below to ensure all logins are from your devices.",
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF2C5F7D),
+                        hasSuspiciousActivity
+                            ? 'Choose a strong password to keep your account secure. Don’t share your password with anyone.'
+                            : 'Your recent sign-ins look safe. Review recent activity anytime to stay protected.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: hasSuspiciousActivity
+                              ? const Color(0xFF7D2B26)
+                              : const Color(0xFF2C5F7D),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.of(context).pushNamed('/change-password');
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: hasSuspiciousActivity
+                                ? const Color(0xFFE16A5E)
+                                : const Color(0xFF2C5F7D),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text('Change Password'),
                         ),
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF4FAFE),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.blue.shade100),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.smartphone,
+                        color: Color(0xFF2C5F7D),
+                        size: 26,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Current Session',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _currentDeviceName,
+                              style: const TextStyle(color: Colors.black87),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Log out all devices feature is coming soon.',
+                              ),
+                            ),
+                          );
+                        },
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF2C5F7D)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text('Log out all Devices'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Stay secure by changing your password if needed.',
+                              ),
+                            ),
+                          );
+                        },
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF2C5F7D)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text('Stay Secure'),
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 24),
                 const Text(
-                  'Recent Login Activity',
+                  'Recent Activity',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
+                const SizedBox(height: 12),
                 const SizedBox(height: 12),
                 ...loginHistory.map((login) {
                   final isToday =

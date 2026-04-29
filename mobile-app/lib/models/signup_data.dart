@@ -9,6 +9,12 @@ class SignupData {
   final String city;
   final String barangay;
   final String locationSummary;
+  final String medicalDocumentPath;
+  final List<String> medicalDocumentPaths;
+  final String referralDoctor;
+  final List<String> insuranceOptions;
+  final String budgetRange;
+  final String preferredClinicType;
 
   SignupData({
     required this.fullName,
@@ -21,6 +27,12 @@ class SignupData {
     this.city = '',
     this.barangay = '',
     this.locationSummary = '',
+    this.medicalDocumentPath = '',
+    this.medicalDocumentPaths = const [],
+    this.referralDoctor = '',
+    this.insuranceOptions = const [],
+    this.budgetRange = 'Low-cost / Government-supported',
+    this.preferredClinicType = 'Public Hospital',
   });
 
   SignupData copyWith({
@@ -34,6 +46,12 @@ class SignupData {
     String? city,
     String? barangay,
     String? locationSummary,
+    String? medicalDocumentPath,
+    List<String>? medicalDocumentPaths,
+    String? referralDoctor,
+    List<String>? insuranceOptions,
+    String? budgetRange,
+    String? preferredClinicType,
   }) {
     return SignupData(
       fullName: fullName ?? this.fullName,
@@ -46,6 +64,12 @@ class SignupData {
       city: city ?? this.city,
       barangay: barangay ?? this.barangay,
       locationSummary: locationSummary ?? this.locationSummary,
+      medicalDocumentPath: medicalDocumentPath ?? this.medicalDocumentPath,
+      medicalDocumentPaths: medicalDocumentPaths ?? this.medicalDocumentPaths,
+      referralDoctor: referralDoctor ?? this.referralDoctor,
+      insuranceOptions: insuranceOptions ?? this.insuranceOptions,
+      budgetRange: budgetRange ?? this.budgetRange,
+      preferredClinicType: preferredClinicType ?? this.preferredClinicType,
     );
   }
 }

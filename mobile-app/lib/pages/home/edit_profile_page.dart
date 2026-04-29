@@ -37,8 +37,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
     );
   }
 
-  Future<void> _saveChanges() async {
-    if (widget.user == null) return;
+  Future<bool> _saveChanges() async {
+    if (widget.user == null) return false;
 
     setState(() => _isSaving = true);
 
@@ -53,22 +53,24 @@ class _EditProfilePageState extends State<EditProfilePage> {
             : _locationController.text,
       );
 
-      if (!mounted) return;
+      if (!mounted) return false;
 
       setState(() {
         _isSaving = false;
         _saveMessage = 'Saved successfully';
       });
 
-      await Future.delayed(const Duration(seconds: 2));
-      if (!mounted) return;
+      await Future.delayed(const Duration(seconds: 1));
+      if (!mounted) return false;
       setState(() => _saveMessage = null);
+      return true;
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _isSaving = false;
         _saveMessage = 'Failed to save: $e';
       });
+      return false;
     }
   }
 
@@ -155,7 +157,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: _isSaving ? null : _saveChanges,
+                  onPressed: _isSaving
+                      ? null
+                      : () async {
+                          if (await _saveChanges()) {
+                            if (!mounted) return;
+                            Navigator.of(context).pop(true);
+                          }
+                        },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2C9B9E),
                     shape: RoundedRectangleBorder(
@@ -174,9 +183,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 child: OutlinedButton(
                   onPressed: () async {
                     final navigator = Navigator.of(context);
-                    await _saveChanges();
-                    if (!mounted) return;
-                    navigator.pop(true);
+                    if (await _saveChanges()) {
+                      if (!mounted) return;
+                      navigator.pop(true);
+                    }
                   },
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFF2C9B9E)),

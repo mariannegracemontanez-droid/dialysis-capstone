@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/user_model.dart';
 import '../../config/supabase_config.dart';
+import '../login_history_service.dart';
 
 class AuthService {
   final SupabaseClient _supabase = SupabaseConfig.client;
@@ -69,6 +70,7 @@ class AuthService {
           .single();
 
       final user = UserModel.fromJson(userData);
+      await LoginHistoryService().recordLogin(response.user!.id);
       if (!allowedRoles.contains(user.role)) {
         await _supabase.auth.signOut();
         throw Exception(

@@ -29,7 +29,8 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
       );
 
       if (mounted) {
-        Navigator.of(context).pushReplacementNamed('/home');
+        await AuthService().signOut();
+        Navigator.of(context).pushReplacementNamed('/login');
       }
     } catch (e) {
       setState(() {
@@ -44,23 +45,48 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
 
   @override
   Widget build(BuildContext context) {
+    final insuranceLabel = widget.signupData.insuranceOptions.isEmpty
+        ? 'None'
+        : widget.signupData.insuranceOptions.join(', ');
+
+    final medicalDocumentName =
+        widget.signupData.medicalDocumentPaths.isNotEmpty
+        ? widget.signupData.medicalDocumentPaths
+              .map((path) => path.split('/').last)
+              .join(', ')
+        : widget.signupData.medicalDocumentPath.isEmpty
+        ? 'Not provided'
+        : widget.signupData.medicalDocumentPath.split('/').last;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F9FB),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: const Color(0xFFF4F9FB),
-        iconTheme: const IconThemeData(color: Color(0xFF2C5F7D)),
-        title: const Text(
-          'Confirm Your Information',
-          style: TextStyle(color: Color(0xFF2C5F7D)),
-        ),
-      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back,
+                      color: Color(0xFF2C5F7D),
+                    ),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Confirm Your Information',
+                    style: TextStyle(
+                      color: Color(0xFF2C5F7D),
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               LinearProgressIndicator(
                 value: 1.0,
                 color: const Color(0xFF2C5F7D),
@@ -73,7 +99,8 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(24),
                   ),
-                  elevation: 3,
+                  elevation: 4,
+                  shadowColor: Colors.black.withOpacity(0.08),
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Column(
@@ -87,13 +114,39 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
                           ),
                         ),
                         const SizedBox(height: 24),
-                        _buildInfoRow('Patient Name', widget.signupData.fullName),
+                        _buildInfoRow(
+                          'Patient Name',
+                          widget.signupData.fullName,
+                        ),
                         _buildInfoRow('Email', widget.signupData.email),
                         _buildInfoRow('Phone', widget.signupData.phone),
                         _buildInfoRow('CKD Level', widget.signupData.ckdLevel),
-                        _buildInfoRow('Conditions',
-                            widget.signupData.conditions.join(', ') == '' ? 'None' : widget.signupData.conditions.join(', ')),
-                        _buildInfoRow('Location', widget.signupData.locationSummary),
+                        _buildInfoRow(
+                          'Conditions',
+                          widget.signupData.conditions.isEmpty
+                              ? 'None'
+                              : widget.signupData.conditions.join(', '),
+                        ),
+                        _buildInfoRow(
+                          'Location',
+                          widget.signupData.locationSummary,
+                        ),
+                        _buildInfoRow('Medical Records', medicalDocumentName),
+                        _buildInfoRow(
+                          'Referred by',
+                          widget.signupData.referralDoctor.isEmpty
+                              ? 'Not provided'
+                              : widget.signupData.referralDoctor,
+                        ),
+                        _buildInfoRow('Insurance', insuranceLabel),
+                        _buildInfoRow(
+                          'Budget range',
+                          widget.signupData.budgetRange,
+                        ),
+                        _buildInfoRow(
+                          'Preferred clinic type',
+                          widget.signupData.preferredClinicType,
+                        ),
                         if (_errorMessage != null) ...[
                           const SizedBox(height: 16),
                           Text(
@@ -137,10 +190,7 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
         children: [
           Text(
             label,
-            style: const TextStyle(
-              color: Color(0xFF6A7B83),
-              fontSize: 13,
-            ),
+            style: const TextStyle(color: Color(0xFF6A7B83), fontSize: 13),
           ),
           const SizedBox(height: 4),
           Text(

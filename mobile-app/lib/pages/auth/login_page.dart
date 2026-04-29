@@ -60,13 +60,14 @@ class _LoginPageState extends State<LoginPage> {
               fit: BoxFit.cover,
             ),
           ),
-          Container(
-            color: const Color.fromRGBO(0, 0, 0, 0.35),
-          ),
+          Container(color: Colors.black.withOpacity(0.35)),
           SafeArea(
             child: SingleChildScrollView(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 20,
+                ),
                 child: Column(
                   children: [
                     const SizedBox(height: 24),
@@ -86,7 +87,9 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       child: Padding(
                         padding: const EdgeInsets.all(18),
-                        child: Image.asset('lib/asset/Image/CureNurture_CircleLogo.png'),
+                        child: Image.asset(
+                          'lib/asset/Image/CureNurture_CircleLogo.png',
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -102,10 +105,7 @@ class _LoginPageState extends State<LoginPage> {
                     const Text(
                       'Log in to your account',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 16,
-                      ),
+                      style: TextStyle(color: Colors.white70, fontSize: 16),
                     ),
                     const SizedBox(height: 32),
                     Container(
@@ -170,7 +170,9 @@ class _LoginPageState extends State<LoginPage> {
                             alignment: Alignment.centerRight,
                             child: TextButton(
                               onPressed: () {
-                                Navigator.of(context).pushNamed('/forgot-password');
+                                Navigator.of(
+                                  context,
+                                ).pushNamed('/forgot-password');
                               },
                               child: const Text('Forgot Password?'),
                             ),
@@ -200,7 +202,9 @@ class _LoginPageState extends State<LoginPage> {
                                 ),
                               ),
                               child: _isLoading
-                                  ? const CircularProgressIndicator(color: Colors.white)
+                                  ? const CircularProgressIndicator(
+                                      color: Colors.white,
+                                    )
                                   : const Text('Log In'),
                             ),
                           ),
@@ -220,7 +224,7 @@ class _LoginPageState extends State<LoginPage> {
                                     color: Color(0xFF2C5F7D),
                                   ),
                                 ),
-                              )
+                              ),
                             ],
                           ),
                         ],
