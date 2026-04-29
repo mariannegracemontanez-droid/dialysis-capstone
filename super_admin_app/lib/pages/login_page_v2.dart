@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../dashboard/dashboard_page.dart';
+import '../pages/dashboard_page.dart';
 import 'dart:ui';
 
 class LoginPage extends StatefulWidget {
@@ -52,6 +52,12 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  bool _isSuperAdminRole(dynamic roleValue) {
+    if (roleValue == null) return false;
+    final roleString = roleValue.toString().toLowerCase().trim();
+    return roleString == 'superadmin';
+  }
+
   Future<void> _signIn() async {
     setState(() {
       _loading = true;
@@ -66,47 +72,48 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
       if (res.user == null || res.session == null) {
         setState(() {
-          _message = 'Sign-in failed.';
+          _message = 'Incorrect password or email. Please try again.';
         });
         return;
       }
 
       final profile = await Supabase.instance.client
           .from('profiles')
-          .select()
+          .select('role')
           .eq('id', res.user!.id)
           .maybeSingle();
 
-      final role = profile?['role'];
-      if (role != 'admin') {
+      final roleFromProfile = profile?['role'];
+      final roleFromAppMetadata = res.user!.appMetadata?['role'];
+      final roleFromUserMetadata = res.user!.userMetadata?['role'];
+      final isSuperAdmin = _isSuperAdminRole(roleFromProfile) ||
+          _isSuperAdminRole(roleFromAppMetadata) ||
+          _isSuperAdminRole(roleFromUserMetadata);
+
+      if (!isSuperAdmin) {
         await Supabase.instance.client.auth.signOut();
         setState(() {
-          _message =
-              'Incorrect password or email. Please try again.';
-               TextStyle(color: Colors.red);
+          _message = 'Incorrect password or email. Please try again.';
         });
         return;
       }
 
+      if (!mounted) return;
+
       setState(() {
         _message = 'Signed in successfully as ${res.user!.email ?? 'unknown'}';
-         TextStyle(color: Colors.green);
       });
 
-      // Navigate to dashboard
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const DashboardPage()),
-        );
-      }
-    } on AuthException catch (e) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const DashboardPage()),
+      );
+    } on AuthException catch (_) {
       setState(() {
-        _message = e.message;
+        _message = 'Incorrect password or email. Please try again.';
       });
-    } catch (e) {
+    } catch (_) {
       setState(() {
-        _message = 'An unexpected error occurred: $e';
-         TextStyle(color: Colors.red);
+        _message = 'Incorrect password or email. Please try again.';
       });
     } finally {
       setState(() {
@@ -119,25 +126,21 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     setState(() {
       _loading = true;
       _message = null;
-       TextStyle(color: Colors.red);
     });
 
     try {
       final userRes = await Supabase.instance.client.auth.getUser();
       setState(() {
         _message = 'Connected. Current user: ${userRes.user?.email ?? 'none'}';
-         TextStyle(color: Colors.green);
       });
     } on AuthException catch (e) {
       setState(() {
         _message =
             'Connected, but no active session. Try signing in first. (${e.message})';
-         TextStyle(color: Colors.yellow);
       });
     } catch (e) {
       setState(() {
         _message = 'Connection test failed: $e';
-         TextStyle(color: Colors.red);
       });
     } finally {
       setState(() {
@@ -217,9 +220,18 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 // Email Input
-                                TextField(
+                                TextFormField(
                                   controller: _emailController,
                                   keyboardType: TextInputType.emailAddress,
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Email is required';
+                                    }
+                                    if (!value.contains('@')) {
+                                      return 'Enter a valid email';
+                                    }
+                                    return null;
+                                  },
                                   style: const TextStyle(fontSize: 16),
                                   decoration: InputDecoration(
                                     hintText: 'Email',
@@ -259,10 +271,16 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                   ),
                                 ),
                                 const SizedBox(height: 16),
-                                // Password Input
-                                TextField(
-                                  controller: _passwordController,
-                                  obscureText: _obscurePassword,
+                            // Password Input
+                            TextFormField(
+                              controller: _passwordController,
+                              obscureText: _obscurePassword,
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Password is required';
+                                }
+                                return null;
+                              },
                                   style: const TextStyle(fontSize: 16),
                                   decoration: InputDecoration(
                                     hintText: 'Password',

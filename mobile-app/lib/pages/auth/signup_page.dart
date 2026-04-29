@@ -15,7 +15,7 @@ class _SignupPageState extends State<SignupPage> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  bool _isLoading = false;
+  final bool _isLoading = false;
   String? _errorMessage;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;

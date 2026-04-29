@@ -133,6 +133,10 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  void _logout() {
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ModalRoute.of(context)?.settings.arguments as UserModel?;
@@ -227,6 +231,23 @@ class _DashboardPageState extends State<DashboardPage> {
                       _selectedSection = DashboardSection.donations;
                     });
                   },
+                ),
+                const Spacer(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                  child: ElevatedButton.icon(
+                    onPressed: _logout,
+                    icon: const Icon(Icons.logout, size: 18),
+                    label: const Text('Log out'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFF174E71),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),

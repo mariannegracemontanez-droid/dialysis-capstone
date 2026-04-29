@@ -80,7 +80,7 @@ class _LoginPageState extends State<LoginPage> {
                           const BoxShadow(
                             color: Color.fromRGBO(0, 0, 0, 0.16),
                             blurRadius: 18,
-                            offset: const Offset(0, 10),
+                            offset: Offset(0, 10),
                           ),
                         ],
                       ),
@@ -116,7 +116,7 @@ class _LoginPageState extends State<LoginPage> {
                           const BoxShadow(
                             color: Color.fromRGBO(0, 0, 0, 0.16),
                             blurRadius: 20,
-                            offset: const Offset(0, 10),
+                            offset: Offset(0, 10),
                           ),
                         ],
                       ),

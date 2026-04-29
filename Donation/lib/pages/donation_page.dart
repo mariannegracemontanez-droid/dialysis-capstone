@@ -148,14 +148,13 @@ class _DonationPageState extends State<DonationPage> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            if (user != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16.0),
-                child: Text(
-                  'Logged in as: ${user.email}',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: Text(
+                'Logged in as: ${user.email}',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
+            ),
             const SizedBox(height: 20),
             const Text(
               'Donation Form',

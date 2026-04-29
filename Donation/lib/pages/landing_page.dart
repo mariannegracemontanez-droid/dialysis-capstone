@@ -342,9 +342,9 @@ class LandingPage extends StatelessWidget {
             Container(
               color: primaryColor,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-              child: Column(
+              child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
+                children: [
                   Text(
                     'Clinic Contact Information',
                     style: TextStyle(

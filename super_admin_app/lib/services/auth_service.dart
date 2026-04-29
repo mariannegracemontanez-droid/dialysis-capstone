@@ -18,21 +18,19 @@ class AuthService {
 
       final user = response.user;
       if (user == null) {
-        throw Exception('Login failed. Please check your credentials.');
+        throw Exception('Incorrect password or email. Please try again.');
       }
 
       final profile = await _supabase
           .from('profiles')
-          .select()
+          .select('id, email, full_name, role, created_at')
           .eq('id', user.id)
           .maybeSingle();
 
       if (profile == null) {
-        if (!allowedRoles.contains('superadmin')) {
+        if (!allowedRoles.map((role) => role.toLowerCase().trim()).contains('superadmin')) {
           await _supabase.auth.signOut();
-          throw Exception(
-            'Access denied. Your account cannot sign in to this dashboard.',
-          );
+          throw Exception('Incorrect password or email. Please try again.');
         }
 
         try {
@@ -44,7 +42,7 @@ class AuthService {
           });
         } catch (error) {
           await _supabase.auth.signOut();
-          throw Exception('Failed to create superadmin profile: $error');
+          throw Exception('Incorrect password or email. Please try again.');
         }
 
         return UserModel(
@@ -57,16 +55,19 @@ class AuthService {
       }
 
       final loggedInUser = UserModel.fromJson(profile);
-      if (!allowedRoles.contains(loggedInUser.role)) {
+      final normalizedRole = loggedInUser.role.toLowerCase().trim();
+      if (!allowedRoles
+          .map((role) => role.toLowerCase().trim())
+          .contains(normalizedRole)) {
         await _supabase.auth.signOut();
-        throw Exception(
-          'Access denied. Your account role (${loggedInUser.role}) cannot sign in to this dashboard.',
-        );
+        throw Exception('Incorrect password or email. Please try again.');
       }
 
       return loggedInUser;
-    } catch (error) {
-      throw Exception('Sign in error: ${error.toString()}');
+    } on AuthException catch (_) {
+      throw Exception('Incorrect password or email. Please try again.');
+    } catch (_) {
+      throw Exception('Incorrect password or email. Please try again.');
     }
   }
 }
