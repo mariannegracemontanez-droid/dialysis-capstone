@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../models/appointment.dart';
-import 'package:intl/intl.dart';
+import '../../models/clinic.dart';
+import '../../models/patient.dart';
+import '../../services/supabase_service.dart';
 import '../dashboard/dashboard_page.dart';
 import '../patients/patients_page.dart';
+import 'clinic_detail_page.dart';
 
 class AppointmentsPage extends ConsumerStatefulWidget {
   const AppointmentsPage({super.key});
@@ -13,459 +15,314 @@ class AppointmentsPage extends ConsumerStatefulWidget {
 }
 
 class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
+  final SupabaseService _service = SupabaseService();
+  late Future<List<Clinic>> _clinicsFuture;
+  late Future<List<Patient>> _patientRosterFuture;
+  late Future<List<Map<String, dynamic>>> _availableSlotsFuture;
   String _search = '';
   int _selectedNavIndex = 1;
-  late List<Appointment> _appointments;
+  String? _selectedSlot;
 
   @override
   void initState() {
     super.initState();
-    _initializeMockData();
+    _clinicsFuture = _service.getClinics();
+    _patientRosterFuture = _service.getAllPatients();
+    _availableSlotsFuture = _service.getAvailableTimeSlots();
   }
 
-  void _initializeMockData() {
-    _appointments = [
-      Appointment(
-        id: '1',
-        patientId: 'P001',
-        patientName: 'John Doe',
-        date: DateTime.now().add(const Duration(days: 1)),
-        time: '10:00 AM',
-        status: 'Scheduled',
-        description: null,
-      ),
-      Appointment(
-        id: '2',
-        patientId: 'P002',
-        patientName: 'Jane Smith',
-        date: DateTime.now().add(const Duration(days: 2)),
-        time: '2:00 PM',
-        status: 'Urgent',
-        description: null,
-      ),
-      Appointment(
-        id: '3',
-        patientId: 'P003',
-        patientName: 'Bob Johnson',
-        date: DateTime.now().add(const Duration(days: 3)),
-        time: '11:00 AM',
-        status: 'Confirmed',
-        description: null,
-      ),
-      Appointment(
-        id: '4',
-        patientId: 'P004',
-        patientName: 'Alice Brown',
-        date: DateTime.now().add(const Duration(days: 4)),
-        time: '3:00 PM',
-        status: 'Declined',
-        description: null,
-      ),
-      Appointment(
-        id: '5',
-        patientId: 'P005',
-        patientName: 'Charlie Wilson',
-        date: DateTime.now().add(const Duration(days: 5)),
-        time: '9:00 AM',
-        status: 'Cancelled',
-        description: 'Patient requested cancellation',
-      ),
-    ];
+  List<Clinic> _filterClinics(List<Clinic> clinics, List<Patient> patients, String query) {
+    if (query.isEmpty) {
+      return clinics;
+    }
+
+    final lowerQuery = query.toLowerCase();
+    final matchingClinicIds = patients
+        .where((patient) => patient.name.toLowerCase().contains(lowerQuery))
+        .map((patient) => patient.id)
+        .where((id) => id.isNotEmpty)
+        .cast<String>()
+        .toSet();
+
+    return clinics.where((clinic) {
+      final clinicName = clinic.name.toLowerCase();
+      final clinicLocation = clinic.location.toLowerCase();
+      return clinicName.contains(lowerQuery) ||
+          clinicLocation.contains(lowerQuery) ||
+          matchingClinicIds.contains(clinic.id);
+    }).toList();
   }
 
-  Widget _statusCard(String title, int value) {
-    return Card(
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-        child: Column(
-          children: [
-            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text(value.toString(), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _prescriptionButton(String appointmentId) {
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
-      ),
-      onPressed: () async {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Prescription'),
-            content: const Text('Patients content coming soon'),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
-            ],
-          ),
-        );
-      },
-      child: const Text('View Prescription', style: TextStyle(color: Colors.white)),
-    );
-  }
-
-  Widget _appointmentActions(Appointment appointment) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ElevatedButton(
-          onPressed: () {
-            final index = _appointments.indexWhere((a) => a.id == appointment.id);
-            if (index != -1) {
-              setState(() {
-                _appointments[index] = Appointment(
-                  id: appointment.id,
-                  patientId: appointment.patientId,
-                  patientName: appointment.patientName,
-                  date: appointment.date,
-                  time: appointment.time,
-                  status: 'Confirmed',
-                  description: appointment.description,
-                );
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Appointment confirmed')),
-              );
-            }
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green,
-            foregroundColor: Colors.white,
-          ),
-          child: const Text('Confirm', style: TextStyle(color: Colors.white)),
-        ),
-        const SizedBox(width: 8),
-        ElevatedButton(
-          onPressed: () {
-            final index = _appointments.indexWhere((a) => a.id == appointment.id);
-            if (index != -1) {
-              setState(() {
-                _appointments[index] = Appointment(
-                  id: appointment.id,
-                  patientId: appointment.patientId,
-                  patientName: appointment.patientName,
-                  date: appointment.date,
-                  time: appointment.time,
-                  status: 'Declined',
-                  description: appointment.description,
-                );
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Appointment declined')),
-              );
-            }
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
-            foregroundColor: Colors.white,
-          ),
-          child: const Text('Decline', style: TextStyle(color: Colors.white)),
-        ),
-      ],
-    );
-  }
-
-  Widget _appointmentTile(Appointment appointment, {bool showActions = false}) {
-    // Custom layout for incoming appointments
+  Widget _buildSearchBar() {
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
+      margin: const EdgeInsets.only(bottom: 24),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 8,
-            offset: Offset(0, 2),
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-        child: Row(
-          children: [
-            // Icon
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.black12),
-              ),
-              child: const Icon(Icons.person, size: 32, color: Colors.black),
-            ),
-            const SizedBox(width: 16),
-            // Patient info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        appointment.patientName,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      const Spacer(),
-                      Text(
-                        'Date: ${DateFormat('MMM dd, h:mm a').format(appointment.date)}',
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text('#${appointment.patientId}', style: const TextStyle(fontSize: 14, color: Colors.black54)),
-                  if (appointment.status == 'Urgent')
-                    Container(
-                      margin: const EdgeInsets.only(top: 4),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text('URGENT', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 16),
-            // Actions
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _prescriptionButton(appointment.id),
-                if (showActions) ...[
-                  const SizedBox(height: 8),
-                  _appointmentActions(appointment),
-                ],
-              ],
-            ),
-          ],
+      child: TextField(
+        decoration: const InputDecoration(
+          hintText: 'Search by patient name, clinic name, or location',
+          prefixIcon: Icon(Icons.search, color: Color(0xFF4A5568)),
+          border: InputBorder.none,
+          contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         ),
+        onChanged: (value) => setState(() => _search = value),
       ),
     );
   }
 
-  Widget _section(String title, List<Appointment> appointments, {bool showActions = false, bool removeIcon = false}) {
-    return Card(
-      elevation: 4,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            ...appointments.map((a) => _sectionTile(a, showActions: showActions, removeIcon: removeIcon)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _sectionTile(Appointment appointment, {bool showActions = false, bool removeIcon = false}) {
-    if (removeIcon) {
-      // Remove icon for confirmed/declined
+  Widget _buildClinicTable(List<Clinic> clinics) {
+    if (clinics.isEmpty) {
       return Container(
-        margin: const EdgeInsets.symmetric(vertical: 8),
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 8,
-              offset: Offset(0, 2),
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-          child: Row(
-            children: [
-              // Patient info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          appointment.patientName,
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                        const Spacer(),
-                        Text(
-                          'Date: ${DateFormat('MMM dd, h:mm a').format(appointment.date)}',
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text('#${appointment.patientId}', style: const TextStyle(fontSize: 14, color: Colors.black54)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              // Actions
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _prescriptionButton(appointment.id),
-                  if (showActions) ...[
-                    const SizedBox(height: 8),
-                    _appointmentActions(appointment),
-                  ],
-                ],
-              ),
-            ],
-          ),
-        ),
+        child: const Text('No clinics found in clinics_centers. Add a clinic to get started.'),
       );
     }
-    // Default: use _appointmentTile
-    return _appointmentTile(appointment, showActions: showActions);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: const [
+                Text(
+                  'Clinics List',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2D3748)),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: Row(
+              children: const [
+                Expanded(child: Text('Clinic and Center Name', style: TextStyle(fontWeight: FontWeight.bold))),
+                Expanded(child: Text('Location', style: TextStyle(fontWeight: FontWeight.bold))),
+                SizedBox(width: 120, child: Text('Machines', style: TextStyle(fontWeight: FontWeight.bold))),
+                SizedBox(width: 140, child: Text('Scheduled Today', style: TextStyle(fontWeight: FontWeight.bold))),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          ...clinics.map((clinic) => _buildClinicRow(clinic)).toList(),
+        ],
+      ),
+    );
   }
 
-  Widget _cancelledSection(List<Appointment> appointments) {
-    return Card(
-      elevation: 4,
-      margin: const EdgeInsets.symmetric(vertical: 8),
+  Widget _buildClinicRow(Clinic clinic) {
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => ClinicDetailPage(clinicId: clinic.id)),
+        );
+      },
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Row(
           children: [
-            const Text('Cancelled', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            ...appointments.map((a) => Container(
-              margin: const EdgeInsets.symmetric(vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 8,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(a.patientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                        const Spacer(),
-                        Text(DateFormat('MMM dd, h:mm a').format(a.date), style: const TextStyle(fontSize: 14, color: Colors.black54)),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text('#${a.patientId}', style: const TextStyle(fontSize: 14, color: Colors.black54)),
-                    if (a.description != null) ...[
-                      const SizedBox(height: 8),
-                      Text('Reason:', style: TextStyle(color: Colors.black38, fontSize: 14)),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Text(a.description!, style: const TextStyle(color: Colors.black87, fontSize: 14)),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            )),
+            Expanded(
+              child: Text('Clinic: ${clinic.name}', style: const TextStyle(color: Color(0xFF2D3748), fontWeight: FontWeight.w600)),
+            ),
+            Expanded(
+              child: Text('Location: ${clinic.location}', style: const TextStyle(color: Color(0xFF4A5568))),
+            ),
+            SizedBox(width: 120, child: Text('ID: ${clinic.id}', style: const TextStyle(color: Color(0xFF2D3748)))),
+            SizedBox(width: 140, child: Text('View Details', style: const TextStyle(color: Color(0xFF718096)))),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildAppointmentsContent() {
-    final filtered = _appointments.where((a) {
-      final matchesSearch = _search.isEmpty || a.patientName.toLowerCase().contains(_search.toLowerCase());
-      return matchesSearch;
-    }).toList();
-    
-    final totalToday = _appointments.where((a) => DateTime.now().difference(a.date).inDays == 0).length;
-    final urgent = _appointments.where((a) => a.status == 'Urgent').length;
-    final notUrgent = _appointments.where((a) => a.status == 'Not Urgent').length;
-    final cancelled = _appointments.where((a) => a.status == 'Cancelled').length;
-    
-    final incoming = filtered.where((a) => a.status == 'Scheduled').toList();
-    final confirmed = filtered.where((a) => a.status == 'Confirmed').toList();
-    final declined = filtered.where((a) => a.status == 'Declined').toList();
-    final cancelledList = filtered.where((a) => a.status == 'Cancelled').toList();
+  Widget _buildAvailableSlotsSection(List<Map<String, dynamic>> slots) {
+    // Group slots by date
+    final slotsByDate = <String, List<Map<String, dynamic>>>{};
+    for (final slot in slots) {
+      final date = slot['displayDate'] as String;
+      slotsByDate.putIfAbsent(date, () => []).add(slot);
+    }
 
-    return SingleChildScrollView(
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(child: _statusCard('Total Today', totalToday)),
-              const SizedBox(width: 20),
-              Expanded(child: _statusCard('Urgent', urgent)),
-              const SizedBox(width: 20),
-              Expanded(child: _statusCard('Not Urgent', notUrgent)),
-              const SizedBox(width: 20),
-              Expanded(child: _statusCard('Cancelled', cancelled)),
-            ],
+          const Text(
+            'Available Dialysis Time Slots',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2D3748),
+            ),
           ),
           const SizedBox(height: 16),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+          SizedBox(
+            height: 400,
+            child: ListView(
+              children: slotsByDate.entries.map((entry) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        entry.key,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF2A5F7E),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: entry.value.map((slot) {
+                          final isSelected = _selectedSlot == '${slot['date']}_${slot['time']}';
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedSlot = '${slot['date']}_${slot['time']}';
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: isSelected ? const Color(0xFF2A5F7E) : const Color(0xFFF5F7FA),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isSelected ? const Color(0xFF2A5F7E) : Colors.grey.shade300,
+                                  width: 1.5,
+                                ),
+                              ),
+                              child: Text(
+                                slot['time'] as String,
+                                style: TextStyle(
+                                  color: isSelected ? Colors.white : const Color(0xFF4A5568),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
             ),
-            child: TextField(
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
-                hintText: 'Search',
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          ),
+          const SizedBox(height: 16),
+          if (_selectedSlot != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE6F9F0),
+                borderRadius: BorderRadius.circular(8),
               ),
-              onChanged: (val) {
-                setState(() {
-                  _search = val;
-                });
-              },
+              child: Text(
+                'Selected: $_selectedSlot',
+                style: const TextStyle(color: Color(0xFF22863A), fontWeight: FontWeight.w600),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPatientRosterSection(List<Patient> patients) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Patient Roster',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2D3748),
             ),
           ),
           const SizedBox(height: 16),
-          _section('Incoming Appointments', incoming, showActions: true),
-          Row(
-            children: [
-              Expanded(child: _section('Confirmed', confirmed, removeIcon: true)),
-              const SizedBox(width: 20),
-              Expanded(child: _section('Declined', declined, removeIcon: true)),
-            ],
-          ),
-          _cancelledSection(cancelledList),
+          if (patients.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Text(
+                'No registered patients found. Add a patient on the dashboard to populate this roster.',
+                style: TextStyle(color: Color(0xFF4A5568), fontSize: 14),
+              ),
+            )
+          else
+            Column(
+              children: patients.map((patient) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text('Patient: ${patient.name} (Email: ${patient.email})', style: const TextStyle(color: Color(0xFF2D3748), fontSize: 14)),
+                );
+              }).toList(),
+            ),
         ],
       ),
     );
@@ -484,8 +341,47 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
                 _buildHeader(),
                 Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: _buildAppointmentsContent(),
+                    padding: const EdgeInsets.all(24.0),
+                    child: FutureBuilder<List<Clinic>>(
+                      future: _clinicsFuture,
+                      builder: (context, clinicSnapshot) {
+                        return FutureBuilder<List<Patient>>(
+                          future: _patientRosterFuture,
+                          builder: (context, patientSnapshot) {
+                            return FutureBuilder<List<Map<String, dynamic>>>(
+                              future: _availableSlotsFuture,
+                              builder: (context, slotsSnapshot) {
+                                final clinics = clinicSnapshot.data ?? [];
+                                final patients = patientSnapshot.data ?? [];
+                                final slots = slotsSnapshot.data ?? [];
+                                final filteredClinics = _filterClinics(clinics, patients, _search);
+
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildSearchBar(),
+                                    Expanded(
+                                      child: SingleChildScrollView(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            _buildClinicTable(filteredClinics),
+                                            const SizedBox(height: 24),
+                                            _buildAvailableSlotsSection(slots),
+                                            const SizedBox(height: 24),
+                                            _buildPatientRosterSection(patients),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+                          },
+                        );
+                      },
+                    ),
                   ),
                 ),
               ],
@@ -557,10 +453,7 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
               ),
               Text(
                 'Admin Panel',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 11,
-                ),
+                style: TextStyle(color: Colors.white70, fontSize: 11),
               ),
             ],
           ),
@@ -595,21 +488,13 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: isSelected
-                  ? const Color(0xFF1A4A63)
-                  : Colors.transparent,
+              color: isSelected ? const Color(0xFF1A4A63) : Colors.transparent,
               borderRadius: BorderRadius.circular(12),
-              border: isSelected
-                  ? Border.all(color: Colors.white24, width: 1)
-                  : null,
+              border: isSelected ? Border.all(color: Colors.white24, width: 1) : null,
             ),
             child: Row(
               children: [
-                Icon(
-                  icon,
-                  color: isSelected ? Colors.white : Colors.white70,
-                  size: 22,
-                ),
+                Icon(icon, color: isSelected ? Colors.white : Colors.white70, size: 22),
                 const SizedBox(width: 14),
                 Text(
                   title,
@@ -668,11 +553,8 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
               ),
               SizedBox(height: 4),
               Text(
-                'Manage all appointments',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 14,
-                ),
+                'Manage all appointment clinics',
+                style: TextStyle(color: Colors.white70, fontSize: 14),
               ),
             ],
           ),

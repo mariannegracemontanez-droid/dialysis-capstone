@@ -1,13 +1,12 @@
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
-import 'dart:io';
 
 class FileUploadService {
   final SupabaseClient _supabase = SupabaseConfig.client;
   final ImagePicker _imagePicker = ImagePicker();
 
-  /// Pick an image from the device
+  /// Pick a single image from the device
   Future<XFile?> pickImage({ImageSource source = ImageSource.gallery}) async {
     try {
       final pickedFile = await _imagePicker.pickImage(
@@ -22,6 +21,20 @@ class FileUploadService {
     }
   }
 
+  /// Pick multiple images from the device
+  Future<List<XFile>?> pickImages() async {
+    try {
+      final pickedFiles = await _imagePicker.pickMultiImage(
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
+      );
+      return pickedFiles;
+    } catch (e) {
+      throw Exception('Failed to pick images: $e');
+    }
+  }
+
   /// Upload medical certificate for appointment
   Future<String> uploadMedicalCertificate({
     required String userId,
@@ -33,8 +46,7 @@ class FileUploadService {
       final fileName =
           '${userId}_${appointmentId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
-      final file = File(imageFile.path);
-      final fileBytes = await file.readAsBytes();
+      final fileBytes = await imageFile.readAsBytes();
 
       await _supabase.storage
           .from(bucketName)
@@ -63,8 +75,7 @@ class FileUploadService {
       const bucketName = 'appointment-images';
       final fileName = '${userId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
-      final file = File(imageFile.path);
-      final fileBytes = await file.readAsBytes();
+      final fileBytes = await imageFile.readAsBytes();
 
       await _supabase.storage
           .from(bucketName)
