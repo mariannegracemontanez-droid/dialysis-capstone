@@ -57,7 +57,7 @@ class _LoginPageState extends State<LoginPage> {
 
     final user = response.user ?? response.session?.user;
     if (user == null) {
-      throw AuthException('Login failed. Please try again.');
+      throw const AuthException('Login failed. Please try again.');
     }
 
     if (!mounted) return;

@@ -83,7 +83,7 @@ class SupabaseService {
         .eq('id', clinicId)
         .maybeSingle();
     if (response == null) return null;
-    return Clinic.fromJson(response as Map<String, dynamic>);
+    return Clinic.fromJson(response);
   }
 
   Future<List<Patient>> getPatientsByClinic(String clinicId) async {
@@ -148,7 +148,7 @@ class SupabaseService {
         .eq('id', patientId)
         .maybeSingle();
     if (response == null) return null;
-    return Patient.fromJson(response as Map<String, dynamic>);
+    return Patient.fromJson(response);
   }
 
   Future<void> createClinic(Map<String, dynamic> clinicData) async {

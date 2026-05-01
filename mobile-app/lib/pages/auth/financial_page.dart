@@ -137,7 +137,7 @@ class _FinancialPageState extends State<FinancialPage> {
                                   activeColor: const Color(0xFF2C5F7D),
                                   onChanged: (_) => _toggleInsurance(option),
                                 );
-                              }).toList(),
+                              }),
                             ],
                           ),
                         ),
@@ -176,7 +176,7 @@ class _FinancialPageState extends State<FinancialPage> {
                                     }
                                   },
                                 );
-                              }).toList(),
+                              }),
                             ],
                           ),
                         ),
@@ -215,7 +215,7 @@ class _FinancialPageState extends State<FinancialPage> {
                                     }
                                   },
                                 );
-                              }).toList(),
+                              }),
                             ],
                           ),
                         ),

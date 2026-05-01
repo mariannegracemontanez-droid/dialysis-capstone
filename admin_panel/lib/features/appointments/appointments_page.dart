@@ -137,7 +137,7 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
             ),
           ),
           const Divider(height: 1),
-          ...clinics.map((clinic) => _buildClinicRow(clinic)).toList(),
+          ...clinics.map((clinic) => _buildClinicRow(clinic)),
         ],
       ),
     );

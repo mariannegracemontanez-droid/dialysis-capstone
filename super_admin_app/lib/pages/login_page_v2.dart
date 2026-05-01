@@ -84,7 +84,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           .maybeSingle();
 
       final roleFromProfile = profile?['role'];
-      final roleFromAppMetadata = res.user!.appMetadata?['role'];
+      final roleFromAppMetadata = res.user!.appMetadata['role'];
       final roleFromUserMetadata = res.user!.userMetadata?['role'];
       final isSuperAdmin = _isSuperAdminRole(roleFromProfile) ||
           _isSuperAdminRole(roleFromAppMetadata) ||

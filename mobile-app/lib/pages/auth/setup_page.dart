@@ -99,7 +99,7 @@ class _SetupPageState extends State<SetupPage> {
                             ),
                             const SizedBox(height: 14),
                             DropdownButtonFormField<String>(
-                              value: _selectedLevel,
+                              initialValue: _selectedLevel,
                               decoration: InputDecoration(
                                 filled: true,
                                 fillColor: const Color(0xFFF1F7FA),

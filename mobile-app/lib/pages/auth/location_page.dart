@@ -287,7 +287,7 @@ class _LocationPageState extends State<LocationPage> {
                                 ),
                                 const SizedBox(height: 12),
                                 DropdownButtonFormField<String>(
-                                  value: _cityController.text.isEmpty
+                                  initialValue: _cityController.text.isEmpty
                                       ? null
                                       : _cityController.text,
                                   items: _ncrCities
@@ -319,7 +319,7 @@ class _LocationPageState extends State<LocationPage> {
                                 ),
                                 const SizedBox(height: 12),
                                 DropdownButtonFormField<String>(
-                                  value: _barangayController.text.isEmpty
+                                  initialValue: _barangayController.text.isEmpty
                                       ? null
                                       : _barangayController.text,
                                   items: _availableBarangays
