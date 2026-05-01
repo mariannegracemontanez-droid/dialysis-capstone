@@ -12,6 +12,8 @@ dependencies:
   cupertino_icons: ^1.0.2
   supabase_flutter: ^2.12.4
   flutter_dotenv: ^5.1.0
+  image_picker: ^0.8.7+5
+  google_fonts: ^6.1.0
 
 dev_dependencies:
   flutter_test:
@@ -23,3 +25,11 @@ flutter:
   assets:
     - .env
     - lib/assets/image/CureNurture_logo.png
+    - lib/assets/image/gradient_background.png
+
+  fonts:
+    - family: Montserrat
+      fonts:
+        - asset: lib/assets/image/fonts/Montserrat-Regular.ttf
+        - asset: lib/assets/image/fonts/Montserrat-Bold.ttf
+          weight: 700
