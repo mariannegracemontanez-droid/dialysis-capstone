@@ -3,6 +3,16 @@ class SignupData {
   final String email;
   final String phone;
   final String password;
+  final String dateOfBirth;
+  final String homeAddress;
+  final String bloodType;
+  final String emergencyContactName;
+  final String emergencyContactNumber;
+  final String patientId;
+  final String clinicId;
+  final String clinicName;
+  final List<String> clinicRequirements;
+  final Map<String, String> documentUrls;
   final String ckdLevel;
   final List<String> conditions;
   final String province;
@@ -21,6 +31,16 @@ class SignupData {
     required this.email,
     required this.phone,
     required this.password,
+    this.dateOfBirth = '',
+    this.homeAddress = '',
+    this.bloodType = '',
+    this.emergencyContactName = '',
+    this.emergencyContactNumber = '',
+    this.patientId = '',
+    this.clinicId = '',
+    this.clinicName = '',
+    this.clinicRequirements = const [],
+    this.documentUrls = const {},
     this.ckdLevel = 'Stage 3',
     this.conditions = const [],
     this.province = '',
@@ -40,6 +60,13 @@ class SignupData {
     String? email,
     String? phone,
     String? password,
+    String? dateOfBirth,
+    String? homeAddress,
+    String? bloodType,
+    String? emergencyContactName,
+    String? emergencyContactNumber,
+    String? clinicId,
+    String? clinicName,
     String? ckdLevel,
     List<String>? conditions,
     String? province,
@@ -48,6 +75,8 @@ class SignupData {
     String? locationSummary,
     String? medicalDocumentPath,
     List<String>? medicalDocumentPaths,
+    List<String>? clinicRequirements,
+    Map<String, String>? documentUrls,
     String? referralDoctor,
     List<String>? insuranceOptions,
     String? budgetRange,
@@ -58,6 +87,16 @@ class SignupData {
       email: email ?? this.email,
       phone: phone ?? this.phone,
       password: password ?? this.password,
+      dateOfBirth: dateOfBirth ?? this.dateOfBirth,
+      homeAddress: homeAddress ?? this.homeAddress,
+      bloodType: bloodType ?? this.bloodType,
+      emergencyContactName: emergencyContactName ?? this.emergencyContactName,
+      emergencyContactNumber:
+          emergencyContactNumber ?? this.emergencyContactNumber,
+      clinicId: clinicId ?? this.clinicId,
+      clinicName: clinicName ?? this.clinicName,
+      clinicRequirements: clinicRequirements ?? this.clinicRequirements,
+      documentUrls: documentUrls ?? this.documentUrls,
       ckdLevel: ckdLevel ?? this.ckdLevel,
       conditions: conditions ?? this.conditions,
       province: province ?? this.province,

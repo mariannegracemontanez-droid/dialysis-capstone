@@ -95,6 +95,38 @@ class FileUploadService {
     }
   }
 
+  Future<String> uploadMedicalDocumentImage({required XFile imageFile, required String patientId, required String clinicId,}) async {
+    try {
+      const bucketName = 'medical_docs';
+      final fileName =
+          '${DateTime.now().millisecondsSinceEpoch}_${imageFile.name}';
+      final fileBytes = await imageFile.readAsBytes();
+
+      await _supabase.storage
+          .from(bucketName)
+          .uploadBinary(
+            fileName,
+            fileBytes,
+            fileOptions: FileOptions(
+              cacheControl: '3600',
+              upsert: true,
+              metadata: {
+                'patient_id': patientId,
+                'clinic_id': clinicId,
+              },
+            ),
+          );
+
+      final publicUrl = _supabase.storage
+          .from(bucketName)
+          .getPublicUrl(fileName);
+
+      return publicUrl;
+    } catch (e) {
+      throw Exception('Failed to upload medical document image: $e');
+    }
+  }
+
   /// Delete a file from storage
   Future<void> deleteFile({
     required String bucketName,

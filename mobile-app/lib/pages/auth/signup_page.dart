@@ -154,6 +154,53 @@ class _SignupPageState extends State<SignupPage> {
                     ),
                     const SizedBox(height: 32),
                     Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(18),
+                      margin: const EdgeInsets.only(bottom: 24),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE7F5F8),
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(color: const Color(0xFFB6DAE0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text(
+                            'Take note:',
+                            style: TextStyle(
+                              color: Color(0xFF145A76),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          SizedBox(height: 10),
+                          Text(
+                            '• Please save your login details (email and password) after creating your account.',
+                            style: TextStyle(
+                              color: Color(0xFF2E5F75),
+                              fontSize: 14,
+                            ),
+                          ),
+                          SizedBox(height: 6),
+                          Text(
+                            '• Your account will only be accessible once the chosen clinic or admin approves your request.',
+                            style: TextStyle(
+                              color: Color(0xFF2E5F75),
+                              fontSize: 14,
+                            ),
+                          ),
+                          SizedBox(height: 6),
+                          Text(
+                            '• For your security, do not share your password with anyone.',
+                            style: TextStyle(
+                              color: Color(0xFF2E5F75),
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.95),
                         borderRadius: BorderRadius.circular(28),

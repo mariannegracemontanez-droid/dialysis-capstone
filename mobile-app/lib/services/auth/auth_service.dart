@@ -11,7 +11,14 @@ class AuthService {
     required String email,
     required String password,
     required String fullName,
+    required String phone,
     String role = 'patient',
+    String dateOfBirth = '',
+    String homeAddress = '',
+    String bloodType = '',
+    String emergencyContactName = '',
+    String emergencyContactNumber = '',
+    Object? clinicId,
   }) async {
     try {
       final response = await _supabase.auth.signUp(
@@ -23,12 +30,30 @@ class AuthService {
         throw Exception('Sign up failed');
       }
 
+      final userId = response.user!.id;
+
       await _supabase.from('profiles').insert({
-        'id': response.user!.id,
+        'id': userId,
         'email': email,
         'full_name': fullName,
+        'phone': phone,
         'role': role,
       });
+
+      final Map<String, Object?> patientData = {
+        'profile_id': userId,
+        'date_of_birth': dateOfBirth,
+        'home_address': homeAddress,
+        'blood_type': bloodType,
+        'emergency_contact_name': emergencyContactName,
+        'emergency_contact_number': emergencyContactNumber,
+      };
+
+      if (clinicId != null) {
+        patientData['clinic_id'] = clinicId;
+      }
+
+      await _supabase.from('patients').insert(patientData);
 
       final createdAt = response.user?.createdAt;
       final parsedCreatedAt = createdAt != null
@@ -36,7 +61,7 @@ class AuthService {
           : DateTime.now();
 
       return UserModel(
-        id: response.user!.id,
+        id: userId,
         email: email,
         fullName: fullName,
         role: role,

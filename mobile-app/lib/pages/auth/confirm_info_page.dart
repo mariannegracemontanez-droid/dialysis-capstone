@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/signup_data.dart';
 import '../../services/auth/auth_service.dart';
+import '../../services/medical_document_service.dart';
 
 class ConfirmInfoPage extends StatefulWidget {
   final SignupData signupData;
@@ -22,15 +23,31 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
     });
 
     try {
-      await AuthService().signUp(
+      final createdUser = await AuthService().signUp(
         email: widget.signupData.email,
         password: widget.signupData.password,
         fullName: widget.signupData.fullName,
+        phone: widget.signupData.phone,
+        dateOfBirth: widget.signupData.dateOfBirth,
+        homeAddress: widget.signupData.homeAddress,
+        bloodType: widget.signupData.bloodType,
+        emergencyContactName: widget.signupData.emergencyContactName,
+        emergencyContactNumber: widget.signupData.emergencyContactNumber,
+        clinicId: widget.signupData.clinicId,
       );
+
+      if (widget.signupData.documentUrls.isNotEmpty) {
+        await MedicalDocumentService().saveDocumentUrls(
+          userId: createdUser.id,
+          clinicId: widget.signupData.clinicId,
+          documentUrls: widget.signupData.documentUrls,
+        );
+      }
 
       if (mounted) {
         await AuthService().signOut();
-        Navigator.of(context).pushReplacementNamed('/login');
+        // ignore: use_build_context_synchronously
+        Navigator.of(context).pushReplacementNamed('/login_page');
       }
     } catch (e) {
       setState(() {
@@ -120,6 +137,30 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
                         ),
                         _buildInfoRow('Email', widget.signupData.email),
                         _buildInfoRow('Phone', widget.signupData.phone),
+                        _buildInfoRow(
+                          'Date of Birth',
+                          widget.signupData.dateOfBirth,
+                        ),
+                        _buildInfoRow(
+                          'Home Address',
+                          widget.signupData.homeAddress,
+                        ),
+                        _buildInfoRow(
+                          'Blood Type',
+                          widget.signupData.bloodType,
+                        ),
+                        _buildInfoRow(
+                          'Emergency Contact',
+                          widget.signupData.emergencyContactName.isEmpty
+                              ? 'Not provided'
+                              : '${widget.signupData.emergencyContactName} (${widget.signupData.emergencyContactNumber})',
+                        ),
+                        _buildInfoRow(
+                          'Selected Clinic',
+                          widget.signupData.clinicName.isEmpty
+                              ? 'Not selected'
+                              : widget.signupData.clinicName,
+                        ),
                         _buildInfoRow('CKD Level', widget.signupData.ckdLevel),
                         _buildInfoRow(
                           'Conditions',

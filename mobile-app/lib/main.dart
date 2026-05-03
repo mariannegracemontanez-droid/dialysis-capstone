@@ -5,6 +5,7 @@ import 'pages/auth/change_password_page.dart';
 import 'pages/auth/confirm_info_page.dart';
 import 'pages/auth/forgot_password_page.dart';
 import 'pages/auth/location_page.dart';
+import 'pages/auth/clinic_info_page.dart';
 import 'pages/auth/login_page.dart';
 import 'pages/auth/medical_documents_page.dart';
 import 'pages/auth/financial_page.dart';
@@ -89,6 +90,11 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as SignupData;
             return MaterialPageRoute(
               builder: (_) => LocationPage(signupData: args),
+            );
+          case '/clinic-info':
+            final args = settings.arguments as ClinicInfoArguments;
+            return MaterialPageRoute(
+              builder: (_) => ClinicInfoPage(arguments: args),
             );
           case '/medical-documents':
             final args = settings.arguments as SignupData;

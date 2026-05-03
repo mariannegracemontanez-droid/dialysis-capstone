@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../models/signup_data.dart';
@@ -16,75 +14,114 @@ class MedicalDocumentsPage extends StatefulWidget {
 
 class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
   final FileUploadService _fileUploadService = FileUploadService();
-  final TextEditingController _referralController = TextEditingController();
-  final List<XFile> _selectedDocuments = [];
-  final List<Uint8List> _selectedDocumentBytes = [];
-  bool _isPicking = false;
+  final Map<String, String> _documentUrls = {};
+  final Map<String, bool> _isUploading = {};
   String? _uploadError;
+
+  static const Map<String, String> _requirementKeyMap = {
+    'Referral Letter / Endorsement Letter / Discharge Summary':
+        'referral_letter_url',
+    'Medical Abstract': 'medical_abstract_url',
+    'Copy of last 3 HD treatment sheets': 'hd_treatment_sheets_url',
+    'Latest laboratory results': 'lab_results_url',
+    'Latest hepatitis profile': 'hepatitis_profile_url',
+    'X-ray / imaging report': 'xray_url',
+    'Government ID': 'government_id_url',
+    'PhilHealth MDR': 'philhealth_mdr_url',
+    'PDD certificate': 'pdd_certificate_url',
+    'PHIC consumption report': 'phic_consumption_url',
+    'PHIC contribution report': 'phic_contribution_url',
+  };
+
+  List<Map<String, String>> get _selectedClinicRequirements {
+    return widget.signupData.clinicRequirements.map((label) {
+      final key =
+          _requirementKeyMap[label] ??
+          '${label.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_')}_url';
+      return {'key': key, 'label': label};
+    }).toList();
+  }
 
   @override
   void initState() {
     super.initState();
-    _referralController.text = widget.signupData.referralDoctor;
+    _documentUrls.addAll(widget.signupData.documentUrls);
   }
 
   @override
   void dispose() {
-    _referralController.dispose();
     super.dispose();
   }
 
-  Future<void> _pickDocument() async {
+  Future<void> _pickDocumentFor(String requirementKey) async {
     setState(() {
-      _isPicking = true;
+      _isUploading[requirementKey] = true;
       _uploadError = null;
     });
 
     try {
-      final files = await _fileUploadService.pickImages();
-      if (files != null && files.isNotEmpty) {
-        final bytesList = await Future.wait(
-          files.map((file) => file.readAsBytes()),
-        );
+      final XFile? file = await _fileUploadService.pickImage(
+        source: ImageSource.gallery,
+      );
+
+      if (file == null) {
         setState(() {
-          _selectedDocuments
-            ..clear()
-            ..addAll(files);
-          _selectedDocumentBytes
-            ..clear()
-            ..addAll(bytesList);
+          _isUploading[requirementKey] = false;
         });
+        return;
       }
+
+      final url = await _fileUploadService.uploadMedicalDocumentImage(
+        imageFile: file,
+        patientId: widget.signupData.patientId,
+        clinicId: widget.signupData.clinicId,
+      );
+
+      setState(() {
+        _documentUrls[requirementKey] = url;
+        _isUploading[requirementKey] = false;
+        _uploadError = null;
+      });
     } catch (e) {
       setState(() {
-        _uploadError = 'Could not pick documents. Try again.';
+        _isUploading[requirementKey] = false;
+        _uploadError = 'Upload failed. Please try again.';
       });
-    } finally {
-      setState(() {
-        _isPicking = false;
-      });
+      debugPrint('Error uploading document: $e');
     }
   }
 
   void _handleNext() {
+    final clinicRequirements = _selectedClinicRequirements;
+    final uploadedCount = clinicRequirements
+        .where((item) => _documentUrls[item['key']]?.isNotEmpty ?? false)
+        .length;
+    final requiredCount = clinicRequirements.length >= 5
+        ? 5
+        : clinicRequirements.length;
+
+    if (clinicRequirements.isNotEmpty && uploadedCount < requiredCount) {
+      setState(() {
+        final remaining = requiredCount - uploadedCount;
+        _uploadError = remaining == 1
+            ? 'Please upload the remaining document before continuing.'
+            : 'Please upload $remaining more required documents before continuing.';
+      });
+      return;
+    }
+
     final updated = widget.signupData.copyWith(
-      medicalDocumentPath: _selectedDocuments.isNotEmpty
-          ? _selectedDocuments.first.path
-          : widget.signupData.medicalDocumentPath,
-      medicalDocumentPaths: _selectedDocuments
-          .map((document) => document.path)
-          .toList(),
-      referralDoctor: _referralController.text.trim(),
+      documentUrls: Map.from(_documentUrls),
     );
     Navigator.of(context).pushNamed('/financial', arguments: updated);
   }
 
   @override
   Widget build(BuildContext context) {
-    final fileCount = _selectedDocuments.length;
-    final fileName = fileCount == 0
-        ? 'No documents uploaded'
-        : '$fileCount document${fileCount == 1 ? '' : 's'} selected';
+    final clinicRequirements = _selectedClinicRequirements;
+    final uploadedCount = clinicRequirements
+        .where((item) => _documentUrls[item['key']]?.isNotEmpty ?? false)
+        .length;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F9FB),
@@ -150,58 +187,75 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
                               color: Colors.grey[700],
                             ),
                           ),
-                          const SizedBox(height: 20),
-                          SizedBox(
-                            height: 160,
-                            child: InkWell(
-                              onTap: _isPicking ? null : _pickDocument,
-                              borderRadius: BorderRadius.circular(20),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF6FAFF),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: const Color(0xFFD8E7F6),
-                                  ),
-                                ),
-                                child: Center(
-                                  child: _selectedDocumentBytes.isEmpty
-                                      ? _buildUploadPrompt()
-                                      : GridView.builder(
-                                          physics:
-                                              const NeverScrollableScrollPhysics(),
-                                          padding: const EdgeInsets.all(8),
-                                          gridDelegate:
-                                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                                crossAxisCount: 3,
-                                                crossAxisSpacing: 8,
-                                                mainAxisSpacing: 8,
-                                              ),
-                                          itemCount:
-                                              _selectedDocumentBytes.length,
-                                          itemBuilder: (context, index) {
-                                            return ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              child: Image.memory(
-                                                _selectedDocumentBytes[index],
-                                                fit: BoxFit.cover,
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                ),
-                              ),
+                          const SizedBox(height: 16),
+                          Text(
+                            clinicRequirements.isEmpty
+                                ? 'No clinic-specific requirements were selected. Upload any relevant medical documents you have.'
+                                : 'Upload the documents requested by your chosen clinic.',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[700],
                             ),
                           ),
                           const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Uploaded: $uploadedCount / ${clinicRequirements.length}',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF2C5F7D),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                '${clinicRequirements.length} required',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF6C7A8E),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
                           Text(
-                            fileName,
+                            'Clinic requirements',
                             style: const TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFF6C7A8E),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
                             ),
                           ),
+                          const SizedBox(height: 12),
+                          if (clinicRequirements.isEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 18,
+                                horizontal: 16,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEEF4F8),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: const Text(
+                                'No clinic requirements were selected. You may continue if you have no documents to upload.',
+                                style: TextStyle(fontSize: 14),
+                              ),
+                            )
+                          else
+                            ...clinicRequirements.map((item) {
+                              final key = item['key']!;
+                              final label = item['label']!;
+                              final uploaded =
+                                  _documentUrls[key]?.isNotEmpty ?? false;
+                              final uploading = _isUploading[key] == true;
+                              return _buildRequirementRow(
+                                label: label,
+                                uploaded: uploaded,
+                                uploading: uploading,
+                                onUpload: () => _pickDocumentFor(key),
+                              );
+                            }),
                           if (_uploadError != null) ...[
                             const SizedBox(height: 12),
                             Text(
@@ -210,26 +264,6 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
                             ),
                           ],
                           const SizedBox(height: 24),
-                          TextField(
-                            controller: _referralController,
-                            decoration: InputDecoration(
-                              hintText: 'Enter name of the hospital/doctor',
-                              filled: true,
-                              fillColor: const Color(0xFFF7FBFF),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            'This information helps us locate the right dialysis support network for you.',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey[600],
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -257,22 +291,52 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
     );
   }
 
-  Widget _buildUploadPrompt() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(
-          _isPicking ? Icons.cloud_upload : Icons.upload_file,
-          color: const Color(0xFF2C5F7D),
-          size: 36,
-        ),
-        const SizedBox(height: 10),
-        Text(
-          _isPicking ? 'Uploading...' : 'Tap to upload medical documents',
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 14, color: Color(0xFF4A637B)),
-        ),
-      ],
+  Widget _buildRequirementRow({
+    required String label,
+    required bool uploaded,
+    required bool uploading,
+    required VoidCallback onUpload,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(
+            uploaded ? Icons.check_circle : Icons.radio_button_unchecked,
+            color: uploaded ? const Color(0xFF2C5F7D) : Colors.grey,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
+          const SizedBox(width: 10),
+          SizedBox(
+            height: 38,
+            child: ElevatedButton(
+              onPressed: uploading ? null : onUpload,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: uploaded
+                    ? const Color(0xFF2C5F7D)
+                    : const Color(0xFF4F82A4),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                minimumSize: const Size(100, 38),
+              ),
+              child: uploading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(uploaded ? 'Replace' : 'Upload'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
