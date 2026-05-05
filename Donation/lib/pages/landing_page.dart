@@ -1,4 +1,5 @@
 ﻿import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -97,29 +98,28 @@ class _LandingPageState extends State<LandingPage> {
   }
 
   Stream<List<Map<String, String>>> get _verifiedDonationsStream {
-    final sampleDonations = <Map<String, String>>[
-      {
-        'name': 'Gift of Care by UNLV',
-        'date': 'March 26, 2025',
-        'amount': '₦ 2,500',
-        'status': 'Verified',
-      },
-      {
-        'name': 'Health Matters by Cora Loco',
-        'date': 'April 14, 2025',
-        'amount': '₦ 4,100',
-        'status': 'Verified',
-      },
-      {
-        'name': 'Angel Baby Support',
-        'date': 'May 22, 2025',
-        'amount': '₦ 3,800',
-        'status': 'Verified',
-      },
-    ];
-    return Stream.value(sampleDonations);
-  }
-  
+  return Supabase.instance.client
+      .from('donations')
+      .stream(primaryKey: ['id'])
+      .eq('status', 'verified')
+      .order('created_at', ascending: false)
+      .map((data) {
+        return data.map<Map<String, String>>((item) {
+          return {
+            'name': item['name'] ?? 'Anonymous',
+            'date': item['created_at'] != null
+                ? DateTime.parse(item['created_at'])
+                    .toLocal()
+                    .toString()
+                    .split(' ')[0]
+                : '',
+            'amount': '₱ ${item['amount'] ?? 0}',
+            'status': 'Verified',
+          };
+        }).toList();
+      });
+}
+
   get GoogleFonts => null;
 
   Widget _heroStatCard(String value, String label) {
@@ -162,6 +162,7 @@ class _LandingPageState extends State<LandingPage> {
     );
   }
 
+
   Widget _sectionCard({
     required String title,
     required String content,
@@ -170,16 +171,16 @@ class _LandingPageState extends State<LandingPage> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: color ?? Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
+  color: color ?? Colors.white,
+  borderRadius: BorderRadius.circular(20),
+  boxShadow: [
+    BoxShadow(
+      color: Colors.black.withOpacity(0.05),
+      blurRadius: 10,
+      offset: const Offset(0, 5),
+    ),
+  ],
+),
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -313,448 +314,334 @@ Widget build(BuildContext context) {
     backgroundColor: _surface,
 
     appBar: AppBar(
-      backgroundColor: _darkTeal,
-      elevation: 0,
-      title: Row(
+  backgroundColor: _darkTeal,
+  elevation: 0,
+
+  title: Row(
+    children: [
+      Image.asset(
+        'lib/assets/image/CureNurture_logo.png',
+        width: 36,
+        height: 36,
+        fit: BoxFit.contain,
+      ),
+      const SizedBox(width: 10),
+      const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Image.asset(
-            'lib/assets/image/CureNurture_logo.png',
-            width: 36,
-            height: 36,
-            fit: BoxFit.contain,
+          Text(
+            'Cure',
+            style: TextStyle(
+              fontFamily: 'Montserrat',
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2F8F9D),
+            ),
           ),
-          const SizedBox(width: 10),
-          const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Cure',
-                style: TextStyle(
-                  fontFamily: 'Montserrat',
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF2F8F9D),
-                  shadows: [
-                    Shadow(
-                      offset: Offset(1.5, 1.5),
-                      blurRadius: 3,
-                      color: Colors.black26,
-                    ),
-                  ],
-                ),
-              ),
-              Text(
-                'NURTURE',
-                style: TextStyle(
-                  fontFamily: 'Montserrat',
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                  letterSpacing: 1.5,
-                  shadows: [
-                    Shadow(
-                      offset: Offset(1, 1),
-                      blurRadius: 2,
-                      color: Colors.black12,
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          Text(
+            'NURTURE',
+            style: TextStyle(
+              fontFamily: 'Montserrat',
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+              letterSpacing: 1.5,
+            ),
           ),
         ],
       ),
+    ],
+  ),
 
-      // ✅ Desktop → styled buttons, Mobile → hamburger menu
-      actions: [
-        if (MediaQuery.of(context).size.width > 600) ...[
-          TextButton(
-            onPressed: () => _openLogin(context),
-            style: TextButton.styleFrom(
-              backgroundColor: const Color(0xFF2F8F9D), // teal background
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text(
-              'Log In',
-              style: TextStyle(
-                fontFamily: 'Montserrat',
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          TextButton(
-            onPressed: () => _openSignup(context),
-            style: TextButton.styleFrom(
-              side: const BorderSide(color: Colors.white), // outlined style
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text(
-              'Sign Up',
-              style: TextStyle(
-                fontFamily: 'Montserrat',
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-        ] else ...[
-          Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white),
-              onPressed: () => Scaffold.of(context).openDrawer(),
-            ),
-          ),
-        ]
-      ],
-    ),
+  actions: [
+    const SizedBox(width: 16),
 
-    // ✅ Drawer for mobile
-    drawer: Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          DrawerHeader(
-            decoration: BoxDecoration(color: _darkTeal),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    if (_displayName == null) ...[
+      Padding(
+        padding: const EdgeInsets.only(right: 24),
+        child: Row(
+          children: [
+            TextButton(
+              onPressed: () => _openLogin(context),
+              style: TextButton.styleFrom(
+                backgroundColor: const Color(0xFF2F8F9D),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              ),
+              child: const Text('Log In'),
+            ),
+            const SizedBox(width: 12),
+            TextButton(
+              onPressed: () => _openSignup(context),
+              style: TextButton.styleFrom(
+                side: const BorderSide(color: Colors.white),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              ),
+              child: const Text('Sign Up'),
+            ),
+          ],
+        ),
+      ),
+    ] else ...[
+      Padding(
+        padding: const EdgeInsets.only(right: 24),
+        child: Row(
+          children: [
+            Text(
+              'Welcome, $_displayName',
+              style: const TextStyle(color: Colors.white),
+            ),
+            const SizedBox(width: 10),
+            IconButton(
+              icon: const Icon(Icons.logout, color: Colors.white),
+              onPressed: () => _logout(context),
+            ),
+          ],
+        ),
+      ),
+    ],
+  ],
+),
+    
+
+ body: SingleChildScrollView(
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+
+      // HERO
+      Container(
+        height: 320,
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage('lib/assets/image/gradient_background.png'),
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: Container(
+          color: Colors.black.withOpacity(0.4),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  'CureNurture',
-                  style: TextStyle(
-                    fontFamily: 'Montserrat',
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                const Text(
+                  'Together, we nurture healing.\nTogether, we save lives.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
                 ),
-                SizedBox(height: 8),
-                Text(
-                  'Compassion in Action',
-                  style: TextStyle(
-                    fontFamily: 'Montserrat',
-                    fontSize: 14,
-                    color: Colors.white70,
-                  ),
+                const SizedBox(height: 8),
+                const Text(
+                  'CureNurture — Compassion in Action.',
+                  style: TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 16),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ElevatedButton(
+                      onPressed: () => _openDonation(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2F8F9D),
+                      ),
+                      child: const Text('Donate Now'),
+                    ),
+                    const SizedBox(width: 12),
+                    OutlinedButton(
+                      onPressed: () => _openMoreDetails(context),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.white),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Learn More'),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-          ListTile(
-            leading: const Icon(Icons.login),
-            title: const Text('Log In'),
-            onTap: () => _openLogin(context),
+        ),
+      ),
+
+      // DONATE STRIP
+
+      // WHO WE ARE
+      Container(
+        padding: const EdgeInsets.all(24),
+        color: const Color(0xFF1F5E7D),
+        child: const Column(
+        children: [
+        Text(
+            'Who We Are',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-          ListTile(
-            leading: const Icon(Icons.person_add),
-            title: const Text('Sign Up'),
-            onTap: () => _openSignup(context),
+          SizedBox(height: 12),
+          Text(
+            'CureNurture is a compassionate, community-centered platform dedicated to supporting dialysis patients who are struggling with the financial challenges of life-saving treatment. We connect generous donors with individuals and families in need, ensuring that no one faces kidney failure alone—or without the means to survive.\n\nAt CureNurture, we believe every person deserves access to consistent dialysis care, dignity, and hope. Our mission is to make that possible through an innovative and transparent donation system designed to uplift lives.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white70, height: 1.6),
           ),
         ],
       ),
-    ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-  width: double.infinity,
-  height: MediaQuery.of(context).size.height * 0.8,
-  decoration: const BoxDecoration(
-    image: DecorationImage(
-      image: AssetImage('lib/assets/image/gradient_background.png'),
-      fit: BoxFit.cover,
-      colorFilter: ColorFilter.mode(
-        Colors.black54, // 70% dark overlay
-        BlendMode.darken,
       ),
-    ),
-  ),
-  child: Center(
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          // Responsive font sizes based on width
-          double headlineSize = constraints.maxWidth < 600 ? 22 : 32;
-          double taglineSize = constraints.maxWidth < 600 ? 16 : 22;
 
-          return Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
+      const SizedBox(height: 40),
+
+      // PURPOSE + WHY
+Padding(
+  padding: const EdgeInsets.symmetric(horizontal: 16),
+  child: Row(
+    children: [
+      Expanded(
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF38A6DB),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Headline (bold, large, responsive)
+              Text('Our Purpose',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
+              SizedBox(height: 10),
               Text(
-                'Together, we nurture healing.\nTogether, we save lives.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'Montserrat',
-                  color: Colors.white,
-                  fontSize: headlineSize,
-                  fontWeight: FontWeight.bold,
-                  height: 1.3,
-                  shadows: const [
-                    Shadow(
-                      offset: Offset(2, 2),
-                      blurRadius: 4,
-                      color: Colors.black45,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Subheadline (normal, italic, responsive)
-              Text(
-                'CureNurture — Compassion in Action.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'Montserrat',
-                  color: Colors.white,
-                  fontSize: taglineSize,
-                  fontWeight: FontWeight.w400, // normal
-                  fontStyle: FontStyle.italic,
-                  height: 1.3,
-                  shadows: const [
-                    Shadow(
-                      offset: Offset(1.5, 1.5),
-                      blurRadius: 3,
-                      color: Colors.black38,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // Buttons
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 16,
-                runSpacing: 12,
-                children: [
-                  ElevatedButton(
-                    onPressed: () => _openDonation(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2F8F9D), // teal primary
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 28,
-                        vertical: 16,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text(
-                      'Donate Now',
-                      style: TextStyle(
-                        fontFamily: 'Montserrat',
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  OutlinedButton(
-                    onPressed: () => _openMoreDetails(context),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.white70),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 28,
-                        vertical: 16,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text(
-                      'Learn More',
-                      style: TextStyle(
-                        fontFamily: 'Montserrat',
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
+                'CureNurture was created to bridge the gap between patients who urgently need financial assistance and donors who want to make a meaningful impact.\n\n• Dialysis treatment sessions\n• Medical supplies and medications\n• Transportation for hospital visits\n• Emergency procedures\n• Daily living essentials\n\nWe are committed to ensuring that every contribution goes directly to improving the health and well-being of the patients we serve.',
+                style: TextStyle(color: Colors.white, height: 1.6),
               ),
             ],
-          );
-        },
+          ),
+        ),
       ),
-    ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF38A6DB),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Why We Do It',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
+              SizedBox(height: 10),
+              Text(
+                'Kidney failure is not just a medical condition—it is a lifelong struggle.\n\nCureNurture exists to change that reality.\n\nYour generosity can:\n• Extend and improve a patient’s life\n• Reduce the burden on families\n• Bring comfort, stability, and hope\n• Create a ripple effect of compassion',
+                style: TextStyle(color: Colors.white, height: 1.6),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ],
   ),
 ),
-            const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                children: [
-                  _sectionCard(
-                    title: 'Who We Are',
-                    content:
-                        'CureNurture is a compassionate community-driven platform that makes it easy for donors to support people in need. We connect caring supporters with meaningful causes and help ensure every contribution is secure and transparent.',
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: _sectionCard(
-                          title: 'Our Purpose',
-                          content:
-                              'We empower donors and recipients through clear communication, accountable giving, and support for families facing health challenges. Our goal is to make giving simple, trusted, and impactful.',
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _sectionCard(
-                          title: 'Why We Do It',
-                          content:
-                              'No one should face medical hardship alone. Through donations and volunteer support, we help people recover with dignity and build stronger communities together.',
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 16,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Verified Donation Activity',
-                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 16),
-                        StreamBuilder<List<Map<String, String>>>(
-                          stream: _verifiedDonationsStream,
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.waiting) {
-                              return const Center(
-                                child: Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 24),
-                                  child: CircularProgressIndicator(),
-                                ),
-                              );
-                            }
-                            final donations = snapshot.data ?? [];
-                            return Column(
-                              children: donations.map(_verifiedDonationCard).toList(),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Verified gifts show the latest trusted donations processed by CureNurture.',
-                          style: TextStyle(fontSize: 14, color: Colors.black54, height: 1.6),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 16,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'More Details',
-                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Log in before donating so we can keep your contribution secure and ensure every gift is correctly tracked for transparency and care.',
-                          style: TextStyle(fontSize: 16, height: 1.7),
-                        ),
-                        const SizedBox(height: 20),
-                        ElevatedButton(
-                          onPressed: () => _openMoreDetails(context),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _brandBlue,
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          child: const Text('Explore More Details', style: TextStyle(fontWeight: FontWeight.bold)),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _infoCard(
-                        title: 'Gift of Care by UNLV',
-                        subtitle: 'Distribution Date: Mar 26, 2025',
-                        description: 'Highlights care access and community support through education and donation transparency.',
-                      ),
-                      _infoCard(
-                        title: 'Health Matters by Cora Loco',
-                        subtitle: 'Distribution Date: Apr 14, 2025',
-                        description: 'Providing focused health awareness and donations for families in need.',
-                      ),
-                      _infoCard(
-                        title: 'Angel Baby',
-                        subtitle: 'Distribution Date: May 22, 2025',
-                        description: 'Supporting children and families during critical healthcare challenges.',
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+    const SizedBox(height: 40),
+
+
+
+     const SizedBox(height: 40),
+
+      // VISION
+      Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _sectionCard(
+            title: 'Our Vision',
+            content:
+          'At CureNurture, we envision a world where every dialysis patient has access to essential care without financial barriers.',
+      color: const Color(0xFFDBF3FF),
+   ),
+      ),
+
+      const SizedBox(height: 16),
+
+      // TRANSPARENCY
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: _sectionCard(
+          title: 'Our Commitment to Transparency',
+          content:
+              'Trust is the foundation of CureNurture. Every donation is processed with integrity, accountability, and patient well-being at the center.',
+          color: const Color(0xFFDBF3FF),
+    ),
+      ),
+
+      const SizedBox(height: 40),
+
+      // VERIFIED DONATIONS
+      Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Verified Donation Activity',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 32),
-            Container(
-              color: _brandBlue,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Clinic Contact Information',
-                    style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                  SizedBox(height: 12),
-                  Text(
-                    '1925 Enterprise Road • CURE Nurture, All Rights Reserved',
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
-                ],
-              ),
+            const SizedBox(height: 16),
+            StreamBuilder<List<Map<String, String>>>(
+              stream: _verifiedDonationsStream,
+              builder: (context, snapshot) {
+                final donations = snapshot.data ?? [];
+                return Column(
+                  children: donations.map(_verifiedDonationCard).toList(),
+                );
+              },
             ),
-            const SizedBox(height: 24),
           ],
         ),
       ),
-    );
-  }
+    Container(
+  padding: const EdgeInsets.all(32),
+  color: const Color(0xFFD9EEF2),
+  child: Column(
+    children: [
+      const Text(
+        'Join Us',
+        style: TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      const SizedBox(height: 16),
+      const Text(
+        'Your support can transform despair into hope and struggle into strength. '
+        'By partnering with CureNurture, you become part of a life-changing mission—one that uplifts patients, strengthens families, and restores hope to those who need it most.',
+        textAlign: TextAlign.center,
+        style: TextStyle(height: 1.6),
+      ),
+      const SizedBox(height: 20),
+      const Text(
+        'Together, we nurture healing. Together, we save lives.\nCureNurture — Compassion in Action.',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontWeight: FontWeight.bold),
+      ),
+      const SizedBox(height: 20),
+
+      ElevatedButton(
+        onPressed: () => _openDonation(context),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF2F8F9D),
+          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+        child: const Text('Donate Now'),
+      ),
+    ],
+  ),
+),
+    ],
+  ),
+),
+  );
+}
 }

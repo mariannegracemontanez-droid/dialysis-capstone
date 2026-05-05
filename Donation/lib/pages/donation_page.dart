@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'login_page.dart';
 import 'payment_page.dart';
+import 'proof_page.dart';
 
 class DonationPage extends StatefulWidget {
   const DonationPage({super.key});
@@ -22,6 +23,19 @@ class _DonationPageState extends State<DonationPage> {
 
   final Color _darkTeal = const Color(0xFF1F5E7D);
   final Color _lightGray = const Color(0xFFF2F5F8);
+
+
+
+  @override
+  void initState() {
+    super.initState();
+
+    final user = Supabase.instance.client.auth.currentUser;
+
+    if (user != null) {
+      _emailController.text = user.email ?? '';
+    }
+  }
 
   @override
   void dispose() {
@@ -109,29 +123,11 @@ class _DonationPageState extends State<DonationPage> {
       _successMessage = null;
     });
 
-    final confirmed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => PaymentPage(
-          fullName: name,
-          email: email,
-          amount: amount,
-          paymentMethod: paymentMethod,
-        ),
-      ),
-    );
-
     if (!mounted) return;
     setState(() {
       _isLoading = false;
-      if (confirmed == true) {
-        _successMessage = 'Donation pending verification. Thank you for your support!';
-        _errorMessage = null;
-        _selectedPaymentChannel = null;
-        _customAmountController.clear();
-      }
     });
   }
-
   Widget _buildTextField({
     required String hint,
     required TextEditingController controller,
@@ -169,23 +165,44 @@ class _DonationPageState extends State<DonationPage> {
       child: Text(label),
     );
   }
+Widget _paymentButton(String method) {
+  final isSelected = _selectedPaymentChannel == method;
 
-  Widget _buildPaymentChannelButton(String label) {
-    final isSelected = _selectedPaymentChannel == label;
-    return Expanded(
-      child: OutlinedButton(
-        onPressed: () => _selectPaymentChannel(label),
-        style: OutlinedButton.styleFrom(
-          backgroundColor: isSelected ? _darkTeal : Colors.white,
-          foregroundColor: isSelected ? Colors.white : _darkTeal,
-          side: BorderSide(color: _darkTeal.withOpacity(0.5)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          padding: const EdgeInsets.symmetric(vertical: 18),
+  return GestureDetector(
+    onTap: () {
+      setState(() => _selectedPaymentChannel = method);
+    },
+    child: AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      decoration: BoxDecoration(
+        color: isSelected ? const Color(0xFF2F6D85) : Colors.white,
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(
+          color: isSelected ? const Color(0xFF2F6D85) : Colors.grey.shade300,
         ),
-        child: Text(label, textAlign: TextAlign.center),
+        boxShadow: isSelected
+            ? [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                )
+              ]
+            : [],
       ),
-    );
-  }
+      child: Center(
+        child: Text(
+          method,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.black87,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    ),
+  );
+}
 
   Widget _buildFooter() {
     return Container(
@@ -229,7 +246,7 @@ class _DonationPageState extends State<DonationPage> {
     final user = Supabase.instance.client.auth.currentUser;
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: _darkTeal,
+         backgroundColor: const Color(0xFFF8FAFC),
         elevation: 0,
         title: Row(
           children: [
@@ -239,120 +256,281 @@ class _DonationPageState extends State<DonationPage> {
           ],
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 10),
-            const Text(
-              'Donor Contribution Form',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+     body: Center(
+  child: ConstrainedBox(
+   constraints: const BoxConstraints(maxWidth: 520),
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          const SizedBox(height: 10),
+
+          const Text(
+            'Donor Contribution',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
             ),
-            const SizedBox(height: 26),
-            if (user == null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 16, offset: const Offset(0, 10)),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    const Text(
-                      'Please log in to donate.',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      textAlign: TextAlign.center,
+          ),
+
+          const SizedBox(height: 6),
+
+          const Text(
+            'You may edit your details if needed',
+            style: TextStyle(color: Colors.grey),
+          ),
+
+          const SizedBox(height: 24),
+
+          /// 🔒 NOT LOGGED IN
+          if (user == null)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 15,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  const Text(
+                    'Please log in to donate',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Sign in or create an account first.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(builder: (_) => const LoginPage()),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _darkTeal,
+                      minimumSize: const Size(double.infinity, 50),
                     ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Sign in or create an account before proceeding with your donation.',
-                      textAlign: TextAlign.center,
+                    child: const Text("Go to Login"),
+                  )
+                ],
+              ),
+            ),
+
+          /// ✅ FORM
+          if (user != null)
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // NAME
+                  _buildTextField(
+                    hint: 'Full Name / Organization',
+                    controller: _nameController,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // EMAIL
+                  _buildTextField(
+                    hint: 'Email Address',
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+
+                  const SizedBox(height: 24),
+                  const Divider(height: 32, thickness: 0.8),
+
+                  const Text(
+                    'Choose Amount',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
                     ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(backgroundColor: _darkTeal, padding: const EdgeInsets.symmetric(vertical: 16)),
-                        onPressed: () {
-                          Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const LoginPage()));
-                        },
-                        child: const Text('Go to Login'),
+                  ),
+                  const SizedBox(height: 12),
+
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      SizedBox(
+                        width: 150,
+                        child: _buildTextField(
+                          hint: 'Custom Amount',
+                          controller: _customAmountController,
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                      _buildAmountButton('P50'),
+                      _buildAmountButton('P100'),
+                      _buildAmountButton('P500'),
+                      _buildAmountButton('P1000'),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
+                  const Divider(height: 32, thickness: 0.8),
+
+                  const Text(
+                    'Payment Method',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  Row(
+                    children: [
+                      Expanded(child: _paymentButton('GCASH')),
+                      const SizedBox(width: 16),
+                      Expanded(child: _paymentButton('BANK TRANSFER')),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  if (_errorMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(color: Colors.red),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            if (user != null) ...[
-              _buildTextField(hint: 'Full Name / Organization Name', controller: _nameController),
-              const SizedBox(height: 16),
-              _buildTextField(hint: 'Email Address', controller: _emailController, keyboardType: TextInputType.emailAddress),
-              const SizedBox(height: 24),
-              const Text('Choose an amount to donate:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  SizedBox(width: 140, child: _buildTextField(hint: 'Custom Amount', controller: _customAmountController, keyboardType: TextInputType.number)),
-                  _buildAmountButton('P50'),
-                  _buildAmountButton('P100'),
-                  _buildAmountButton('P500'),
-                  _buildAmountButton('P1000'),
+
+                  if (_successMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        _successMessage!,
+                        style: const TextStyle(color: Colors.green),
+                      ),
+                    ),
+
+                  /// 🔥 DONATE BUTTON
+                  SizedBox(
+                    height: 55,
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isLoading
+                          ? null
+                          : () async {
+                              final user = Supabase
+                                  .instance.client.auth.currentUser;
+
+                              if (user == null) return;
+
+                              final amount = _parseAmount();
+
+                              if (amount == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content:
+                                          Text("Enter valid amount")),
+                                );
+                                return;
+                              }
+
+                              if (_selectedPaymentChannel == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text(
+                                          "Select payment method")),
+                                );
+                                return;
+                              }
+
+                              try {
+                                final response = await Supabase
+                                    .instance.client
+                                    .from('donations')
+                                    .insert({
+                                  'donor_id': user.id,
+                                  'name': _nameController.text,
+                                  'email': _emailController.text,
+                                  'amount': amount,
+                                  'payment_method':
+                                      _selectedPaymentChannel,
+                                  'status': 'pending',
+                                }).select().single();
+
+                                final donationId = response['id'];
+
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ProofUploadPage(
+                                      donationId: donationId,
+                                    ),
+                                  ),
+                                );
+                              } catch (e) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text("Error: $e")),
+                                );
+                              }
+                            },
+                          style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF38A6DB),
+                        elevation: 4,
+                        shadowColor: Colors.black.withOpacity(0.2),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                      ),
+                      child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text(
+                          'DONATE NOW',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                            letterSpacing: 1,
+                            color: Colors.white,
+                          ),
+                        ),
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 24),
-              const Text('Payment Channel', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  _buildPaymentChannelButton('GCASH'),
-                  const SizedBox(width: 12),
-                  _buildPaymentChannelButton('BANK TRANSFER'),
-                ],
-              ),
-              const SizedBox(height: 24),
-              if (_errorMessage != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16.0),
-                  child: Text(
-                    _errorMessage!,
-                    style: const TextStyle(color: Colors.red, fontSize: 14),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              if (_successMessage != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16.0),
-                  child: Text(
-                    _successMessage!,
-                    style: const TextStyle(color: Colors.green, fontSize: 14),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              SizedBox(
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _goToPayment,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _darkTeal,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Text('DONATE NOW', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ],
-            const SizedBox(height: 32),
-            _buildFooter(),
-          ],
-        ),
+            ),
+
+          const SizedBox(height: 30),
+
+          _buildFooter(),
+        ],
       ),
+    ),
+  ),
+)
     );
-  }
+
+}
 }

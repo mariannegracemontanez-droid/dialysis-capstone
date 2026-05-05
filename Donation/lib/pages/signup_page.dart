@@ -17,9 +17,11 @@ class _SignupPageState extends State<SignupPage> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+
   bool _isLoading = false;
   bool _showPassword = false;
   bool _showConfirmPassword = false;
+
   String? _errorMessage;
   String? _fullNameError;
   String? _emailError;
@@ -53,6 +55,7 @@ class _SignupPageState extends State<SignupPage> {
       _confirmPasswordError = null;
     });
 
+    // VALIDATION
     if (fullName.isEmpty || email.isEmpty || phone.isEmpty) {
       setState(() {
         _fullNameError = fullName.isEmpty ? 'Full name is required' : null;
@@ -65,9 +68,8 @@ class _SignupPageState extends State<SignupPage> {
     if (password.isEmpty || confirmPassword.isEmpty) {
       setState(() {
         _passwordError = password.isEmpty ? 'Password is required' : null;
-        _confirmPasswordError = confirmPassword.isEmpty
-            ? 'Confirm your password'
-            : null;
+        _confirmPasswordError =
+            confirmPassword.isEmpty ? 'Confirm your password' : null;
       });
       return;
     }
@@ -85,6 +87,7 @@ class _SignupPageState extends State<SignupPage> {
     });
 
     try {
+      /// 🔥 SIGN UP (AUTH)
       final response = await Supabase.instance.client.auth.signUp(
         email: email,
         password: password,
@@ -93,9 +96,18 @@ class _SignupPageState extends State<SignupPage> {
       final user = response.user ?? response.session?.user;
 
       if (user == null) {
-        throw Exception('Signup failed. No user returned from Supabase.');
+        throw Exception("User creation failed");
       }
 
+      /// 🔥 SAVE TO DONORS TABLE
+      await Supabase.instance.client.from('donors').insert({
+        'id': user.id,
+        'name': fullName,
+        'email': email,
+        'phone': phone,
+      });
+
+      /// 🔥 OPTIONAL: SAVE TO PROFILES
       await Supabase.instance.client.from('profiles').upsert({
         'id': user.id,
         'email': email,
@@ -106,29 +118,42 @@ class _SignupPageState extends State<SignupPage> {
 
       if (!mounted) return;
 
+      setState(() {
+        _isLoading = false;
+      });
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Welcome to CureNurture 👋')),
       );
+
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const LandingPage()),
         (route) => false,
       );
-    } on AuthException catch (e) {
+    }
+
+    /// ❗ FIXED SYNTAX HERE
+    on AuthException catch (e) {
       if (!mounted) return;
+
       final lower = (e.message ?? '').toLowerCase();
+
       final friendly =
           lower.contains('already registered') ||
-              lower.contains('duplicate') ||
-              lower.contains('user already exists') ||
-              lower.contains('user exists')
-          ? 'This email is already registered. Please log in instead.'
-          : e.message;
+                  lower.contains('duplicate') ||
+                  lower.contains('user exists')
+              ? 'This email is already registered. Please log in instead.'
+              : e.message;
+
       setState(() {
         _errorMessage = friendly;
         _isLoading = false;
       });
-    } catch (e) {
+    }
+
+    catch (e) {
       if (!mounted) return;
+
       setState(() {
         _errorMessage = 'An error occurred: $e';
         _isLoading = false;
@@ -150,15 +175,14 @@ class _SignupPageState extends State<SignupPage> {
             child: Image.asset(
               'lib/assets/image/gradient_background.png',
               fit: BoxFit.cover,
-              width: double.infinity,
-              height: double.infinity,
             ),
           ),
           SafeArea(
             child: Center(
               child: Container(
                 constraints: const BoxConstraints(maxWidth: 450),
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+                margin:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -177,237 +201,129 @@ class _SignupPageState extends State<SignupPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Center(
-                            child: Column(
-                              children: [
-                                Image.asset(
-                                  'lib/assets/image/CureNurture_logo.png',
-                                  width: 72,
-                                  height: 72,
-                                  fit: BoxFit.contain,
+                          /// LOGO + TITLE
+                          Column(
+                            children: [
+                              Image.asset(
+                                'lib/assets/image/CureNurture_logo.png',
+                                width: 72,
+                                height: 72,
+                              ),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Cure Nurture',
+                                style: TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                  color: primaryColor,
                                 ),
-                                const SizedBox(height: 16),
-                                RichText(
-                                  text: const TextSpan(
-                                    children: [
-                                      TextSpan(
-                                        text: 'Cure',
-                                        style: TextStyle(
-                                          color: Color(0xFF3B97A2),
-                                          fontSize: 34,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      TextSpan(
-                                        text: ' NURTURE',
-                                        style: TextStyle(
-                                          color: Color(0xFF163B56),
-                                          fontSize: 34,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                const Text(
-                                  'Create an account to start helping.',
-                                  style: TextStyle(
-                                    color: Colors.black54,
-                                    fontSize: 14,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            ),
+                              ),
+                              const SizedBox(height: 6),
+                              const Text(
+                                'Create an account to start helping',
+                                style: TextStyle(color: Colors.black54),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 32),
-                          TextField(
-                            controller: _fullNameController,
-                            decoration: InputDecoration(
-                              labelText: 'Full Name',
-                              hintText: 'Enter Your Full Name',
-                              errorText: _fullNameError,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30),
-                                borderSide: const BorderSide(color: Colors.black12),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30),
-                                borderSide: const BorderSide(color: Colors.black12),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30),
-                                borderSide: const BorderSide(color: secondaryColor),
-                              ),
-                            ),
-                            textCapitalization: TextCapitalization.words,
-                          ),
+
+                          const SizedBox(height: 30),
+
+                          /// INPUTS
+                          _buildField(
+                              controller: _fullNameController,
+                              label: 'Full Name',
+                              error: _fullNameError),
+
                           const SizedBox(height: 16),
-                          TextField(
-                            controller: _emailController,
-                            decoration: InputDecoration(
-                              labelText: 'Email',
-                              hintText: 'Enter Your Email',
-                              errorText: _emailError,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30),
-                                borderSide: const BorderSide(color: Colors.black12),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30),
-                                borderSide: const BorderSide(color: Colors.black12),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30),
-                                borderSide: const BorderSide(color: secondaryColor),
-                              ),
-                            ),
-                            keyboardType: TextInputType.emailAddress,
-                          ),
+
+                          _buildField(
+                              controller: _emailController,
+                              label: 'Email',
+                              error: _emailError),
+
                           const SizedBox(height: 16),
-                          TextField(
-                            controller: _phoneController,
-                            decoration: InputDecoration(
-                              labelText: 'Phone Number',
-                              hintText: 'Enter Your Phone Number',
-                              errorText: _phoneError,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30),
-                                borderSide: const BorderSide(color: Colors.black12),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30),
-                                borderSide: const BorderSide(color: Colors.black12),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30),
-                                borderSide: const BorderSide(color: secondaryColor),
-                              ),
-                            ),
-                            keyboardType: TextInputType.phone,
-                          ),
+
+                          _buildField(
+                              controller: _phoneController,
+                              label: 'Phone',
+                              error: _phoneError),
+
                           const SizedBox(height: 16),
-                          TextField(
+
+                          _buildPasswordField(
                             controller: _passwordController,
-                            decoration: InputDecoration(
-                              labelText: 'Password',
-                              hintText: 'Password',
-                              errorText: _passwordError,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30),
-                                borderSide: const BorderSide(color: Colors.black12),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30),
-                                borderSide: const BorderSide(color: Colors.black12),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30),
-                                borderSide: const BorderSide(color: secondaryColor),
-                              ),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _showPassword ? Icons.visibility_off : Icons.visibility,
-                                  color: Colors.black45,
-                                ),
-                                onPressed: () {
-                                  setState(() {
-                                    _showPassword = !_showPassword;
-                                  });
-                                },
-                              ),
-                            ),
-                            obscureText: !_showPassword,
+                            label: 'Password',
+                            error: _passwordError,
+                            isVisible: _showPassword,
+                            onToggle: () {
+                              setState(() {
+                                _showPassword = !_showPassword;
+                              });
+                            },
                           ),
+
                           const SizedBox(height: 16),
-                          TextField(
+
+                          _buildPasswordField(
                             controller: _confirmPasswordController,
-                            decoration: InputDecoration(
-                              labelText: 'Confirm Password',
-                              hintText: 'Confirm Password',
-                              errorText: _confirmPasswordError,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30),
-                                borderSide: const BorderSide(color: Colors.black12),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30),
-                                borderSide: const BorderSide(color: Colors.black12),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30),
-                                borderSide: const BorderSide(color: secondaryColor),
-                              ),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _showConfirmPassword ? Icons.visibility_off : Icons.visibility,
-                                  color: Colors.black45,
-                                ),
-                                onPressed: () {
-                                  setState(() {
-                                    _showConfirmPassword = !_showConfirmPassword;
-                                  });
-                                },
-                              ),
-                            ),
-                            obscureText: !_showConfirmPassword,
+                            label: 'Confirm Password',
+                            error: _confirmPasswordError,
+                            isVisible: _showConfirmPassword,
+                            onToggle: () {
+                              setState(() {
+                                _showConfirmPassword =
+                                    !_showConfirmPassword;
+                              });
+                            },
                           ),
+
                           const SizedBox(height: 24),
+
                           if (_errorMessage != null)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 16.0),
-                              child: Text(
-                                _errorMessage!,
-                                style: const TextStyle(color: Colors.red),
-                                textAlign: TextAlign.center,
+                            Text(
+                              _errorMessage!,
+                              style: const TextStyle(color: Colors.red),
+                              textAlign: TextAlign.center,
+                            ),
+
+                          const SizedBox(height: 12),
+
+                          /// BUTTON
+                          ElevatedButton(
+                            onPressed: _isLoading ? null : _signup,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: primaryColor,
+                              minimumSize: const Size(double.infinity, 50),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
                               ),
                             ),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 52,
-                            child: ElevatedButton(
-                              onPressed: _isLoading ? null : _signup,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: primaryColor,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(15),
-                                ),
-                              ),
-                              child: _isLoading
-                                  ? const SizedBox(
-                                      height: 20,
-                                      width: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Text(
-                                      'Sign Up',
-                                      style: TextStyle(fontSize: 16),
-                                    ),
-                            ),
+                            child: _isLoading
+                                ? const CircularProgressIndicator(
+                                    color: Colors.white,
+                                  )
+                                : const Text('Sign Up'),
                           ),
-                          const SizedBox(height: 20),
-                          Center(
-                            child: Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                const Text('Already have an account?', style: TextStyle(color: Colors.black54)),
-                                TextButton(
-                                  onPressed: () {
-                                    Navigator.of(context).pushReplacement(
-                                      MaterialPageRoute(builder: (_) => const LoginPage()),
-                                    );
-                                  },
-                                  child: const Text(
-                                    'Log In',
-                                    style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                              ],
-                            ),
+
+                          const SizedBox(height: 16),
+
+                          /// LOGIN LINK
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text('Already have an account?'),
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.pushReplacement(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) =>
+                                            const LoginPage()),
+                                  );
+                                },
+                                child: const Text('Log In'),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -418,6 +334,49 @@ class _SignupPageState extends State<SignupPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 🔧 FIELD BUILDER
+  Widget _buildField({
+    required TextEditingController controller,
+    required String label,
+    String? error,
+  }) {
+    return TextField(
+      controller: controller,
+      decoration: InputDecoration(
+        labelText: label,
+        errorText: error,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+      ),
+    );
+  }
+
+  /// 🔧 PASSWORD FIELD
+  Widget _buildPasswordField({
+    required TextEditingController controller,
+    required String label,
+    required bool isVisible,
+    required VoidCallback onToggle,
+    String? error,
+  }) {
+    return TextField(
+      controller: controller,
+      obscureText: !isVisible,
+      decoration: InputDecoration(
+        labelText: label,
+        errorText: error,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        suffixIcon: IconButton(
+          icon: Icon(isVisible ? Icons.visibility_off : Icons.visibility),
+          onPressed: onToggle,
+        ),
       ),
     );
   }
