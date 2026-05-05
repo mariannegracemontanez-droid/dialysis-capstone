@@ -324,12 +324,12 @@ Widget build(BuildContext context) {
             fit: BoxFit.contain,
           ),
           const SizedBox(width: 10),
-          Column(
+          const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'Cure',
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Montserrat',
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
@@ -345,7 +345,7 @@ Widget build(BuildContext context) {
               ),
               Text(
                 'NURTURE',
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Montserrat',
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -424,9 +424,9 @@ Widget build(BuildContext context) {
         children: [
           DrawerHeader(
             decoration: BoxDecoration(color: _darkTeal),
-            child: Column(
+            child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 Text(
                   'CureNurture',
                   style: TextStyle(
@@ -468,8 +468,8 @@ Widget build(BuildContext context) {
             Container(
   width: double.infinity,
   height: MediaQuery.of(context).size.height * 0.8,
-  decoration: BoxDecoration(
-    image: const DecorationImage(
+  decoration: const BoxDecoration(
+    image: DecorationImage(
       image: AssetImage('lib/assets/image/gradient_background.png'),
       fit: BoxFit.cover,
       colorFilter: ColorFilter.mode(

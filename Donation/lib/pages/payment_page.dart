@@ -123,8 +123,8 @@ class _PaymentPageState extends State<PaymentPage> {
         borderRadius: BorderRadius.circular(20),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      child: Column(
-        children: const [
+      child: const Column(
+        children: [
           Text(
             'Clinic Contact Information',
             style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
@@ -197,9 +197,9 @@ class _PaymentPageState extends State<PaymentPage> {
                   border: Border.all(color: Colors.grey.shade300),
                 ),
                 child: _receiptPhoto == null
-                    ? Column(
+                    ? const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
+                        children: [
                           Icon(Icons.add_a_photo, size: 36, color: Colors.black45),
                           SizedBox(height: 12),
                           Text('ADD PHOTO', style: TextStyle(color: Colors.black54, fontSize: 16, fontWeight: FontWeight.w600)),

@@ -3,14 +3,14 @@ import '../services/profile_service.dart';
 import 'admin_create_page.dart';
 import 'admin_edit_page.dart';
 
-class AdminAccountsPage extends StatefulWidget {
-  const AdminAccountsPage({super.key});
+class AccountManagementPage extends StatefulWidget {
+  const AccountManagementPage({super.key});
 
   @override
-  State<AdminAccountsPage> createState() => _AdminAccountsPageState();
+  State<AccountManagementPage> createState() => _AccountManagementPageState();
 }
 
-class _AdminAccountsPageState extends State<AdminAccountsPage> {
+class _AccountManagementPageState extends State<AccountManagementPage> {
   final ProfileService _service = ProfileService();
   late Future<List<Map<String, dynamic>>> _adminsFuture;
   late Future<List<Map<String, dynamic>>> _logsFuture;
@@ -49,6 +49,8 @@ class _AdminAccountsPageState extends State<AdminAccountsPage> {
   }
 
   Future<void> _openEditAdmin(Map<String, dynamic> admin) async {
+    if (admin['status'] == 'inactive') return;
+
     final updated = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => AdminEditPage(admin: admin)),
     );
@@ -91,19 +93,29 @@ class _AdminAccountsPageState extends State<AdminAccountsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Admin account deleted successfully.')),
       );
+      
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Failed to delete admin: $error')));
     }
+        await _service.logAction(
+  action: 'delete_admin',
+  targetId: admin['id'],
+  targetName: admin['full_name'],
+);
   }
+  
 
   Widget _adminCard(Map<String, dynamic> admin) {
     final fullName = admin['full_name'] as String? ?? 'Unknown';
     final email = admin['email'] as String? ?? 'No email';
     final phone = admin['phone'] as String? ?? 'No phone';
     final id = admin['id'] as String? ?? 'Unknown ID';
+
+    final status = admin['status'] ?? 'active';
+    final clinicName = admin['clinics']?['name'];
 
     return Container(
       margin: const EdgeInsets.only(bottom: 18),
@@ -150,6 +162,21 @@ class _AdminAccountsPageState extends State<AdminAccountsPage> {
                       email,
                       style: const TextStyle(color: Color(0xFF5E6B74)),
                     ),
+                    const SizedBox(height: 6),
+
+                    // 🔥 STATUS / CLINIC FIX
+                    Text(
+                      status == 'inactive'
+                          ? 'Status: Inactive'
+                          : 'Clinic: ${clinicName ?? 'No Clinic'}',
+                      style: TextStyle(
+                        color: status == 'inactive'
+                            ? Colors.red
+                            : const Color(0xFF5E6B74),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+
                     const SizedBox(height: 2),
                     Text(
                       'ID: $id',
@@ -159,11 +186,21 @@ class _AdminAccountsPageState extends State<AdminAccountsPage> {
                       ),
                     ),
                   ],
+                  
                 ),
+                
               ),
+              Text(
+  admin['status'] == 'inactive'
+      ? 'Status: Inactive'
+      : 'Clinic: ${admin['clinics']?['name'] ?? 'No Clinic'}',
+),
               const SizedBox(width: 12),
+
               FilledButton(
-                onPressed: () => _openEditAdmin(admin),
+                onPressed: status == 'inactive'
+                    ? null
+                    : () => _openEditAdmin(admin),
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFF0F5B7A),
                   shape: RoundedRectangleBorder(
@@ -172,7 +209,9 @@ class _AdminAccountsPageState extends State<AdminAccountsPage> {
                 ),
                 child: const Text('Edit'),
               ),
+
               const SizedBox(width: 10),
+
               FilledButton(
                 onPressed: () => _deleteAdmin(admin),
                 style: FilledButton.styleFrom(
@@ -226,36 +265,11 @@ class _AdminAccountsPageState extends State<AdminAccountsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                actorName,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              Text(
-                action.toUpperCase(),
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF0F5B7A),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Target: $targetName',
-            style: const TextStyle(color: Color(0xFF5E6B74)),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            timestamp,
-            style: const TextStyle(color: Color(0xFF7F8B9B), fontSize: 12),
-          ),
+          Text(actorName, style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          Text('Action: $action'),
+          Text('Target: $targetName'),
+          Text(timestamp),
         ],
       ),
     );
@@ -267,6 +281,7 @@ class _AdminAccountsPageState extends State<AdminAccountsPage> {
       future: _showLogs ? _logsFuture : _adminsFuture,
       builder: (context, snapshot) {
         Widget body;
+
         if (snapshot.connectionState != ConnectionState.done) {
           body = const Center(child: CircularProgressIndicator());
         } else if (snapshot.hasError) {
@@ -278,6 +293,7 @@ class _AdminAccountsPageState extends State<AdminAccountsPage> {
           );
         } else {
           final items = snapshot.data ?? [];
+
           body = Column(
             children: [
               Row(
@@ -308,65 +324,43 @@ class _AdminAccountsPageState extends State<AdminAccountsPage> {
                     },
                   ),
                   const Spacer(),
+
+                  // 🔥 ADD ACCOUNT BUTTON (RESTORED)
                   if (!_showLogs)
                     FilledButton(
                       onPressed: _openCreateAdmin,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF0F5B7A),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 14,
-                        ),
-                        child: Text('Add Account'),
-                      ),
+                      child: const Text('Add Account'),
                     ),
                 ],
               ),
               const SizedBox(height: 24),
+
               if (items.isEmpty)
                 Center(
                   child: Text(
                     _showLogs
                         ? 'No audit logs found yet.'
-                        : 'No admin accounts have been created yet.',
-                    style: const TextStyle(color: Color(0xFF637381)),
+                        : 'No admin accounts yet.',
                   ),
                 )
               else if (_showLogs)
                 Column(children: items.map(_buildLogsCard).toList())
               else
-                Column(children: items.map(_adminCard).toList()),
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    return _adminCard(items[index]);
+                  },
+                ),
             ],
           );
         }
 
         return Padding(
-          padding: const EdgeInsets.only(top: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Admin Account Management',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF0F3A55),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Manage admin accounts and review the audit trail for create, update, and delete actions.',
-                style: TextStyle(fontSize: 14, color: Color(0xFF637381)),
-              ),
-              const SizedBox(height: 24),
-              Expanded(child: body),
-            ],
-          ),
+          padding: const EdgeInsets.all(20),
+          child: SingleChildScrollView(child: body),
         );
       },
     );

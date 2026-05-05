@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/profile_service.dart';
+import '../config/supabase_config.dart';
 
 class AdminEditPage extends StatefulWidget {
   final Map<String, dynamic> admin;
@@ -16,76 +17,106 @@ class _AdminEditPageState extends State<AdminEditPage> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  
+
   final ProfileService _service = ProfileService();
+
   bool _isSaving = false;
   String? _errorMessage;
+
+  bool _obscurePassword = true;
+  bool _obscureConfirm = true;
+  bool _changePassword = false; // 🔥 NEW
+
+  List<Map<String, dynamic>> _clinics = [];
+  Set<String> _clinicsWithAdmin = {};
+  String? selectedClinicId;
 
   @override
   void initState() {
     super.initState();
-    _nameController.text = widget.admin['full_name'] as String? ?? '';
-    _phoneController.text =
-        widget.admin['phone'] as String? ??
-        widget.admin['phone_number'] as String? ??
-        '';
+
+    _nameController.text = widget.admin['full_name'] ?? '';
+    _phoneController.text = widget.admin['phone'] ?? '';
+    selectedClinicId = widget.admin['clinic_id'];
+
+    _loadClinics();
+    _loadAdmins();
   }
 
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _phoneController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
-    super.dispose();
+  Future<void> _loadClinics() async {
+    final data =
+        await SupabaseConfig.client.from('clinics').select();
+
+    setState(() {
+      _clinics = List<Map<String, dynamic>>.from(data);
+    });
+  }
+
+  Future<void> _loadAdmins() async {
+    final data = await SupabaseConfig.client
+        .from('profiles')
+        .select('clinic_id')
+        .eq('role', 'admin');
+
+    setState(() {
+      _clinicsWithAdmin =
+          data.map((e) => e['clinic_id'].toString()).toSet();
+    });
   }
 
   Future<void> _saveChanges() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() {
-      _isSaving = true;
-      _errorMessage = null;
-    });
-
     final password = _passwordController.text.trim();
     final confirm = _confirmPasswordController.text.trim();
 
-    if (password.isNotEmpty && password != confirm) {
+    if (_changePassword && password != confirm) {
       setState(() {
         _errorMessage = 'Passwords do not match.';
-        _isSaving = false;
       });
       return;
     }
 
+    setState(() {
+      _isSaving = true;
+      _errorMessage = null;
+    });
+    await ProfileService().logAction(
+  action: 'edit_admin',
+  targetId: widget.admin['id'],
+  targetName: _nameController.text.trim(),
+);
     try {
       await _service.updateAdmin(
-        adminId: widget.admin['id'] as String,
+        adminId: widget.admin['id'],
         fullName: _nameController.text.trim(),
         phone: _phoneController.text.trim(),
-        password: password.isNotEmpty ? password : null,
+        password:
+            _changePassword && password.isNotEmpty ? password : null,
+        clinicId: selectedClinicId,
       );
 
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (error) {
-      if (!mounted) return;
       setState(() {
-        _errorMessage = error.toString().replaceFirst('Exception: ', '');
+        _errorMessage =
+            error.toString().replaceFirst('Exception: ', '');
       });
     } finally {
-      if (mounted) {
-        setState(() {
-          _isSaving = false;
-        });
-      }
+      setState(() {
+        _isSaving = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final email = widget.admin['email'] as String? ?? '-';
-    final id = widget.admin['id'] as String? ?? '-';
+    final email = widget.admin['email'] ?? '-';
+    final id = widget.admin['id'] ?? '-';
+    final isInactive = widget.admin['status'] == 'inactive';
+    final hasClinic = widget.admin['clinic_id'] != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -115,86 +146,169 @@ class _AdminEditPageState extends State<AdminEditPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
+
                     if (_errorMessage != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Text(
-                          _errorMessage!,
-                          style: const TextStyle(color: Colors.redAccent),
-                        ),
+                      Text(
+                        _errorMessage!,
+                        style:
+                            const TextStyle(color: Colors.redAccent),
                       ),
+
+                    const SizedBox(height: 10),
+
                     Form(
                       key: _formKey,
                       child: Column(
                         children: [
+                          // 🔥 CLINIC DROPDOWN WITH REMOVE
+                         DropdownButtonFormField<String?>(
+                            decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                            ),
+                            value: selectedClinicId,
+                            hint: const Text("Select Clinic"),
+
+                            items: _clinics.map((clinic) {
+                              final hasAdmin =
+                                  _clinicsWithAdmin.contains(clinic['id']);
+                              final isCurrent =
+                                  clinic['id'] == widget.admin['clinic_id'];
+
+                              return DropdownMenuItem<String?>(
+                                value: clinic['id'],
+                                enabled: !hasAdmin || isCurrent,
+                                child: Text(
+                                  clinic['name'] +
+                                      (hasAdmin && !isCurrent
+                                          ? " (Has Admin)"
+                                          : ""),
+                                ),
+                              );
+                            }).toList(),
+
+                            // 🔥 LOCK LOGIC
+                            onChanged: (isInactive || hasClinic)
+                                ? null
+                                : (value) {
+                                    setState(() {
+                                      selectedClinicId = value;
+                                    });
+                                  },
+                          ),
+
+                          const SizedBox(height: 14),
+
                           TextFormField(
                             initialValue: email,
-                            decoration: const InputDecoration(
-                              labelText: 'Email',
-                            ),
                             readOnly: true,
+                            decoration:
+                                const InputDecoration(
+                                    labelText: 'Email'),
                           ),
+
                           const SizedBox(height: 14),
+
                           TextFormField(
                             initialValue: id,
-                            decoration: const InputDecoration(
-                              labelText: 'User ID',
-                            ),
                             readOnly: true,
+                            decoration:
+                                const InputDecoration(
+                                    labelText: 'User ID'),
                           ),
+
                           const SizedBox(height: 14),
+
                           TextFormField(
                             controller: _nameController,
                             decoration: const InputDecoration(
-                              labelText: 'Edit Full Name',
+                              labelText: 'Full Name',
                             ),
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'Enter full name';
-                              }
-                              return null;
-                            },
+                            validator: (value) =>
+                                value == null || value.isEmpty
+                                    ? 'Required'
+                                    : null,
                           ),
+
                           const SizedBox(height: 14),
+
                           TextFormField(
                             controller: _phoneController,
                             decoration: const InputDecoration(
-                              labelText: 'Enter Phone Number',
+                              labelText: 'Phone',
                             ),
-                            keyboardType: TextInputType.phone,
                           ),
-                          const SizedBox(height: 14),
-                          TextFormField(
-                            controller: _passwordController,
-                            decoration: const InputDecoration(
-                              labelText: 'New Password',
-                            ),
-                            obscureText: true,
+
+                          const SizedBox(height: 10),
+
+                          // 🔥 TOGGLE PASSWORD
+                          SwitchListTile(
+                            title:
+                                const Text("Change Password"),
+                            value: _changePassword,
+                            onChanged: (val) {
+                              setState(() {
+                                _changePassword = val;
+                              });
+                            },
                           ),
-                          const SizedBox(height: 14),
-                          TextFormField(
-                            controller: _confirmPasswordController,
-                            decoration: const InputDecoration(
-                              labelText: 'Confirm Password',
-                            ),
-                            obscureText: true,
-                          ),
-                          const SizedBox(height: 20),
-                          SizedBox(
-                            height: 52,
-                            child: FilledButton(
-                              onPressed: _isSaving ? null : _saveChanges,
-                              style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF0F5B7A),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+
+                          if (_changePassword) ...[
+                            TextFormField(
+                              controller: _passwordController,
+                              obscureText: _obscurePassword,
+                              decoration: InputDecoration(
+                                labelText: 'New Password',
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
+                                  ),
+                                  
+                                  onPressed: () {
+                                    setState(() {
+                                      _obscurePassword =
+                                          !_obscurePassword;
+                                    });
+                                  },
                                 ),
                               ),
+                            ),
+                            const SizedBox(height: 14),
+                            TextFormField(
+                              controller:
+                                  _confirmPasswordController,
+                              obscureText: _obscureConfirm,
+                              decoration: InputDecoration(
+                                labelText:
+                                    'Confirm Password',
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscureConfirm
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      _obscureConfirm =
+                                          !_obscureConfirm;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+
+                          const SizedBox(height: 20),
+
+                          SizedBox(
+                            height: 50,
+                            child: ElevatedButton(
+                              onPressed:
+                                  _isSaving ? null : _saveChanges,
                               child: _isSaving
-                                  ? const CircularProgressIndicator(
-                                      color: Colors.white,
-                                    )
-                                  : const Text('Save Changes'),
+                                  ? const CircularProgressIndicator()
+                                  : const Text("Save Changes"),
                             ),
                           ),
                         ],

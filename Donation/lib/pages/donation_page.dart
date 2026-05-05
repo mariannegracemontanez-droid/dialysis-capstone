@@ -195,8 +195,8 @@ class _DonationPageState extends State<DonationPage> {
         borderRadius: BorderRadius.circular(20),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      child: Column(
-        children: const [
+      child: const Column(
+        children: [
           Text(
             'Clinic Contact Information',
             style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),

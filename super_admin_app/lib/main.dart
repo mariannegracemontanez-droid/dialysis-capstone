@@ -3,20 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'config/supabase_config.dart';
 import 'pages/dashboard_page.dart';
-import 'pages/login_page.dart';
-
+import 'pages/login_page_v2.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: "assets/.env");
+  await SupabaseConfig.initialize();
 
-  String? initError;
-  try {
-    await dotenv.load(fileName: kIsWeb ? 'assets/.env' : '.env');
-    await SupabaseConfig.initialize();
-  } catch (e) {
-    initError = e.toString();
-  }
-
-  runApp(MyApp(initError: initError));
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -47,15 +40,15 @@ class MyApp extends StatelessWidget {
       );
     }
 
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'CureNurture Super Admin',
-      theme: ThemeData(useMaterial3: true, primarySwatch: Colors.blue),
-      initialRoute: '/login',
-      routes: {
-        '/login': (context) => const LoginPage(),
-        '/dashboard': (context) => const DashboardPage(),
-      },
-    );
+   return MaterialApp(
+  debugShowCheckedModeBanner: false,
+  title: 'CureNurture Super Admin',
+  theme: ThemeData(useMaterial3: true, primarySwatch: Colors.blue),
+  initialRoute: '/login',
+  routes: {
+    '/login': (context) => const LoginPage(),
+    '/dashboard': (context) => const DashboardPage(),
+  },
+);
   }
 }

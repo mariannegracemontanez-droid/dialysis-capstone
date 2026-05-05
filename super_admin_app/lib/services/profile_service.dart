@@ -4,276 +4,116 @@ import '../config/supabase_config.dart';
 
 class ProfileService {
   final SupabaseClient _supabase = SupabaseConfig.client;
-  final GoTrueClient? _adminAuth = _createAdminAuthClient();
 
-  static GoTrueClient? _createAdminAuthClient() {
-    final url =
-        dotenv.env['SUPABASE_URL'] ??
-        const String.fromEnvironment('SUPABASE_URL');
-    final serviceRoleKey = dotenv.env['SUPABASE_SERVICE_ROLE_KEY'];
-
-    if (url.isEmpty || serviceRoleKey == null || serviceRoleKey.isEmpty) {
-      return null;
-    }
-
-    return GoTrueClient(
-      url: url,
-      headers: {
-        'apikey': serviceRoleKey,
-        'Authorization': 'Bearer $serviceRoleKey',
-        'Content-Type': 'application/json',
-      },
-      autoRefreshToken: false,
-    );
+  // 🔥 GET CURRENT USER ID
+  String get currentUserId {
+    final user = _supabase.auth.currentUser;
+    if (user == null) throw Exception("User not logged in");
+    return user.id;
   }
 
-  Future<String> _adminActorId() async {
-    final actorId = _supabase.auth.currentUser?.id;
-    if (actorId == null) {
-      throw Exception('Super Admin session not found.');
-    }
-    return actorId;
-  }
-
-  Future<List<Map<String, dynamic>>> getProfilesByRole(String role) async {
-    final data = await _supabase
-        .from('profiles')
-        .select()
-        .eq('role', role)
-        .order('full_name', ascending: true);
-
-    return List<Map<String, dynamic>>.from(data);
-  }
-
-  Future<List<Map<String, dynamic>>> getProfilesByRoles(
-    List<String> roles,
-  ) async {
-    final data = await _supabase
-        .from('profiles')
-        .select()
-        .inFilter('role', roles)
-        .order('full_name', ascending: true);
-
-    return List<Map<String, dynamic>>.from(data as List<dynamic>);
-  }
-
-  Future<List<Map<String, dynamic>>> getAllProfiles() async {
-    final data = await _supabase
-        .from('profiles')
-        .select()
-        .order('full_name', ascending: true);
-    return List<Map<String, dynamic>>.from(data);
-  }
-
+  // 🔥 FETCH ADMIN PROFILES
   Future<List<Map<String, dynamic>>> getAdminProfiles() async {
     final data = await _supabase
         .from('profiles')
-        .select()
+        .select('*, clinics(name)')
         .eq('role', 'admin')
-        .order('full_name', ascending: true);
+        .eq('status', 'active')
+        .order('full_name');
 
     return List<Map<String, dynamic>>.from(data);
   }
 
+  // 🔥 FETCH AUDIT LOGS
   Future<List<Map<String, dynamic>>> getAdminLogs() async {
-    final logsResponse = await _supabase
-        .from('admin_logs')
+    final data = await _supabase
+        .from('audit_logs')
         .select()
         .order('created_at', ascending: false);
 
-    final logs = List<Map<String, dynamic>>.from(logsResponse);
-    final profileIds = <String>{};
-
-    for (final log in logs) {
-      if (log['admin_id'] != null) {
-        profileIds.add(log['admin_id'] as String);
-      }
-      if (log['target_id'] != null) {
-        profileIds.add(log['target_id'] as String);
-      }
-    }
-
-    if (profileIds.isEmpty) {
-      return logs;
-    }
-
-    final profilesResponse = await _supabase
-        .from('profiles')
-        .select('id, full_name, email')
-        .inFilter('id', profileIds.toList());
-
-    final profiles = List<Map<String, dynamic>>.from(profilesResponse);
-
-    final profileMap = {
-      for (final profile in profiles) profile['id'] as String: profile,
-    };
-
-    return logs.map((log) {
-      final adminProfile = profileMap[log['admin_id'] as String? ?? ''];
-      final targetProfile = profileMap[log['target_id'] as String? ?? ''];
-
-      return {
-        ...log,
-        'actor_name': adminProfile == null
-            ? 'Unknown'
-            : (adminProfile['full_name'] ?? adminProfile['email'] ?? 'Unknown'),
-        'target_name': targetProfile == null
-            ? 'Unknown'
-            : (targetProfile['full_name'] ??
-                  targetProfile['email'] ??
-                  'Unknown'),
-      };
-    }).toList();
+    return List<Map<String, dynamic>>.from(data);
   }
 
-  Future<Map<String, dynamic>?> getAdminById(String adminId) async {
-    final response = await _supabase
-        .from('profiles')
-        .select()
-        .eq('id', adminId)
-        .eq('role', 'admin')
-        .maybeSingle();
+  // 🔥 CREATE ADMIN
+  Future<String> createAdmin({
+  required String fullName,
+  required String email,
+  required String password,
+  required String phone,
+  required String clinicId,
+}) async {
 
-    if (response == null) return null;
-    return Map<String, dynamic>.from(response);
+  // 🔥 STEP 1: CREATE AUTH USER
+  final authResponse = await _supabase.auth.signUp(
+    email: email,
+    password: password,
+  );
+
+  final user = authResponse.user;
+
+  if (user == null) {
+    throw Exception("Failed to create user");
   }
+  
+  // 🔥 STEP 2: INSERT PROFILE (IMPORTANT FK)
+  await _supabase.from('profiles').insert({
+    'id': user.id, // ✅ MUST MATCH auth.users
+    'full_name': fullName,
+    'email': email,
+    'role': 'admin',
+    'phone': phone,
+    'clinic_id': clinicId,
+    'status': 'active',
+  });
 
-  Future<void> createAdmin({
-    required String fullName,
-    required String email,
-    required String password,
-    String? phone,
-  }) async {
-    if (_adminAuth == null) {
-      throw Exception(
-        'Creating admins requires SUPABASE_SERVICE_ROLE_KEY in your .env.',
-      );
-    }
+  return user.id;
+}
 
-    final adminAuth = _adminAuth;
-    final userResponse = await adminAuth.admin.createUser(
-      AdminUserAttributes(
-        email: email,
-        password: password,
-        userMetadata: {
-          'full_name': fullName,
-          if (phone?.isNotEmpty ?? false) 'phone': phone,
-        },
-        appMetadata: {'role': 'admin'},
-        emailConfirm: true,
-      ),
-    );
-
-    final user = userResponse.user;
-    if (user == null) {
-      throw Exception('Unable to create admin account.');
-    }
-
-    try {
-      await _supabase.from('profiles').insert({
-        'id': user.id,
-        'email': email,
-        'full_name': fullName,
-        'role': 'admin',
-        if (phone?.isNotEmpty ?? false) 'phone': phone,
-      });
-    } catch (error) {
-      try {
-        await adminAuth.admin.deleteUser(user.id);
-      } catch (_) {
-        // ignore cleanup failure, the original error is more important
-      }
-      throw Exception('Failed to insert admin profile: $error');
-    }
-
-    await _insertAdminLog(
-      adminId: await _adminActorId(),
-      action: 'create',
-      targetId: user.id,
-    );
-  }
-
+  // 🔥 UPDATE ADMIN
   Future<void> updateAdmin({
     required String adminId,
     required String fullName,
     String? phone,
     String? password,
+    String? clinicId,
   }) async {
-    final updateData = <String, dynamic>{
-      'full_name': fullName,
-      if (phone?.isNotEmpty ?? false) 'phone': phone,
-    };
-
-    try {
-      await _supabase
-          .from('profiles')
-          .update(updateData)
-          .eq('id', adminId)
-          .eq('role', 'admin');
-    } catch (error) {
-      throw Exception('Failed to update admin profile: $error');
-    }
+    await _supabase
+        .from('profiles')
+        .update({
+          'full_name': fullName,
+          'phone': phone,
+          'clinic_id': clinicId,
+        })
+        .eq('id', adminId);
 
     if (password != null && password.isNotEmpty) {
-      if (_adminAuth == null) {
-        throw Exception(
-          'Password reset requires SUPABASE_SERVICE_ROLE_KEY in your .env.',
-        );
-      }
-
-      await _adminAuth.admin.updateUserById(
-        adminId,
-        attributes: AdminUserAttributes(password: password),
+      await _supabase.auth.updateUser(
+        UserAttributes(password: password),
       );
     }
-
-    await _insertAdminLog(
-      adminId: await _adminActorId(),
-      action: 'update',
-      targetId: adminId,
-    );
   }
 
+  // 🔥 DELETE ADMIN
   Future<void> deleteAdmin({required String adminId}) async {
-    if (_adminAuth == null) {
-      throw Exception(
-        'Admin deletion requires SUPABASE_SERVICE_ROLE_KEY in your .env.',
-      );
-    }
-
-    await _adminAuth.admin.deleteUser(adminId);
-
-    try {
-      await _supabase
-          .from('profiles')
-          .delete()
-          .eq('id', adminId)
-          .eq('role', 'admin');
-    } catch (error) {
-      throw Exception('Failed to delete admin profile: $error');
-    }
-
-    await _insertAdminLog(
-      adminId: await _adminActorId(),
-      action: 'delete',
-      targetId: adminId,
-    );
+    await _supabase.from('profiles').delete().eq('id', adminId);
   }
 
-  Future<void> _insertAdminLog({
-    required String adminId,
+  // 🔥 AUDIT LOG
+  Future<void> logAction({
     required String action,
     required String targetId,
+    required String targetName,
+    Map<String, dynamic>? metadata,
   }) async {
-    try {
-      await _supabase.from('admin_logs').insert({
-        'admin_id': adminId,
-        'action': action,
-        'target_table': 'profiles',
-        'target_id': targetId,
-      });
-    } catch (error) {
-      throw Exception('Failed to write admin log: $error');
-    }
+    final user = _supabase.auth.currentUser;
+
+    await _supabase.from('audit_logs').insert({
+      'action': action,
+      'actor_id': user?.id,
+      'actor_name': 'Super Admin',
+      'target_id': targetId,
+      'target_name': targetName,
+      'metadata': metadata,
+    });
   }
 }
