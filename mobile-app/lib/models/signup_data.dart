@@ -3,6 +3,7 @@ class SignupData {
   final String email;
   final String phone;
   final String password;
+  final String status;
   final String dateOfBirth;
   final String homeAddress;
   final String bloodType;
@@ -31,6 +32,7 @@ class SignupData {
     required this.email,
     required this.phone,
     required this.password,
+    this.status = 'pending',
     this.dateOfBirth = '',
     this.homeAddress = '',
     this.bloodType = '',
@@ -41,7 +43,7 @@ class SignupData {
     this.clinicName = '',
     this.clinicRequirements = const [],
     this.documentUrls = const {},
-    this.ckdLevel = 'Stage 3',
+    this.ckdLevel = 'Stage 1',
     this.conditions = const [],
     this.province = '',
     this.city = '',
@@ -59,12 +61,14 @@ class SignupData {
     String? fullName,
     String? email,
     String? phone,
+    String? status,
     String? password,
     String? dateOfBirth,
     String? homeAddress,
     String? bloodType,
     String? emergencyContactName,
     String? emergencyContactNumber,
+    String? patientId,
     String? clinicId,
     String? clinicName,
     String? ckdLevel,
@@ -87,12 +91,14 @@ class SignupData {
       email: email ?? this.email,
       phone: phone ?? this.phone,
       password: password ?? this.password,
+      status: status ?? this.status,
       dateOfBirth: dateOfBirth ?? this.dateOfBirth,
       homeAddress: homeAddress ?? this.homeAddress,
       bloodType: bloodType ?? this.bloodType,
       emergencyContactName: emergencyContactName ?? this.emergencyContactName,
       emergencyContactNumber:
           emergencyContactNumber ?? this.emergencyContactNumber,
+      patientId: patientId ?? this.patientId,
       clinicId: clinicId ?? this.clinicId,
       clinicName: clinicName ?? this.clinicName,
       clinicRequirements: clinicRequirements ?? this.clinicRequirements,

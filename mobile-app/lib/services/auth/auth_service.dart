@@ -13,12 +13,6 @@ class AuthService {
     required String fullName,
     required String phone,
     String role = 'patient',
-    String dateOfBirth = '',
-    String homeAddress = '',
-    String bloodType = '',
-    String emergencyContactName = '',
-    String emergencyContactNumber = '',
-    Object? clinicId,
   }) async {
     try {
       final response = await _supabase.auth.signUp(
@@ -26,34 +20,36 @@ class AuthService {
         password: password,
       );
 
-      if (response.user == null) {
+      final createdUser = response.user;
+      if (createdUser == null) {
         throw Exception('Sign up failed');
       }
 
-      final userId = response.user!.id;
+      if (response.session == null) {
+        final signInResponse = await _supabase.auth.signInWithPassword(
+          email: email,
+          password: password,
+        );
 
-      await _supabase.from('profiles').insert({
+        if (signInResponse.user == null) {
+          throw Exception(
+            'Sign up succeeded, but sign-in failed. Please verify your email or try again.',
+          );
+        }
+      }
+
+      final String userId = createdUser.id;
+
+      final Map<String, Object?> profileData = {
         'id': userId,
         'email': email,
         'full_name': fullName,
         'phone': phone,
         'role': role,
-      });
-
-      final Map<String, Object?> patientData = {
-        'profile_id': userId,
-        'date_of_birth': dateOfBirth,
-        'home_address': homeAddress,
-        'blood_type': bloodType,
-        'emergency_contact_name': emergencyContactName,
-        'emergency_contact_number': emergencyContactNumber,
+        'status': 'pending',
       };
 
-      if (clinicId != null) {
-        patientData['clinic_id'] = clinicId;
-      }
-
-      await _supabase.from('patients').insert(patientData);
+      await _supabase.from('profiles').insert(profileData);
 
       final createdAt = response.user?.createdAt;
       final parsedCreatedAt = createdAt != null
@@ -69,6 +65,82 @@ class AuthService {
       );
     } catch (e) {
       throw Exception('Sign up error: $e');
+    }
+  }
+
+  Future<void> createPatientRecord({
+    required String userId,
+    required Object clinicId,
+    required String fullName,
+    required String email,
+    required String phone,
+    required String dateOfBirth,
+    required String homeAddress,
+    required String bloodType,
+    required String emergencyContactName,
+    required String emergencyContactNumber,
+    required String ckdLevel,
+    required List<String> conditions,
+    required List<String> insuranceOptions,
+    required String budgetRange,
+    required String preferredClinicType,
+    required String locationSummary,
+  }) async {
+    try {
+      final trimmedDob = dateOfBirth.trim();
+      String? formattedDob;
+      if (trimmedDob.isNotEmpty) {
+        final parsedDob = DateTime.tryParse(trimmedDob);
+        if (parsedDob != null) {
+          formattedDob = parsedDob.toIso8601String().split('T').first;
+        }
+      }
+
+      final selectedCondition =
+          conditions.contains('None') || conditions.isEmpty
+          ? 'None'
+          : conditions.firstWhere(
+              (condition) => condition != 'None',
+              orElse: () => 'None',
+            );
+
+      final insuranceText = insuranceOptions.isNotEmpty
+          ? insuranceOptions.join(', ')
+          : 'None';
+
+      final patientData = <String, Object?>{
+        'id': userId,
+        'profile_id': userId,
+        'clinic_id': clinicId,
+        'status': 'pending',
+        'full_name': fullName,
+        'email': email,
+        'phone': phone,
+        'home_address': homeAddress,
+        'blood_type': bloodType,
+        'emergency_contact_name': emergencyContactName,
+        'emergency_contact_number': emergencyContactNumber,
+        'dialysis_stage': ckdLevel,
+        'existing_condition': selectedCondition,
+        'budget': budgetRange,
+        'insurance': insuranceText,
+        'financial_support': insuranceText,
+        'preferred_clinic': preferredClinicType,
+        'user_location': locationSummary,
+        'created_at': DateTime.now().toIso8601String(),
+      };
+
+      if (formattedDob != null) {
+        patientData['date_of_birth'] = formattedDob;
+      }
+
+      await _supabase.from('patients').insert(patientData);
+      await _supabase
+          .from('profiles')
+          .update({'clinic_id': clinicId, 'status': 'pending'})
+          .eq('id', userId);
+    } catch (e) {
+      throw Exception('Failed to create patient record: $e');
     }
   }
 
@@ -93,6 +165,27 @@ class AuthService {
           .select()
           .eq('id', response.user!.id)
           .single();
+
+      final status = userData['status']?.toString().toLowerCase().trim() ?? '';
+      if (status != 'active') {
+        final clinicId = userData['clinic_id']?.toString();
+        String clinicName = 'clinic';
+        if (clinicId != null && clinicId.isNotEmpty) {
+          final clinicResponse = await _supabase
+              .from('clinics')
+              .select('name')
+              .eq('id', clinicId)
+              .maybeSingle();
+          if (clinicResponse != null && clinicResponse['name'] != null) {
+            clinicName = clinicResponse['name'].toString();
+          }
+        }
+
+        await _supabase.auth.signOut();
+        throw Exception(
+          'You still need approval from the $clinicName admin before you can log in to your account.',
+        );
+      }
 
       final user = UserModel.fromJson(userData);
       await LoginHistoryService().recordLogin(response.user!.id);

@@ -16,8 +16,8 @@ class _SignupPageState extends State<SignupPage> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final FocusNode _passwordFocusNode = FocusNode();
-  final bool _isLoading = false;
-  
+  bool _isLoading = false;
+
   String? _errorMessage;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
@@ -54,7 +54,7 @@ class _SignupPageState extends State<SignupPage> {
     });
   }
 
-  void _handleSignupNext() {
+  Future<void> _handleSignupNext() async {
     final password = _passwordController.text;
     final confirmPassword = _confirmPasswordController.text;
     final passwordError = AuthService.validatePassword(password);
@@ -84,14 +84,39 @@ class _SignupPageState extends State<SignupPage> {
       return;
     }
 
-    final signupData = SignupData(
-      fullName: _fullNameController.text.trim(),
-      email: _emailController.text.trim(),
-      phone: _phoneController.text.trim(),
-      password: password,
-    );
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
-    Navigator.of(context).pushNamed('/setup', arguments: signupData);
+    try {
+      final createdUser = await AuthService().signUp(
+        email: _emailController.text.trim(),
+        password: password,
+        fullName: _fullNameController.text.trim(),
+        phone: _phoneController.text.trim(),
+      );
+
+      final signupData = SignupData(
+        fullName: _fullNameController.text.trim(),
+        email: _emailController.text.trim(),
+        phone: _phoneController.text.trim(),
+        password: password,
+        patientId: createdUser.id,
+      );
+
+      if (mounted) {
+        Navigator.of(context).pushNamed('/setup', arguments: signupData);
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   @override

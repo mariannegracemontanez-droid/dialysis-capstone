@@ -95,23 +95,49 @@ class FileUploadService {
     }
   }
 
-  Future<String> uploadMedicalDocumentImage({required XFile imageFile, required String patientId, required String clinicId,}) async {
+  String _sanitizeFileName(String name) {
+    return name.replaceAll(RegExp(r'[^A-Za-z0-9_.\-]'), '_');
+  }
+
+  Future<void> _ensureAuthenticated() async {
+    final currentUser = _supabase.auth.currentUser;
+    final currentSession = _supabase.auth.currentSession;
+    if (currentUser == null || currentSession == null) {
+      throw Exception(
+        'Upload failed: no authenticated Supabase session. Please log in again.',
+      );
+    }
+  }
+
+  Future<String> uploadMedicalDocumentImage({
+    required XFile imageFile,
+    required String patientId,
+    required String clinicId,
+  }) async {
     try {
+      await _ensureAuthenticated();
+
       const bucketName = 'medical_docs';
+      final originalName = imageFile.name.isNotEmpty
+          ? imageFile.name
+          : imageFile.path.split('/').last;
       final fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${imageFile.name}';
+          '${DateTime.now().millisecondsSinceEpoch}_${_sanitizeFileName(originalName)}';
+      final userId = _supabase.auth.currentUser!.id;
+      final objectPath = '$userId/$fileName';
       final fileBytes = await imageFile.readAsBytes();
 
       await _supabase.storage
           .from(bucketName)
           .uploadBinary(
-            fileName,
+            objectPath,
             fileBytes,
             fileOptions: FileOptions(
               cacheControl: '3600',
               upsert: true,
+              contentType: 'image/jpeg',
               metadata: {
-                'patient_id': patientId,
+                'patient_id': patientId.isNotEmpty ? patientId : userId,
                 'clinic_id': clinicId,
               },
             ),
@@ -119,7 +145,7 @@ class FileUploadService {
 
       final publicUrl = _supabase.storage
           .from(bucketName)
-          .getPublicUrl(fileName);
+          .getPublicUrl(objectPath);
 
       return publicUrl;
     } catch (e) {

@@ -26,23 +26,17 @@ class MedicalDocumentService {
     if (documentUrls.isEmpty) return;
 
     final row = <String, dynamic>{
-      'profile_id': userId,
+      'patient_id': userId,
       'clinic_id': clinicId,
-      'updated_at': DateTime.now().toIso8601String(),
+      'uploaded_at': DateTime.now().toIso8601String(),
     };
 
     for (final column in _allDocumentColumns) {
       row[column] = documentUrls[column];
     }
 
-    for (final entry in documentUrls.entries) {
-      if (!row.containsKey(entry.key)) {
-        row[entry.key] = entry.value;
-      }
-    }
-
     await _supabase
-        .from('medical_document')
-        .upsert(row, onConflict: 'profile_id, clinic_id');
+        .from('medical_documents')
+        .upsert(row, onConflict: 'patient_id, clinic_id');
   }
 }

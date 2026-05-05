@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/signup_data.dart';
 import '../../services/file_upload_service.dart';
 
@@ -19,25 +20,93 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
   String? _uploadError;
 
   static const Map<String, String> _requirementKeyMap = {
-    'Referral Letter / Endorsement Letter / Discharge Summary':
+    'referral letter / endorsement letter / discharge summary':
         'referral_letter_url',
-    'Medical Abstract': 'medical_abstract_url',
-    'Copy of last 3 HD treatment sheets': 'hd_treatment_sheets_url',
-    'Latest laboratory results': 'lab_results_url',
-    'Latest hepatitis profile': 'hepatitis_profile_url',
-    'X-ray / imaging report': 'xray_url',
-    'Government ID': 'government_id_url',
-    'PhilHealth MDR': 'philhealth_mdr_url',
-    'PDD certificate': 'pdd_certificate_url',
-    'PHIC consumption report': 'phic_consumption_url',
-    'PHIC contribution report': 'phic_contribution_url',
+    'referral letter / endorsement letter / discharge summary / medical abstract':
+        'referral_letter_url',
+    'medical abstract': 'medical_abstract_url',
+    'hd treatment sheets': 'hd_treatment_sheets_url',
+    'laboratory results': 'lab_results_url',
+    'hepatitis profile': 'hepatitis_profile_url',
+    'x-ray / imaging report': 'xray_url',
+    'government id': 'government_id_url',
+    'philhealth mdr': 'philhealth_mdr_url',
+    'pdd certificate': 'pdd_certificate_url',
+    'phic consumption report': 'phic_consumption_url',
+    'phic contribution report': 'phic_contribution_url',
+    // System-level fields
+    'status': 'status',
+    'reviewed by': 'reviewed_by',
+    'remarks': 'remarks',
+    'uploaded_at': 'uploaded_at',
+    'clinic id': 'clinic_id',
   };
+
+  static String _normalizeRequirementLabel(String label) {
+    return label
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s*/\s*'), ' / ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  static String? _inferRequirementKey(String normalizedLabel) {
+    if (normalizedLabel.contains('referral letter') ||
+        normalizedLabel.contains('endorsement letter') ||
+        normalizedLabel.contains('discharge summary')) {
+      return 'referral_letter_url';
+    }
+    if (normalizedLabel.contains('medical abstract')) {
+      return 'medical_abstract_url';
+    }
+    if (normalizedLabel.contains('hd treatment')) {
+      return 'hd_treatment_sheets_url';
+    }
+    if (normalizedLabel.contains('laboratory')) {
+      return 'lab_results_url';
+    }
+    if (normalizedLabel.contains('hepatitis profile')) {
+      return 'hepatitis_profile_url';
+    }
+    if (normalizedLabel.contains('x-ray') ||
+        normalizedLabel.contains('xray') ||
+        normalizedLabel.contains('imaging')) {
+      return 'xray_url';
+    }
+    if (normalizedLabel.contains('government id')) {
+      return 'government_id_url';
+    }
+    if (normalizedLabel.contains('philhealth mdr')) {
+      return 'philhealth_mdr_url';
+    }
+    if (normalizedLabel.contains('pdd')) {
+      return 'pdd_certificate_url';
+    }
+    if (normalizedLabel.contains('phic consumption')) {
+      return 'phic_consumption_url';
+    }
+    if (normalizedLabel.contains('phic contribution')) {
+      return 'phic_contribution_url';
+    }
+    return null;
+  }
+
+  static String _fallbackRequirementKey(String normalizedLabel) {
+    final key = normalizedLabel
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .trim();
+    return key.isEmpty ? 'unknown_requirement' : key;
+  }
 
   List<Map<String, String>> get _selectedClinicRequirements {
     return widget.signupData.clinicRequirements.map((label) {
+      final normalizedLabel = _normalizeRequirementLabel(label);
       final key =
-          _requirementKeyMap[label] ??
-          '${label.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_')}_url';
+          _requirementKeyMap[normalizedLabel] ??
+          _inferRequirementKey(normalizedLabel) ??
+          _fallbackRequirementKey(normalizedLabel);
+
       return {'key': key, 'label': label};
     }).toList();
   }
@@ -67,13 +136,22 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
       if (file == null) {
         setState(() {
           _isUploading[requirementKey] = false;
+          _uploadError = 'No file selected.';
         });
         return;
       }
 
+      final patientId = widget.signupData.patientId.isNotEmpty
+          ? widget.signupData.patientId
+          : Supabase.instance.client.auth.currentUser?.id;
+
+      if (patientId == null || patientId.isEmpty) {
+        throw Exception('Unable to resolve patient ID for upload.');
+      }
+
       final url = await _fileUploadService.uploadMedicalDocumentImage(
         imageFile: file,
-        patientId: widget.signupData.patientId,
+        patientId: patientId,
         clinicId: widget.signupData.clinicId,
       );
 
@@ -82,12 +160,13 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
         _isUploading[requirementKey] = false;
         _uploadError = null;
       });
-    } catch (e) {
+    } catch (e, stack) {
       setState(() {
         _isUploading[requirementKey] = false;
-        _uploadError = 'Upload failed. Please try again.';
+        _uploadError = e.toString();
       });
       debugPrint('Error uploading document: $e');
+      debugPrint(stack.toString());
     }
   }
 

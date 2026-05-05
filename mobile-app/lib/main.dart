@@ -11,6 +11,7 @@ import 'pages/auth/medical_documents_page.dart';
 import 'pages/auth/financial_page.dart';
 import 'pages/auth/setup_page.dart';
 import 'pages/auth/signup_page.dart';
+import 'pages/auth/signup_complete_page.dart';
 import 'pages/auth/welcome_page.dart';
 import 'pages/home/home_page.dart';
 import 'pages/home/privacy_security_page.dart';
@@ -73,7 +74,9 @@ class MyApp extends StatelessWidget {
       routes: {
         '/welcome': (context) => const WelcomePage(),
         '/login': (context) => const LoginPage(),
+        '/login_page': (context) => const LoginPage(),
         '/signup': (context) => const SignupPage(),
+        '/signup-complete_page': (context) => const SignupCompletePage(),
         '/forgot-password': (context) => const ForgotPasswordPage(),
         '/change-password': (context) => const ChangePasswordPage(),
         '/home': (context) => const HomePage(),

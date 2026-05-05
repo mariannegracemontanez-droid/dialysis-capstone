@@ -16,29 +16,42 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
   bool _isSubmitting = false;
   String? _errorMessage;
 
-  Future<void> _handleCreateAccount() async {
+  Future<void> _handleSubmit() async {
     setState(() {
       _isSubmitting = true;
       _errorMessage = null;
     });
 
     try {
-      final createdUser = await AuthService().signUp(
-        email: widget.signupData.email,
-        password: widget.signupData.password,
+      final patientId = widget.signupData.patientId;
+      if (patientId.isEmpty) {
+        throw Exception(
+          'Internal error: missing user ID for patient creation.',
+        );
+      }
+
+      await AuthService().createPatientRecord(
+        userId: patientId,
+        clinicId: widget.signupData.clinicId,
         fullName: widget.signupData.fullName,
+        email: widget.signupData.email,
         phone: widget.signupData.phone,
         dateOfBirth: widget.signupData.dateOfBirth,
         homeAddress: widget.signupData.homeAddress,
         bloodType: widget.signupData.bloodType,
         emergencyContactName: widget.signupData.emergencyContactName,
         emergencyContactNumber: widget.signupData.emergencyContactNumber,
-        clinicId: widget.signupData.clinicId,
+        ckdLevel: widget.signupData.ckdLevel,
+        conditions: widget.signupData.conditions,
+        insuranceOptions: widget.signupData.insuranceOptions,
+        budgetRange: widget.signupData.budgetRange,
+        preferredClinicType: widget.signupData.preferredClinicType,
+        locationSummary: widget.signupData.locationSummary,
       );
 
       if (widget.signupData.documentUrls.isNotEmpty) {
         await MedicalDocumentService().saveDocumentUrls(
-          userId: createdUser.id,
+          userId: patientId,
           clinicId: widget.signupData.clinicId,
           documentUrls: widget.signupData.documentUrls,
         );
@@ -47,7 +60,7 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
       if (mounted) {
         await AuthService().signOut();
         // ignore: use_build_context_synchronously
-        Navigator.of(context).pushReplacementNamed('/login_page');
+        Navigator.of(context).pushReplacementNamed('/signup-complete_page');
       }
     } catch (e) {
       setState(() {
@@ -112,90 +125,84 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
               ),
               const SizedBox(height: 24),
               Expanded(
-                child: Card(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  elevation: 4,
-                  shadowColor: Colors.black.withOpacity(0.08),
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Text(
-                          'Review your account details before creation.',
-                          style: TextStyle(
-                            color: Color(0xFF3B5D6C),
-                            fontSize: 16,
+                child: SingleChildScrollView(
+                  child: Card(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    elevation: 4,
+                    shadowColor: Colors.black.withOpacity(0.08),
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Text(
+                            'Review your account details before creation.',
+                            style: TextStyle(
+                              color: Color(0xFF3B5D6C),
+                              fontSize: 16,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 24),
-                        _buildInfoRow(
-                          'Patient Name',
-                          widget.signupData.fullName,
-                        ),
-                        _buildInfoRow('Email', widget.signupData.email),
-                        _buildInfoRow('Phone', widget.signupData.phone),
-                        _buildInfoRow(
-                          'Date of Birth',
-                          widget.signupData.dateOfBirth,
-                        ),
-                        _buildInfoRow(
-                          'Home Address',
-                          widget.signupData.homeAddress,
-                        ),
-                        _buildInfoRow(
-                          'Blood Type',
-                          widget.signupData.bloodType,
-                        ),
-                        _buildInfoRow(
-                          'Emergency Contact',
-                          widget.signupData.emergencyContactName.isEmpty
-                              ? 'Not provided'
-                              : '${widget.signupData.emergencyContactName} (${widget.signupData.emergencyContactNumber})',
-                        ),
-                        _buildInfoRow(
-                          'Selected Clinic',
-                          widget.signupData.clinicName.isEmpty
-                              ? 'Not selected'
-                              : widget.signupData.clinicName,
-                        ),
-                        _buildInfoRow('CKD Level', widget.signupData.ckdLevel),
-                        _buildInfoRow(
-                          'Conditions',
-                          widget.signupData.conditions.isEmpty
-                              ? 'None'
-                              : widget.signupData.conditions.join(', '),
-                        ),
-                        _buildInfoRow(
-                          'Location',
-                          widget.signupData.locationSummary,
-                        ),
-                        _buildInfoRow('Medical Records', medicalDocumentName),
-                        _buildInfoRow(
-                          'Referred by',
-                          widget.signupData.referralDoctor.isEmpty
-                              ? 'Not provided'
-                              : widget.signupData.referralDoctor,
-                        ),
-                        _buildInfoRow('Insurance', insuranceLabel),
-                        _buildInfoRow(
-                          'Budget range',
-                          widget.signupData.budgetRange,
-                        ),
-                        _buildInfoRow(
-                          'Preferred clinic type',
-                          widget.signupData.preferredClinicType,
-                        ),
-                        if (_errorMessage != null) ...[
-                          const SizedBox(height: 16),
-                          Text(
-                            _errorMessage!,
-                            style: const TextStyle(color: Colors.red),
+                          const SizedBox(height: 24),
+                          _buildInfoRow(
+                            'Patient Name',
+                            widget.signupData.fullName,
                           ),
+                          _buildInfoRow('Email', widget.signupData.email),
+                          _buildInfoRow('Phone', widget.signupData.phone),
+                          _buildInfoRow(
+                            'Date of Birth',
+                            widget.signupData.dateOfBirth,
+                          ),
+                          _buildInfoRow(
+                            'Home Address',
+                            widget.signupData.homeAddress,
+                          ),
+                          _buildInfoRow(
+                            'Blood Type',
+                            widget.signupData.bloodType,
+                          ),
+                          _buildInfoRow(
+                            'Emergency Contact',
+                            widget.signupData.emergencyContactName.isEmpty
+                                ? 'Not provided'
+                                : '${widget.signupData.emergencyContactName} (${widget.signupData.emergencyContactNumber})',
+                          ),
+                          _buildInfoRow(
+                            'Selected Clinic',
+                            widget.signupData.clinicName.isEmpty
+                                ? 'Not selected'
+                                : widget.signupData.clinicName,
+                          ),
+                          _buildInfoRow(
+                            'CKD Level',
+                            widget.signupData.ckdLevel,
+                          ),
+                          _buildInfoRow(
+                            'Conditions',
+                            widget.signupData.conditions.isEmpty
+                                ? 'None'
+                                : widget.signupData.conditions.join(', '),
+                          ),
+                          _buildInfoRow('Insurance', insuranceLabel),
+                          _buildInfoRow(
+                            'Budget range',
+                            widget.signupData.budgetRange,
+                          ),
+                          _buildInfoRow(
+                            'Preferred clinic type',
+                            widget.signupData.preferredClinicType,
+                          ),
+                          if (_errorMessage != null) ...[
+                            const SizedBox(height: 16),
+                            Text(
+                              _errorMessage!,
+                              style: const TextStyle(color: Colors.red),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -204,7 +211,7 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
               SizedBox(
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: _isSubmitting ? null : _handleCreateAccount,
+                  onPressed: _isSubmitting ? null : _handleSubmit,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2C5F7D),
                     shape: RoundedRectangleBorder(
@@ -212,8 +219,15 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
                     ),
                   ),
                   child: _isSubmitting
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text('Create Account'),
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text('Submit & Continue'),
                 ),
               ),
             ],
