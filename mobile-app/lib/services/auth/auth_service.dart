@@ -134,7 +134,9 @@ class AuthService {
         patientData['date_of_birth'] = formattedDob;
       }
 
-      await _supabase.from('patients').insert(patientData);
+      await _supabase
+          .from('patients')
+          .upsert(patientData, onConflict: 'profile_id');
       await _supabase
           .from('profiles')
           .update({'clinic_id': clinicId, 'status': 'pending'})
@@ -159,35 +161,55 @@ class AuthService {
       if (response.user == null) {
         throw Exception('Sign in failed');
       }
-
-      final userData = await _supabase
+      final profileData = await _supabase
           .from('profiles')
           .select()
           .eq('id', response.user!.id)
           .single();
 
-      final status = userData['status']?.toString().toLowerCase().trim() ?? '';
+      final patientData = await _supabase
+          .from('patients')
+          .select('status, clinic_id')
+          .eq('profile_id', response.user!.id)
+          .maybeSingle();
+
+      final status =
+          patientData?['status']?.toString().toLowerCase().trim() ?? '';
+
       if (status != 'active') {
-        final clinicId = userData['clinic_id']?.toString();
+        final clinicId =
+            patientData?['clinic_id']?.toString() ??
+            profileData['clinic_id']?.toString();
+
         String clinicName = 'clinic';
+
         if (clinicId != null && clinicId.isNotEmpty) {
           final clinicResponse = await _supabase
               .from('clinics')
               .select('name')
               .eq('id', clinicId)
               .maybeSingle();
+
           if (clinicResponse != null && clinicResponse['name'] != null) {
             clinicName = clinicResponse['name'].toString();
           }
         }
 
         await _supabase.auth.signOut();
+
+        if (status == 'pending') {
+          throw Exception(
+            'You still need approval from the $clinicName admin before you can log in to your account.',
+          );
+        }
+
         throw Exception(
-          'You still need approval from the $clinicName admin before you can log in to your account.',
+          'Your account is not active. Please contact the $clinicName admin for approval.',
         );
       }
 
-      final user = UserModel.fromJson(userData);
+      final user = UserModel.fromJson(profileData);
+
       await LoginHistoryService().recordLogin(response.user!.id);
       if (!allowedRoles.contains(user.role)) {
         await _supabase.auth.signOut();

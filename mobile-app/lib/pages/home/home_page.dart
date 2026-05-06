@@ -3,7 +3,6 @@ import '../../services/auth/auth_service.dart';
 import '../../models/user_model.dart';
 import 'home_tab.dart';
 import 'schedule_tab.dart';
-import 'donations_tab.dart';
 import 'profile_tab.dart';
 
 class HomePage extends StatefulWidget {
@@ -61,8 +60,7 @@ class _HomePageState extends State<HomePage> {
 
     final pages = <Widget>[
       HomeTab(user: _currentUser, onScheduleTap: () => _onNavTap(1)),
-      const ScheduleTab(),
-      const DonationsTab(),
+      const AppointmentPage(),
       ProfileTab(user: _currentUser),
     ];
 
@@ -78,10 +76,6 @@ class _HomePageState extends State<HomePage> {
           BottomNavigationBarItem(
             icon: Icon(Icons.calendar_today),
             label: 'Schedule',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.favorite),
-            label: 'Donations',
           ),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],

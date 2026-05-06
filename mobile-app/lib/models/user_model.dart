@@ -45,7 +45,7 @@ class UserModel {
       lastDialysisDate: json['last_dialysis_date'] != null
           ? DateTime.parse(json['last_dialysis_date'])
           : null,
-      role: json['role'] ?? 'patient',
+      role: json['role']?.toString().trim().toLowerCase() ?? 'patient',
       createdAt: DateTime.parse(json['created_at']),
     );
   }

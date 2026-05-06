@@ -1,4 +1,4 @@
-name: dialysis_patient_app
+name: CureNurture
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -44,6 +44,7 @@ dependencies:
   device_info_plus: ^10.0.0
   path_provider: ^2.0.0
   table_calendar: ^3.0.9
+  flutter_native_splash: ^2.4.7
 
 dev_dependencies:
   flutter_test:
@@ -102,3 +103,10 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+flutter_native_splash:
+  color: "#ffffff"   # background color ng splash screen
+  image: lib/asset/Image/CureNurture_CircleLogo.png  # path ng logo mo
+  android: true
+  ios: true
+
