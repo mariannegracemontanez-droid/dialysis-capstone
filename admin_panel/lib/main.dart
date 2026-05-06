@@ -1,9 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+// import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'features/auth/login_page.dart';
 
-Future<void> main() async {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Supabase.initialize(
+    url: 'https://emnpezpkrrrilrcxnuwe.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtbnBlenBrcnJyaWxyY3hudXdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0MTkwNzcsImV4cCI6MjA4Nzk5NTA3N30.ow7VCTizP-Q6j-0FD4gtKWiok3kVUZFCxag5UWg9weM',
+  );
+  runApp(const ProviderScope(child: MyApp()));
+}
+
+Future<void> main2() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   String? dotenvError;

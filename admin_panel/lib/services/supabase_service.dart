@@ -1,7 +1,6 @@
 // ignore_for_file: avoid_print
 
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../models/appointment.dart';
 import '../models/clinic.dart';
 import '../models/patient.dart';
 
@@ -14,38 +13,6 @@ class SupabaseService {
     return response.map((json) => Patient.fromJson(json)).toList();
   }
 
-  // Fetch appointments for a specific date range
-  Future<List<Appointment>> getAppointments(DateTime start, DateTime end) async {
-    try {
-      final response = await _client
-          .from('appointments')
-          .select('*, patients(name)')
-          .gte('appointment_date', start.toIso8601String())
-          .lte('appointment_date', end.toIso8601String());
-      
-      print('Appointments fetched: ${response.length} records');
-      print('Response: $response');
-      
-      return response.map((json) {
-        print('Processing appointment: $json');
-        return Appointment.fromJson({
-          ...json,
-          'patient_name': json['patients'] != null ? json['patients']['name'] : 'Unknown',
-        });
-      }).toList();
-    } catch (e) {
-      print('Error fetching appointments: $e');
-      rethrow;
-    }
-  }
-
-  // Fetch today's appointments
-  Future<List<Appointment>> getTodaysAppointments() async {
-    final today = DateTime.now();
-    final start = DateTime(today.year, today.month, today.day);
-    final end = start.add(const Duration(days: 1));
-    return getAppointments(start, end);
-  }
 
   // Get total patients count from profiles table where role is patient
   Future<int> getTotalPatients() async {
@@ -55,7 +22,7 @@ class SupabaseService {
 
   Future<int> getClinicCount() async {
     try {
-      final response = await _client.from('clinics_centers').select();
+      final response = await _client.from('clinics').select();
       print('✓ Clinic count: ${response.length}');
       return response.length;
     } catch (e) {
@@ -66,7 +33,7 @@ class SupabaseService {
 
   Future<List<Clinic>> getClinics() async {
     try {
-      final response = await _client.from('clinics_centers').select();
+      final response = await _client.from('clinics').select();
       print('✓ Clinics fetched: ${response.length} records');
       print('Response: $response');
       return (response as List).map((json) => Clinic.fromJson(json)).toList();
@@ -78,7 +45,7 @@ class SupabaseService {
 
   Future<Clinic?> getClinicById(String clinicId) async {
     final response = await _client
-        .from('clinics_centers')
+        .from('clinics')
         .select()
         .eq('id', clinicId)
         .maybeSingle();
@@ -152,7 +119,7 @@ class SupabaseService {
   }
 
   Future<void> createClinic(Map<String, dynamic> clinicData) async {
-    await _client.from('clinics_centers').insert(clinicData);
+    await _client.from('clinics').insert(clinicData);
   }
 
   Future<void> createPatient(Map<String, dynamic> patientData) async {
@@ -166,39 +133,6 @@ class SupabaseService {
         .eq('id', patientId);
   }
 
-  // Get today's appointments count
-  Future<int> getTodaysAppointmentsCount() async {
-    final appointments = await getTodaysAppointments();
-    return appointments.length;
-  }
-
-  // Update appointment status
-  Future<void> updateAppointmentStatus(String appointmentId, String status) async {
-    await _client
-      .from('appointments')
-      .update({'status': status})
-      .eq('id', appointmentId);
-  }
-
-  // Confirm appointment
-  Future<void> confirmAppointment(String appointmentId) async {
-    await updateAppointmentStatus(appointmentId, 'Confirmed');
-  }
-
-  // Decline appointment
-  Future<void> declineAppointment(String appointmentId) async {
-    await updateAppointmentStatus(appointmentId, 'Declined');
-  }
-
-  // Fetch prescription info for appointment
-  Future<String?> getPrescription(String appointmentId) async {
-    final response = await _client
-      .from('appointments')
-      .select('prescription')
-      .eq('id', appointmentId)
-      .single();
-    return response['prescription'] as String?;
-  }
 
   // Fetch available time slots for dialysis appointments
   Future<List<Map<String, dynamic>>> getAvailableTimeSlots({int daysAhead = 7}) async {
@@ -229,4 +163,177 @@ class SupabaseService {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return days[weekday - 1];
   }
+
+  // Get pending patients count
+  Future<int> getPendingPatientsCount() async {
+    try {
+      final response = await _client
+          .from('patients')
+          .select()
+          .eq('status', 'pending');
+      return response.length;
+    } catch (e) {
+      print('Error fetching pending patients count: $e');
+      return 0;
+    }
+  }
+
+  // Get list of pending patients
+  Future<List<Patient>> getPendingPatients() async {
+    try {
+      final response = await _client
+          .from('patients')
+          .select('*, profiles(*)')
+          .eq('status', 'pending');
+      return (response as List).map((json) => Patient.fromJson(json)).toList();
+    } catch (e) {
+      print('Error fetching pending patients: $e');
+      return [];
+    }
+  }
+
+  // Get list of accepted patients
+  Future<List<Patient>> getAcceptedPatients() async {
+    try {
+      final response = await _client
+          .from('patients')
+          .select('*, profiles(*)')
+          .inFilter('status', ['accepted', 'no_sched']);
+      return (response as List).map((json) => Patient.fromJson(json)).toList();
+    } catch (e) {
+      print('Error fetching accepted patients: $e');
+      return [];
+    }
+  }
+
+  // Get list of declined patients
+  Future<List<Patient>> getDeclinedPatients() async {
+    try {
+      final response = await _client
+          .from('patients')
+          .select('*, profiles(*)')
+          .eq('status', 'declined');
+      return (response as List).map((json) => Patient.fromJson(json)).toList();
+    } catch (e) {
+      print('Error fetching declined patients: $e');
+      return [];
+    }
+  }
+
+  // Update patient status
+  Future<void> updatePatientStatus(String patientId, String status) async {
+    try {
+      await _client
+          .from('patients')
+          .update({'status': status})
+          .eq('id', patientId);
+      print('Patient status updated: $patientId -> $status');
+    } catch (e) {
+      print('Error updating patient status: $e');
+      rethrow;
+    }
+  }
+
+  // Get monthly patient data for graph
+  Future<List<Map<String, dynamic>>> getMonthlyPatientData({int months = 6}) async {
+    try {
+      final data = <Map<String, dynamic>>[];
+      final now = DateTime.now();
+
+      for (int i = months - 1; i >= 0; i--) {
+        final date = DateTime(now.year, now.month - i, 1);
+        final nextMonth = DateTime(date.year, date.month + 1, 1);
+
+        final response = await _client
+            .from('profiles')
+            .select()
+            .eq('role', 'patient')
+            .gte('created_at', date.toIso8601String())
+            .lt('created_at', nextMonth.toIso8601String());
+
+        final month = '${date.year}-${date.month.toString().padLeft(2, '0')}';
+        data.add({
+          'month': _getMonthName(date.month),
+          'count': response.length,
+          'date': month,
+        });
+      }
+
+      return data;
+    } catch (e) {
+      print('Error fetching monthly patient data: $e');
+      return [];
+    }
+  }
+
+  // Create dialysis slot for patient
+  Future<void> createDialysisSlot(Map<String, dynamic> slotData) async {
+    try {
+      await _client.from('dialysis_slots').insert(slotData);
+      print('Dialysis slot created successfully');
+    } catch (e) {
+      print('Error creating dialysis slot: $e');
+      rethrow;
+    }
+  }
+
+  // Get patient's dialysis schedule
+  Future<List<Map<String, dynamic>>> getPatientSchedule(String patientId) async {
+    try {
+      final response = await _client
+          .from('dialysis_slots')
+          .select()
+          .eq('patient_id', patientId);
+      return response;
+    } catch (e) {
+      print('Error fetching patient schedule: $e');
+      return [];
+    }
+  }
+
+  // Update patient's dialysis schedule
+  Future<void> updatePatientSchedule(
+      String patientId, List<String> days) async {
+    try {
+      // Delete existing slots
+      await _client
+          .from('dialysis_slots')
+          .delete()
+          .eq('patient_id', patientId);
+
+      // Create new slots
+      for (final day in days) {
+        await createDialysisSlot({
+          'patient_id': patientId,
+          'day_of_week': day,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
+      print('Patient schedule updated successfully');
+    } catch (e) {
+      print('Error updating patient schedule: $e');
+      rethrow;
+    }
+  }
+
+  String _getMonthName(int month) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    return months[month - 1];
+  }
+
+  Future<void> setPatientSchedule(String id, String s, List<Map<String, String?>> scheduleEntries) async {}
+
+  Future<List<Patient>> getPatientsByStatus(String s) async {
+    try {
+      final response = await _client.from('patients').select().eq('status', s);
+      return response.map((json) => Patient.fromJson(json)).toList();
+    } catch (e) {
+      print('Error fetching patients by status: $e');
+      return [];
+    }
+  }
+
 }
