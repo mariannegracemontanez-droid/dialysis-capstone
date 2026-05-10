@@ -360,7 +360,14 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
                       borderRadius: BorderRadius.circular(18),
                     ),
                   ),
-                  child: const Text('Next'),
+                  child: const Text(
+                    'Next',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
             ],

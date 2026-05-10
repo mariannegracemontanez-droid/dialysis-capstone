@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth/auth_service.dart';
 
 class LoginPage extends StatefulWidget {
@@ -12,41 +13,135 @@ class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _authService = AuthService();
+  final SupabaseClient _supabase = Supabase.instance.client;
+
+  RealtimeChannel? _approvalChannel;
+
+  bool _approvalNotified = false;
   bool _isLoading = false;
   String? _errorMessage;
   bool _isPasswordVisible = false;
 
   @override
+  void initState() {
+    super.initState();
+
+    // FIX:
+    // Do not start approval checking here.
+    // This prevents the "Your account has been approved" message
+    // from showing automatically when the login page opens.
+  }
+
+  @override
   void dispose() {
+    if (_approvalChannel != null) {
+      _supabase.removeChannel(_approvalChannel!);
+    }
+
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
+  void _showSnackBar(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: const Color(0xFF3D3740),
+      ),
+    );
+  }
+
   void _handleLogin() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (email.isEmpty || password.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please enter your email and password.';
+      });
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      await _authService.signIn(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-      );
+      await _authService.signIn(email: email, password: password);
 
-      if (mounted) {
-        Navigator.of(context).pushReplacementNamed('/home');
-      }
+      if (!mounted) return;
+
+      Navigator.of(context).pushReplacementNamed('/home');
     } catch (e) {
+      final errorText = e.toString();
+
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = errorText;
       });
+
+      // Optional:
+      // Start approval listener only after login attempt,
+      // not when the page first opens.
+      if (errorText.toLowerCase().contains('pending') ||
+          errorText.toLowerCase().contains('not approved') ||
+          errorText.toLowerCase().contains('approval')) {
+        _startApprovalRealtimeListener();
+      }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
+  }
+
+  void _startApprovalRealtimeListener() {
+    final userId = _supabase.auth.currentUser?.id;
+
+    if (userId == null) {
+      debugPrint(
+        'No current user session. Approval realtime listener not started.',
+      );
+      return;
+    }
+
+    if (_approvalChannel != null) {
+      _supabase.removeChannel(_approvalChannel!);
+      _approvalChannel = null;
+    }
+
+    _approvalChannel = _supabase.channel('patient-approval-$userId');
+
+    _approvalChannel!
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'patients',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'profile_id',
+            value: userId,
+          ),
+          callback: (payload) {
+            final status =
+                payload.newRecord['status']?.toString().toLowerCase().trim() ??
+                '';
+
+            if (status == 'active' && !_approvalNotified) {
+              _approvalNotified = true;
+
+              _showSnackBar(
+                'Your account has been approved. You may now log in.',
+              );
+            }
+          },
+        )
+        .subscribe();
   }
 
   @override
@@ -77,8 +172,8 @@ class _LoginPageState extends State<LoginPage> {
                       decoration: BoxDecoration(
                         color: const Color.fromRGBO(255, 255, 255, 0.95),
                         shape: BoxShape.circle,
-                        boxShadow: [
-                          const BoxShadow(
+                        boxShadow: const [
+                          BoxShadow(
                             color: Color.fromRGBO(0, 0, 0, 0.16),
                             blurRadius: 18,
                             offset: Offset(0, 10),
@@ -112,8 +207,8 @@ class _LoginPageState extends State<LoginPage> {
                       decoration: BoxDecoration(
                         color: const Color.fromRGBO(255, 255, 255, 0.95),
                         borderRadius: BorderRadius.circular(28),
-                        boxShadow: [
-                          const BoxShadow(
+                        boxShadow: const [
+                          BoxShadow(
                             color: Color.fromRGBO(0, 0, 0, 0.16),
                             blurRadius: 20,
                             offset: Offset(0, 10),
@@ -205,7 +300,14 @@ class _LoginPageState extends State<LoginPage> {
                                   ? const CircularProgressIndicator(
                                       color: Colors.white,
                                     )
-                                  : const Text('Log In'),
+                                  : const Text(
+                                      'Log In',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                             ),
                           ),
                           const SizedBox(height: 18),

@@ -209,7 +209,14 @@ class _HomeTabState extends State<HomeTab> {
                                     vertical: 14,
                                   ),
                                 ),
-                                child: const Text('View Appointment'),
+                                child: const Text(
+                                  'View Appointment',
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -234,7 +241,14 @@ class _HomeTabState extends State<HomeTab> {
                                     vertical: 14,
                                   ),
                                 ),
-                                child: const Text('View History'),
+                                child: const Text(
+                                  'View History',
+                                  style: TextStyle(
+                                    color: Color(0xFF225E72),
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
                             ),
                           ],
@@ -256,7 +270,7 @@ class _HomeTabState extends State<HomeTab> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: const [
                               Text(
-                                'Donation Drive',
+                                'Health Monitoring',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 20,
@@ -265,7 +279,7 @@ class _HomeTabState extends State<HomeTab> {
                               ),
                               SizedBox(height: 8),
                               Text(
-                                'Help save lives today',
+                                'Track your health based on your daily logs and activities.',
                                 style: TextStyle(
                                   color: Colors.white70,
                                   fontSize: 14,

@@ -316,7 +316,7 @@ class _ClinicInfoPageState extends State<ClinicInfoPage> {
                       ),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
-                        value: _selectedStage,
+                        initialValue: _selectedStage,
                         items: const [
                           DropdownMenuItem(
                             value: 'Stage 1',
@@ -430,7 +430,14 @@ class _ClinicInfoPageState extends State<ClinicInfoPage> {
                               borderRadius: BorderRadius.circular(18),
                             ),
                           ),
-                          child: const Text('Continue to documents'),
+                          child: const Text(
+                            'Continue to documents',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                       ),
                     ],

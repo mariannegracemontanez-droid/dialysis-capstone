@@ -254,7 +254,14 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                             ? const CircularProgressIndicator(
                                 color: Colors.white,
                               )
-                            : const Text('Update Password'),
+                            : const Text(
+                                'Update Password',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                       ),
                     ),
                   ],

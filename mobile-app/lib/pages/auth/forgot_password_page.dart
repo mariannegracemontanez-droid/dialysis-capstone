@@ -276,7 +276,13 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                       onPressed: () {
                         Navigator.of(context).pushReplacementNamed('/login');
                       },
-                      child: const Text('Back to Login'),
+                      child: const Text(
+                        'Back to Login',
+                        style: TextStyle(
+                          color: Color(0xFF2C5F7D),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ),
                   ],
                 ),

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../models/signup_data.dart';
 
 class SignupCompletePage extends StatelessWidget {
   const SignupCompletePage({super.key});

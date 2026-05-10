@@ -32,9 +32,15 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
   }
 
   void _initializeControllers() {
-    _bloodTypeController = TextEditingController(text: widget.user?.bloodType ?? '');
-    _weightController = TextEditingController(text: widget.user?.weight?.toString() ?? '');
-    _heightController = TextEditingController(text: widget.user?.height?.toString() ?? '');
+    _bloodTypeController = TextEditingController(
+      text: widget.user?.bloodType ?? '',
+    );
+    _weightController = TextEditingController(
+      text: widget.user?.weight?.toString() ?? '',
+    );
+    _heightController = TextEditingController(
+      text: widget.user?.height?.toString() ?? '',
+    );
     _lastDialysisController = TextEditingController(
       text: widget.user?.lastDialysisDate != null
           ? '${widget.user!.lastDialysisDate!.year}-${widget.user!.lastDialysisDate!.month.toString().padLeft(2, '0')}-${widget.user!.lastDialysisDate!.day.toString().padLeft(2, '0')}'
@@ -92,7 +98,9 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
 
       await _profileService.updateMedicalInfo(
         userId: widget.user!.id,
-        bloodType: _bloodTypeController.text.isEmpty ? null : _bloodTypeController.text,
+        bloodType: _bloodTypeController.text.isEmpty
+            ? null
+            : _bloodTypeController.text,
         weight: weight,
         height: height,
         lastDialysisDate: lastDialysisDate,
@@ -147,19 +155,30 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
               const SizedBox(height: 8),
               if (_saveMessage != null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
-                    color: _saveMessage!.startsWith('Failed') ? Colors.red.shade50 : Colors.green.shade50,
+                    color: _saveMessage!.startsWith('Failed')
+                        ? Colors.red.shade50
+                        : Colors.green.shade50,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: _saveMessage!.startsWith('Failed') ? Colors.red : Colors.green,
+                      color: _saveMessage!.startsWith('Failed')
+                          ? Colors.red
+                          : Colors.green,
                     ),
                   ),
                   child: Row(
                     children: [
                       Icon(
-                        _saveMessage!.startsWith('Failed') ? Icons.error_outline : Icons.check_circle_outline,
-                        color: _saveMessage!.startsWith('Failed') ? Colors.red : Colors.green,
+                        _saveMessage!.startsWith('Failed')
+                            ? Icons.error_outline
+                            : Icons.check_circle_outline,
+                        color: _saveMessage!.startsWith('Failed')
+                            ? Colors.red
+                            : Colors.green,
                         size: 18,
                       ),
                       const SizedBox(width: 8),
@@ -167,7 +186,9 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
                         child: Text(
                           _saveMessage!,
                           style: TextStyle(
-                            color: _saveMessage!.startsWith('Failed') ? Colors.red : Colors.green,
+                            color: _saveMessage!.startsWith('Failed')
+                                ? Colors.red
+                                : Colors.green,
                             fontSize: 13,
                           ),
                         ),
@@ -196,10 +217,7 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
                 keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 16),
-              _buildDateField(
-                'Last Dialysis Date',
-                _lastDialysisController,
-              ),
+              _buildDateField('Last Dialysis Date', _lastDialysisController),
               const SizedBox(height: 24),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -218,7 +236,10 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
                     Expanded(
                       child: Text(
                         'Changes are saved automatically when you edit',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF2C5F7D)),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF2C5F7D),
+                        ),
                       ),
                     ),
                   ],
@@ -236,7 +257,14 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text('Done'),
+                  child: const Text(
+                    'Done',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -292,7 +320,9 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
               controller: controller,
               decoration: InputDecoration(
                 hintText: 'Select a date',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 suffixIcon: const Icon(Icons.calendar_today),
               ),
             ),

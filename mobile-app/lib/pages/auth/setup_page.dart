@@ -220,7 +220,7 @@ class _SetupPageState extends State<SetupPage> {
                             ),
                             const SizedBox(height: 16),
                             DropdownButtonFormField<String>(
-                              value: _selectedBloodType,
+                              initialValue: _selectedBloodType,
                               decoration: InputDecoration(
                                 labelText: 'Blood Type',
                                 filled: true,
@@ -308,7 +308,14 @@ class _SetupPageState extends State<SetupPage> {
                             borderRadius: BorderRadius.circular(18),
                           ),
                         ),
-                        child: const Text('Next'),
+                        child: const Text(
+                          'Next',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),

@@ -88,7 +88,11 @@ class WelcomePage extends StatelessWidget {
                           ),
                           child: const Text(
                             'Login',
-                            style: TextStyle(fontSize: 16),
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -108,6 +112,7 @@ class WelcomePage extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 16,
                               color: Color(0xFF2C5F7D),
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),

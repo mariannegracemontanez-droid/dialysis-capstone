@@ -58,7 +58,7 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
       }
 
       if (mounted) {
-        await AuthService().signOut();
+        // Keep the Supabase session alive so the login page can start the realtime approval listener.
         // ignore: use_build_context_synchronously
         Navigator.of(context).pushReplacementNamed('/signup-complete_page');
       }
@@ -227,7 +227,14 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
                             strokeWidth: 2,
                           ),
                         )
-                      : const Text('Submit & Continue'),
+                      : const Text(
+                          'Submit & Continue',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
               ),
             ],

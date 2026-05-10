@@ -195,8 +195,6 @@ class AuthService {
           }
         }
 
-        await _supabase.auth.signOut();
-
         if (status == 'pending') {
           throw Exception(
             'You still need approval from the $clinicName admin before you can log in to your account.',

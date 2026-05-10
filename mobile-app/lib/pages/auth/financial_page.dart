@@ -235,7 +235,14 @@ class _FinancialPageState extends State<FinancialPage> {
                       borderRadius: BorderRadius.circular(18),
                     ),
                   ),
-                  child: const Text('Next'),
+                  child: const Text(
+                    'Next',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
             ],

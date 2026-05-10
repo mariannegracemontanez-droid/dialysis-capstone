@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/auth/auth_service.dart';
 import '../../models/user_model.dart';
+import 'health_monitoring_page.dart';
 import 'home_tab.dart';
 import 'schedule_tab.dart';
 import 'profile_tab.dart';
@@ -61,6 +62,7 @@ class _HomePageState extends State<HomePage> {
     final pages = <Widget>[
       HomeTab(user: _currentUser, onScheduleTap: () => _onNavTap(1)),
       const AppointmentPage(),
+      const HealthMonitoringPage(),
       ProfileTab(user: _currentUser),
     ];
 
@@ -77,6 +79,7 @@ class _HomePageState extends State<HomePage> {
             icon: Icon(Icons.calendar_today),
             label: 'Schedule',
           ),
+          BottomNavigationBarItem(icon: Icon(Icons.favorite), label: 'Health'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
