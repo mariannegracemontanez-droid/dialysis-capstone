@@ -136,7 +136,7 @@ class _AdminCreatePageState extends State<AdminCreatePage> {
 
   Widget _buildClinicDropdown() {
     return DropdownButtonFormField<String>(
-      value: selectedClinicId,
+      initialValue: selectedClinicId,
       hint: const Text("Select Clinic"),
       items: _clinics.map((clinic) {
         final hasAdmin = _clinicsWithAdmin.contains(clinic.id);

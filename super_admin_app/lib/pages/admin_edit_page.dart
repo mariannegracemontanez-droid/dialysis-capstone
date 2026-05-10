@@ -165,7 +165,7 @@ class _AdminEditPageState extends State<AdminEditPage> {
                             decoration: const InputDecoration(
                               border: OutlineInputBorder(),
                             ),
-                            value: selectedClinicId,
+                            initialValue: selectedClinicId,
                             hint: const Text("Select Clinic"),
 
                             items: _clinics.map((clinic) {

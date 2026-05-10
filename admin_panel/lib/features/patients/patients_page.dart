@@ -786,7 +786,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   dataRowMinHeight: 58,
                   dataRowMaxHeight: 64,
                   columnSpacing: 56,
-                  headingRowColor: MaterialStateProperty.all(
+                  headingRowColor: WidgetStateProperty.all(
                     const Color(0xFFF4F7FA),
                   ),
                   border: TableBorder(
@@ -866,12 +866,12 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   dataRowMaxHeight: 66,
                   columnSpacing: 58,
                   showCheckboxColumn: false,
-                  headingRowColor: MaterialStateProperty.all(
+                  headingRowColor: WidgetStateProperty.all(
                     const Color(0xFFF4F7FA),
                   ),
-                  dataRowColor: MaterialStateProperty.resolveWith<Color?>(
+                  dataRowColor: WidgetStateProperty.resolveWith<Color?>(
                     (states) {
-                      if (states.contains(MaterialState.hovered)) {
+                      if (states.contains(WidgetState.hovered)) {
                         return const Color(0xFFEAF3F7);
                       }
                       return null;
@@ -966,7 +966,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   dataRowMinHeight: 58,
                   dataRowMaxHeight: 64,
                   columnSpacing: 70,
-                  headingRowColor: MaterialStateProperty.all(
+                  headingRowColor: WidgetStateProperty.all(
                     const Color(0xFFF4F7FA),
                   ),
                   border: TableBorder(

@@ -316,7 +316,7 @@ class _ClinicInfoPageState extends State<ClinicInfoPage> {
                       ),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
-                        value: _selectedStage,
+                        initialValue: _selectedStage,
                         items: const [
                           DropdownMenuItem(
                             value: 'Stage 1',

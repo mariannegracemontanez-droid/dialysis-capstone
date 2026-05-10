@@ -2,7 +2,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'login_page.dart';
-import 'payment_page.dart';
 import 'proof_page.dart';
 
 class DonationPage extends StatefulWidget {

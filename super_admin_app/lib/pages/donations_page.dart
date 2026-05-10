@@ -98,7 +98,7 @@ class _DonationsPageState extends State<DonationsPage> {
                 children: [
                   /// CENTER DROPDOWN
                   DropdownButtonFormField<Map<String, dynamic>>(
-                    value: selectedCenter,
+                    initialValue: selectedCenter,
                     items: _centers.map((center) {
                       return DropdownMenuItem<Map<String, dynamic>>(
                         value: center,

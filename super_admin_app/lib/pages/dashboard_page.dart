@@ -554,7 +554,7 @@ Widget _buildCapacityCard(CenterModel center) {
 
   final isOpen = _isOpenNow(center.operatingHours);
 
-  final dbStatus = center.status?.toLowerCase();
+  final dbStatus = center.status.toLowerCase();
 
   // ✅ USE GLOBAL COLOR FUNCTION
   final statusColor = _statusColor(dbStatus);
@@ -1069,7 +1069,6 @@ class _ActionCard extends StatelessWidget {
     required this.label,
     required this.description,
     required this.icon,
-    this.accentColor = const Color(0xFF0F719F),
     required this.onTap,
   });
 
