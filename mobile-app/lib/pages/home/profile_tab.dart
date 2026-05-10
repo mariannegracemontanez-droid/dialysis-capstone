@@ -166,7 +166,14 @@ class _ProfileTabState extends State<ProfileTab> {
                         ),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
-                      child: const Text('Edit Information'),
+                      child: const Text(
+                        'Edit Information',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -229,7 +236,14 @@ class _ProfileTabState extends State<ProfileTab> {
                         ),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
-                      child: const Text('Edit Medical Info'),
+                      child: const Text(
+                        'Edit Medical Info',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
                 ],

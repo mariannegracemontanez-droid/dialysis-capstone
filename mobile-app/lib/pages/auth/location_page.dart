@@ -104,9 +104,7 @@ class _LocationPageState extends State<LocationPage> {
     showDialog(
       context: context,
       builder: (_) => Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: SingleChildScrollView(
@@ -207,15 +205,12 @@ class _LocationPageState extends State<LocationPage> {
                       ),
                     ],
                   ],
-                  ),
+                ),
                 const SizedBox(height: 18),
                 if (clinic['requirements'] != null) ...[
                   const Text(
                     'Required documents',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 12),
                   ..._buildRequirementItems(clinic['requirements']),
@@ -277,8 +272,9 @@ class _LocationPageState extends State<LocationPage> {
     final updated = widget.signupData.copyWith(
       clinicId: _selectedClinic!['id'],
       clinicName: _selectedClinic!['name']?.toString() ?? '',
-      clinicRequirements:
-          _extractClinicRequirements(_selectedClinic!['requirements']),
+      clinicRequirements: _extractClinicRequirements(
+        _selectedClinic!['requirements'],
+      ),
     );
 
     Navigator.of(context).pushNamed(
@@ -311,10 +307,7 @@ class _LocationPageState extends State<LocationPage> {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                requirement,
-                style: const TextStyle(fontSize: 14),
-              ),
+              child: Text(requirement, style: const TextStyle(fontSize: 14)),
             ),
           ],
         ),
@@ -325,9 +318,7 @@ class _LocationPageState extends State<LocationPage> {
   Widget _buildClinicDetailsCard(Map<String, dynamic> clinic) {
     final requirements = clinic['requirements'];
     return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       elevation: 4,
       shadowColor: Colors.black.withOpacity(0.08),
       child: Padding(
@@ -428,17 +419,13 @@ class _LocationPageState extends State<LocationPage> {
                     ),
                   ),
                 ],
-            
               ],
             ),
             if (requirements != null) ...[
               const SizedBox(height: 18),
               const Text(
                 'Required documents',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
               ..._buildRequirementItems(requirements),
@@ -451,122 +438,136 @@ class _LocationPageState extends State<LocationPage> {
 
   @override
   @override
-Widget build(BuildContext context) {
-  return Scaffold(
-    backgroundColor: const Color(0xFFF4F9FB),
-    body: SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(
-                    Icons.arrow_back,
-                    color: Color(0xFF2C5F7D),
-                  ),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  'Choose Location',
-                  style: TextStyle(
-                    color: Color(0xFF2C5F7D),
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Select your preferred dialysis center in Valenzuela and review the requirements before continuing.',
-              style: TextStyle(color: Color(0xFF5B6D7D), fontSize: 14),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: Card(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                elevation: 4,
-                shadowColor: Colors.black.withOpacity(0.08),
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(24),
-                        ),
-                        child: FlutterMap(
-                          mapController: _mapController,
-                          options: MapOptions(
-                            initialCenter: _valenzuelaCenter,
-                            initialZoom: 13,
-                          ),
-                          children: [
-                            TileLayer(
-                              urlTemplate:
-                                  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                              subdomains: const ['a', 'b', 'c'],
-                              userAgentPackageName:
-                                  'com.example.dialysis_patient_app',
-                            ),
-                            if (_clinics.isNotEmpty)
-                              MarkerLayer(markers: _buildMarkers(_clinics)),
-                          ],
-                        ),
-                      ),
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F9FB),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back,
+                      color: Color(0xFF2C5F7D),
                     ),
-                    Flexible(
-                      child: Padding(
-                        padding: const EdgeInsets.all(18),
-                        child: SingleChildScrollView(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Choose Location',
+                    style: TextStyle(
+                      color: Color(0xFF2C5F7D),
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Select your preferred dialysis center in Valenzuela and review the requirements before continuing.',
+                style: TextStyle(color: Color(0xFF5B6D7D), fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  elevation: 4,
+                  shadowColor: Colors.black.withOpacity(0.08),
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(24),
+                          ),
+                          child: FlutterMap(
+                            mapController: _mapController,
+                            options: MapOptions(
+                              initialCenter: _valenzuelaCenter,
+                              initialZoom: 13,
+                            ),
                             children: [
-                              if (_isLoading)
-                                const Center(child: CircularProgressIndicator())
-                              else if (_errorMessage != null)
-                                Text(
-                                  _errorMessage!,
-                                  style: const TextStyle(color: Colors.red),
-                                )
-                              else ...[
-                                if (_selectedClinic != null) ...[
-                                  _buildClinicDetailsCard(_selectedClinic!),
-                                  const SizedBox(height: 16),
-                                ],
-                                SizedBox(
-                                  height: 52,
-                                  child: ElevatedButton(
-                                    onPressed: _isLoading ? null : _handleNext,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF2C5F7D),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(18),
-                                      ),
-                                    ),
-                                    child: const Text('Next'),
-                                  ),
-                                ),
-                              ],
+                              TileLayer(
+                                urlTemplate:
+                                    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                subdomains: const ['a', 'b', 'c'],
+                                userAgentPackageName:
+                                    'com.example.dialysis_patient_app',
+                              ),
+                              if (_clinics.isNotEmpty)
+                                MarkerLayer(markers: _buildMarkers(_clinics)),
                             ],
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                      Flexible(
+                        child: Padding(
+                          padding: const EdgeInsets.all(18),
+                          child: SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (_isLoading)
+                                  const Center(
+                                    child: CircularProgressIndicator(),
+                                  )
+                                else if (_errorMessage != null)
+                                  Text(
+                                    _errorMessage!,
+                                    style: const TextStyle(color: Colors.red),
+                                  )
+                                else ...[
+                                  if (_selectedClinic != null) ...[
+                                    _buildClinicDetailsCard(_selectedClinic!),
+                                    const SizedBox(height: 16),
+                                  ],
+                                  SizedBox(
+                                    height: 52,
+                                    child: ElevatedButton(
+                                      onPressed: _isLoading
+                                          ? null
+                                          : _handleNext,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(
+                                          0xFF2C5F7D,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            18,
+                                          ),
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        'Next',
+                                        style: TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
   }
-
 }

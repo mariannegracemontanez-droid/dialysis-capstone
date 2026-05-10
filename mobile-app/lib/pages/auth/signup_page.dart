@@ -193,7 +193,7 @@ class _SignupPageState extends State<SignupPage> {
                           Text(
                             'Take note:',
                             style: TextStyle(
-                              color: Color(0xFF145A76),
+                              color: Color.fromARGB(255, 20, 90, 118),
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
                             ),
@@ -202,7 +202,7 @@ class _SignupPageState extends State<SignupPage> {
                           Text(
                             '• Please save your login details (email and password) after creating your account.',
                             style: TextStyle(
-                              color: Color(0xFF2E5F75),
+                              color: Color.fromARGB(255, 49, 112, 141),
                               fontSize: 14,
                             ),
                           ),
@@ -210,7 +210,7 @@ class _SignupPageState extends State<SignupPage> {
                           Text(
                             '• Your account will only be accessible once the chosen clinic or admin approves your request.',
                             style: TextStyle(
-                              color: Color(0xFF2E5F75),
+                              color: Color.fromARGB(255, 49, 112, 141),
                               fontSize: 14,
                             ),
                           ),
@@ -218,7 +218,7 @@ class _SignupPageState extends State<SignupPage> {
                           Text(
                             '• For your security, do not share your password with anyone.',
                             style: TextStyle(
-                              color: Color(0xFF2E5F75),
+                              color: Color.fromARGB(255, 49, 112, 141),
                               fontSize: 14,
                             ),
                           ),
@@ -427,7 +427,14 @@ class _SignupPageState extends State<SignupPage> {
                                   ? const CircularProgressIndicator(
                                       color: Colors.white,
                                     )
-                                  : const Text('Next'),
+                                  : const Text(
+                                      'Next',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                             ),
                           ),
                           const SizedBox(height: 16),

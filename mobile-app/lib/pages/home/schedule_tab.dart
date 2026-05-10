@@ -337,7 +337,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: isScheduled
-                        ? const Color(0xFF5145F6)
+                        ? const Color(0xFF225E72)
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(8),
                     border: isSelected

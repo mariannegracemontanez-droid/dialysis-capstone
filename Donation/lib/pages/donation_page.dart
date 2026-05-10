@@ -425,98 +425,103 @@ Widget _paymentButton(String method) {
                       ),
                     ),
 
-                  /// 🔥 DONATE BUTTON
-                  SizedBox(
-                    height: 55,
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _isLoading
-                          ? null
-                          : () async {
-                              final user = Supabase
-                                  .instance.client.auth.currentUser;
+                 /// 🔥 DONATE BUTTON
+SizedBox(
+  height: 55,
+  width: double.infinity,
+  child: ElevatedButton(
+    onPressed: _isLoading
+        ? null
+        : () async {
+            final user =
+                Supabase.instance.client.auth.currentUser;
 
-                              if (user == null) return;
+            if (user == null) return;
 
-                              final amount = _parseAmount();
+            final amount = _parseAmount();
 
-                              if (amount == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content:
-                                          Text("Enter valid amount")),
-                                );
-                                return;
-                              }
+            if (amount == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("Enter valid amount"),
+                ),
+              );
+              return;
+            }
 
-                              if (_selectedPaymentChannel == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content: Text(
-                                          "Select payment method")),
-                                );
-                                return;
-                              }
+            if (_selectedPaymentChannel == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("Select payment method"),
+                ),
+              );
+              return;
+            }
 
-                              try {
-                                final response = await Supabase
-                                    .instance.client
-                                    .from('donations')
-                                    .insert({
-                                  'donor_id': user.id,
-                                  'name': _nameController.text,
-                                  'email': _emailController.text,
-                                  'amount': amount,
-                                  'payment_method':
-                                      _selectedPaymentChannel,
-                                  'status': 'pending',
-                                }).select().single();
+            try {
+              final response = await Supabase
+                  .instance.client
+                  .from('donations')
+                  .insert({
+                'donor_id': user.id,
+                'name': _nameController.text,
+                'email': _emailController.text,
+                'amount': amount,
+                'payment_method':
+                    _selectedPaymentChannel,
+                'status': 'pending',
+              }).select().single();
 
-                                final donationId = response['id'];
+              final donationId = response['id'];
 
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => ProofUploadPage(
-                                      donationId: donationId,
-                                    ),
-                                  ),
-                                );
-                              } catch (e) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content: Text("Error: $e")),
-                                );
-                              }
-                            },
-                          style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF38A6DB),
-                        elevation: 4,
-                        shadowColor: Colors.black.withOpacity(0.2),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                      ),
-                      child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Text(
-                          'DONATE NOW',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16,
-                            letterSpacing: 1,
-                            color: Colors.white,
-                          ),
-                        ),
-                    ),
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ProofUploadPage(
+                    donationId: donationId,
+                    paymentMethod:
+                        _selectedPaymentChannel!,
                   ),
+                ),
+              );
+
+            } catch (e) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text("Error: $e"),
+                ),
+              );
+            }
+          },
+    style: ElevatedButton.styleFrom(
+      backgroundColor: const Color(0xFF38A6DB),
+      elevation: 4,
+      shadowColor: Colors.black.withOpacity(0.2),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(30),
+      ),
+    ),
+    child: _isLoading
+        ? const SizedBox(
+            height: 20,
+            width: 20,
+            child: CircularProgressIndicator(
+              color: Colors.white,
+              strokeWidth: 2,
+            ),
+          )
+        : const Text(
+            'DONATE NOW',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 16,
+              letterSpacing: 1,
+              color: Colors.white,
+            ),
+          ),
+  ),
+),
+
                 ],
               ),
             ),
@@ -531,5 +536,5 @@ Widget _paymentButton(String method) {
 )
     );
 
-}
+  }
 }

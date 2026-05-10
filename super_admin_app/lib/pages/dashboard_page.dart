@@ -1065,7 +1065,7 @@ class _ActionCard extends StatelessWidget {
   final Color accentColor;
   final VoidCallback onTap;
 
-  const _ActionCard({
+  const _ActionCard(this.accentColor, {
     required this.label,
     required this.description,
     required this.icon,

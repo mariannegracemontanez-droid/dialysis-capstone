@@ -430,7 +430,14 @@ class _ClinicInfoPageState extends State<ClinicInfoPage> {
                               borderRadius: BorderRadius.circular(18),
                             ),
                           ),
-                          child: const Text('Continue to documents'),
+                          child: const Text(
+                            'Continue to documents',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                       ),
                     ],
