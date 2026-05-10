@@ -1,16 +1,17 @@
-// REMOVE dart:io ❌
-// import 'dart:io';
-
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ProofUploadPage extends StatefulWidget {
   final String donationId;
+  final String paymentMethod;
 
-  const ProofUploadPage({super.key, required this.donationId});
+  const ProofUploadPage({
+    super.key,
+    required this.donationId,
+    required this.paymentMethod,
+  });
 
   @override
   State<ProofUploadPage> createState() => _ProofUploadPageState();
@@ -20,7 +21,7 @@ class _ProofUploadPageState extends State<ProofUploadPage> {
   Uint8List? _imageBytes;
   bool _isLoading = false;
 
-  // 📸 PICK IMAGE (WEB SAFE)
+  // 📸 PICK IMAGE
   Future<void> pickImage() async {
     final pickedFile =
         await ImagePicker().pickImage(source: ImageSource.gallery);
@@ -38,7 +39,9 @@ class _ProofUploadPageState extends State<ProofUploadPage> {
   Future<void> uploadProof() async {
     if (_imageBytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please upload a receipt first")),
+        const SnackBar(
+          content: Text("Please upload a receipt first"),
+        ),
       );
       return;
     }
@@ -68,23 +71,25 @@ class _ProofUploadPageState extends State<ProofUploadPage> {
 
       if (!mounted) return;
 
-      // ✅ SUCCESS UI
+      // ✅ SUCCESS DIALOG
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: const Text("Success 🎉"),
           content: const Text(
-              "Your receipt has been uploaded. Please wait for admin approval."),
+            "Your receipt has been uploaded. Please wait for admin approval.",
+          ),
           actions: [
             TextButton(
               onPressed: () {
                 Navigator.pop(context);
-                Navigator.pop(context); // back to landing
+                Navigator.pop(context);
               },
               child: const Text("OK"),
-            )
+            ),
           ],
         ),
       );
@@ -109,10 +114,11 @@ class _ProofUploadPageState extends State<ProofUploadPage> {
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 500),
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(20),
             child: Column(
               children: [
+
                 const SizedBox(height: 20),
 
                 // 💬 MESSAGE CARD
@@ -123,9 +129,64 @@ class _ProofUploadPageState extends State<ProofUploadPage> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: const Text(
-                    "Thank you for your donation 💙\n\nUpload your receipt so we can verify your contribution.",
+                    "Thank you for your donation 💙\n\nScan the QR below, complete your payment, then upload your receipt for verification.",
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 14),
+                  ),
+                ),
+
+                const SizedBox(height: 30),
+
+                // ✅ QR SECTION
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+
+                      Text(
+                        widget.paymentMethod == 'GCASH'
+                            ? 'Scan this GCash QR to donate'
+                            : 'Scan this Bank QR to donate',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Image.asset(
+                          widget.paymentMethod == 'GCASH'
+                              ? 'lib/assets/image/gcash_qr.jpg'
+                              : 'lib/assets/image/bank_qr.jpg',
+                          height: 250,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      const Text(
+                        'After sending your donation, upload your receipt below for verification.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
 
@@ -140,14 +201,19 @@ class _ProofUploadPageState extends State<ProofUploadPage> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.grey.shade300),
+                      border: Border.all(
+                        color: Colors.grey.shade300,
+                      ),
                     ),
                     child: _imageBytes == null
                         ? const Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.cloud_upload,
-                                  size: 50, color: Colors.grey),
+                              Icon(
+                                Icons.cloud_upload,
+                                size: 50,
+                                color: Colors.grey,
+                              ),
                               SizedBox(height: 10),
                               Text("Click to upload receipt"),
                             ],
@@ -176,7 +242,9 @@ class _ProofUploadPageState extends State<ProofUploadPage> {
                     elevation: 3,
                   ),
                   child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
+                      ? const CircularProgressIndicator(
+                          color: Colors.white,
+                        )
                       : const Text(
                           "CONFIRM UPLOAD",
                           style: TextStyle(

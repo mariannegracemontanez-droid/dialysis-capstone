@@ -75,12 +75,12 @@ class DonationService {
 
   // 🔥 FETCH CENTER NAMES
   Future<List<Map<String, dynamic>>> fetchCenters() async {
-  final response = await _supabase
-      .from('clinics')
-      .select('id, name');
+    final response = await _supabase
+        .from('clinics')
+        .select('id, name');
 
-  return List<Map<String, dynamic>>.from(response);
-}
+    return List<Map<String, dynamic>>.from(response);
+  }
 
   // 🔥 FETCH DISTRIBUTIONS (AUDIT LOG)
   Future<List<FundDistribution>> fetchFundDistributions() async {
@@ -99,20 +99,24 @@ class DonationService {
 
   // 🔥 CREATE DISTRIBUTION
   Future<void> createFundDistribution({
-  required String clinicId,
-  required String centerName,
-  required double amount,
-  required String remarks,
-}) async {
-  await _supabase.from('fund_distributions').insert({
-    'clinic_id': clinicId,
-    'center_name': centerName,
-    'amount': amount,
-    'remarks': remarks,
-    'status': 'Distributed',
-    'created_at': DateTime.now().toIso8601String(),
-  });
-}
+    required String clinicId,
+    required String centerName,
+    required double amount,
+    required String remarks,
+  }) async {
+
+    final adminId = _supabase.auth.currentUser?.id;
+
+    await _supabase.from('fund_distributions').insert({
+      'clinic_id': clinicId,
+      'center_name': centerName,
+      'amount': amount,
+      'remarks': remarks,
+      'status': 'Distributed',
+      'distributed_by': adminId,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
 
   // 🔥 CREATE DONATION (OPTIONAL)
   Future<void> createDonation({

@@ -26,6 +26,8 @@ flutter:
     - .env
     - lib/assets/image/CureNurture_logo.png
     - lib/assets/image/gradient_background.png
+    - lib/assets/image/gcash_qr.jpg
+    - lib/assets/image/bank_qr.jpg
 
   fonts:
     - family: Montserrat
