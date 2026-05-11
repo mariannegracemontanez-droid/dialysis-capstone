@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../services/notification_service.dart';
 
 class NotificationPage extends StatefulWidget {
   const NotificationPage({super.key});
@@ -14,7 +17,7 @@ class _NotificationPageState extends State<NotificationPage> {
   List<dynamic> notifications = [];
   bool isLoading = true;
 
-  late final RealtimeChannel _notificationChannel;
+  RealtimeChannel? _notificationChannel;
 
   @override
   void initState() {
@@ -24,15 +27,11 @@ class _NotificationPageState extends State<NotificationPage> {
     listenToNotifications();
   }
 
+  final NotificationService _notificationService = NotificationService();
+
   Future<void> fetchNotifications() async {
     try {
-      final userId = supabase.auth.currentUser!.id;
-
-      final response = await supabase
-          .from('notifications')
-          .select()
-          .eq('recipient_id', userId)
-          .order('created_at', ascending: false);
+      final response = await _notificationService.getNotifications();
 
       setState(() {
         notifications = response;
@@ -48,7 +47,8 @@ class _NotificationPageState extends State<NotificationPage> {
   }
 
   void listenToNotifications() {
-    final userId = supabase.auth.currentUser!.id;
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) return;
 
     _notificationChannel = supabase
         .channel('user-notifications')
@@ -63,6 +63,10 @@ class _NotificationPageState extends State<NotificationPage> {
           ),
           callback: (payload) async {
             final newNotification = payload.newRecord;
+            final exists = notifications.any(
+              (n) => n['id'] == newNotification['id'],
+            );
+            if (exists) return;
 
             setState(() {
               notifications.insert(0, newNotification);
@@ -83,10 +87,7 @@ class _NotificationPageState extends State<NotificationPage> {
   }
 
   Future<void> markNotificationAsRead(String notificationId) async {
-    await supabase
-        .from('notifications')
-        .update({'is_read': true})
-        .eq('id', notificationId);
+    await _notificationService.markAsRead(notificationId);
 
     setState(() {
       final index = notifications.indexWhere((n) => n['id'] == notificationId);
@@ -99,8 +100,21 @@ class _NotificationPageState extends State<NotificationPage> {
 
   @override
   void dispose() {
-    supabase.removeChannel(_notificationChannel);
+    if (_notificationChannel != null) {
+      supabase.removeChannel(_notificationChannel!);
+    }
     super.dispose();
+  }
+
+  String _formatTimestamp(String? value) {
+    if (value == null || value.isEmpty) return '';
+
+    try {
+      final date = DateTime.parse(value).toLocal();
+      return DateFormat('MMM d, yyyy • h:mm a').format(date);
+    } catch (_) {
+      return value;
+    }
   }
 
   @override
@@ -223,10 +237,10 @@ class _NotificationPageState extends State<NotificationPage> {
                                       const SizedBox(height: 10),
 
                                       Text(
-                                        notification['created_at'] != null
-                                            ? notification['created_at']
-                                                  .toString()
-                                            : '',
+                                        _formatTimestamp(
+                                          notification['created_at']
+                                              ?.toString(),
+                                        ),
                                         style: TextStyle(
                                           fontSize: 11,
                                           color: Colors.grey[500],

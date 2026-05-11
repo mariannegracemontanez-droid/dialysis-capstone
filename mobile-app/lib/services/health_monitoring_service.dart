@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
+import '../services/notification_service.dart';
 
 class HealthMonitoringService {
   final SupabaseClient _supabase = SupabaseConfig.client;
@@ -86,66 +87,98 @@ class HealthMonitoringService {
       'patient_id': patientId,
       'amount_ml': amountMl,
     });
+
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) return;
+
+    final today = DateTime.now();
+    final startOfDay = DateTime(
+      today.year,
+      today.month,
+      today.day,
+    ).toIso8601String();
+
+    final totalToday = await getTodayWaterTotal();
+    if (totalToday > 1000) {
+      final existingAlert = await _supabase
+          .from('notifications')
+          .select('id')
+          .eq('recipient_id', userId)
+          .eq('type', 'water_alert')
+          .gte('created_at', startOfDay)
+          .maybeSingle();
+
+      if (existingAlert == null) {
+        await NotificationService().createNotification(
+          title: 'Water Intake Alert',
+          message: 'Lumagpas ka na sa prescribed 1 liter water intake today.',
+          type: 'water_alert',
+        );
+      }
+    }
   }
 
   Future<Map<String, dynamic>?> getLatestBloodPressure() async {
-  final patientId = await getCurrentPatientId();
-  if (patientId == null) return null;
+    final patientId = await getCurrentPatientId();
+    if (patientId == null) return null;
 
-  final data = await _supabase
-      .from('blood_pressure_logs')
-      .select('id, systolic, diastolic, notes, session_date, created_at')
-      .eq('patient_id', patientId)
-      .order('session_date', ascending: false)
-      .order('created_at', ascending: false)
-      .limit(1)
-      .maybeSingle();
+    final data = await _supabase
+        .from('blood_pressure_logs')
+        .select('id, systolic, diastolic, notes, session_date, created_at')
+        .eq('patient_id', patientId)
+        .order('session_date', ascending: false)
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
 
-  return data;
-}
+    return data;
+  }
 
-Future<List<Map<String, dynamic>>> getBloodPressureRecords() async {
-  final patientId = await getCurrentPatientId();
-  if (patientId == null) return [];
+  Future<List<Map<String, dynamic>>> getBloodPressureRecords() async {
+    final patientId = await getCurrentPatientId();
+    if (patientId == null) return [];
 
-  final data = await _supabase
-      .from('blood_pressure_logs')
-      .select('id, systolic, diastolic, notes, session_date, created_at')
-      .eq('patient_id', patientId)
-      .order('session_date', ascending: false)
-      .order('created_at', ascending: false);
+    final data = await _supabase
+        .from('blood_pressure_logs')
+        .select('id, systolic, diastolic, notes, session_date, created_at')
+        .eq('patient_id', patientId)
+        .order('session_date', ascending: false)
+        .order('created_at', ascending: false);
 
-  return List<Map<String, dynamic>>.from(data as List<dynamic>);
-}
+    return List<Map<String, dynamic>>.from(data as List<dynamic>);
+  }
 
-Future<Map<String, dynamic>?> getLatestWeightLog() async {
-  final patientId = await getCurrentPatientId();
-  if (patientId == null) return null;
+  Future<Map<String, dynamic>?> getLatestWeightLog() async {
+    final patientId = await getCurrentPatientId();
+    if (patientId == null) return null;
 
-  final data = await _supabase
-      .from('weight_logs')
-      .select('id, before_weight, after_weight, notes, session_date, created_at')
-      .eq('patient_id', patientId)
-      .order('session_date', ascending: false)
-      .order('created_at', ascending: false)
-      .limit(1)
-      .maybeSingle();
+    final data = await _supabase
+        .from('weight_logs')
+        .select(
+          'id, before_weight, after_weight, notes, session_date, created_at',
+        )
+        .eq('patient_id', patientId)
+        .order('session_date', ascending: false)
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
 
-  return data;
-}
+    return data;
+  }
 
-Future<List<Map<String, dynamic>>> getWeightRecords() async {
-  final patientId = await getCurrentPatientId();
-  if (patientId == null) return [];
+  Future<List<Map<String, dynamic>>> getWeightRecords() async {
+    final patientId = await getCurrentPatientId();
+    if (patientId == null) return [];
 
-  final data = await _supabase
-      .from('weight_logs')
-      .select('id, before_weight, after_weight, notes, session_date, created_at')
-      .eq('patient_id', patientId)
-      .order('session_date', ascending: false)
-      .order('created_at', ascending: false);
+    final data = await _supabase
+        .from('weight_logs')
+        .select(
+          'id, before_weight, after_weight, notes, session_date, created_at',
+        )
+        .eq('patient_id', patientId)
+        .order('session_date', ascending: false)
+        .order('created_at', ascending: false);
 
-  return List<Map<String, dynamic>>.from(data as List<dynamic>);
-}
-
+    return List<Map<String, dynamic>>.from(data as List<dynamic>);
+  }
 }

@@ -1,3 +1,5 @@
+import 'package:CureNurture/services/fcm_service.dart';
+import 'package:CureNurture/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth/auth_service.dart';
@@ -25,11 +27,6 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
-
-    // FIX:
-    // Do not start approval checking here.
-    // This prevents the "Your account has been approved" message
-    // from showing automatically when the login page opens.
   }
 
   @override
@@ -76,16 +73,29 @@ class _LoginPageState extends State<LoginPage> {
       if (!mounted) return;
 
       Navigator.of(context).pushReplacementNamed('/home');
+
+      Future.microtask(() async {
+        try {
+          await FcmService().initialize();
+
+          await NotificationService().createNotification(
+            title: 'Account Login',
+            message: 'Your account was accessed just now.',
+            type: 'security',
+          );
+        } catch (e) {
+          debugPrint('Notification setup error: $e');
+        }
+      });
     } catch (e) {
       final errorText = e.toString();
 
-      setState(() {
-        _errorMessage = errorText;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = errorText;
+        });
+      }
 
-      // Optional:
-      // Start approval listener only after login attempt,
-      // not when the page first opens.
       if (errorText.toLowerCase().contains('pending') ||
           errorText.toLowerCase().contains('not approved') ||
           errorText.toLowerCase().contains('approval')) {

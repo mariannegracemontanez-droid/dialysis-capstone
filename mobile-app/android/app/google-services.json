@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "375508367899",
+    "project_id": "curenurture",
+    "storage_bucket": "curenurture.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:375508367899:android:a7a75dc8de17d95ea756be",
+        "android_client_info": {
+          "package_name": "com.dialysis.dialysis_patient_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDRp0UbBQhjkmv9tWXETBtc1L2DPB-mk0w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

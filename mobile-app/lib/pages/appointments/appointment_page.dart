@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import '../../services/appointment_service.dart';
+import '../../services/notification_service.dart';
 
 class AppointmentPage extends StatefulWidget {
   const AppointmentPage({super.key});
@@ -58,6 +59,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
       });
 
       print('PARSED DAYS: $_scheduledDays');
+      await _checkScheduleReminders();
     } catch (e) {
       print('LOAD SCHEDULE ERROR: $e');
 
@@ -67,6 +69,49 @@ class _AppointmentPageState extends State<AppointmentPage> {
         _errorMessage = e.toString();
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _checkScheduleReminders() async {
+    if (_scheduledDays.isEmpty) return;
+
+    try {
+      final now = DateTime.now();
+      final todayName = _weekdayNames[now.weekday]!;
+      final tomorrowName =
+          _weekdayNames[now.add(const Duration(days: 1)).weekday]!;
+      final startOfDay = DateTime(now.year, now.month, now.day);
+      final notificationService = NotificationService();
+
+      if (_scheduledDays.contains(todayName)) {
+        final exists = await notificationService.hasNotificationOfTypeSince(
+          'schedule_today',
+          startOfDay,
+        );
+        if (!exists) {
+          await notificationService.createNotification(
+            title: 'Dialysis Schedule Today',
+            message: 'You have a dialysis schedule today.',
+            type: 'schedule_today',
+          );
+        }
+      }
+
+      if (_scheduledDays.contains(tomorrowName)) {
+        final exists = await notificationService.hasNotificationOfTypeSince(
+          'schedule_tomorrow',
+          startOfDay,
+        );
+        if (!exists) {
+          await notificationService.createNotification(
+            title: 'Dialysis Schedule Tomorrow',
+            message: 'You have a dialysis schedule tomorrow.',
+            type: 'schedule_tomorrow',
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Schedule reminder error: $e');
     }
   }
 
