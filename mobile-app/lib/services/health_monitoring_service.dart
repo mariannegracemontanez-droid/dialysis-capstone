@@ -89,10 +89,63 @@ class HealthMonitoringService {
   }
 
   Future<Map<String, dynamic>?> getLatestBloodPressure() async {
-    return null;
-  }
+  final patientId = await getCurrentPatientId();
+  if (patientId == null) return null;
 
-  Future<Map<String, dynamic>?> getLatestWeightLog() async {
-    return null;
-  }
+  final data = await _supabase
+      .from('blood_pressure_logs')
+      .select('id, systolic, diastolic, notes, session_date, created_at')
+      .eq('patient_id', patientId)
+      .order('session_date', ascending: false)
+      .order('created_at', ascending: false)
+      .limit(1)
+      .maybeSingle();
+
+  return data;
+}
+
+Future<List<Map<String, dynamic>>> getBloodPressureRecords() async {
+  final patientId = await getCurrentPatientId();
+  if (patientId == null) return [];
+
+  final data = await _supabase
+      .from('blood_pressure_logs')
+      .select('id, systolic, diastolic, notes, session_date, created_at')
+      .eq('patient_id', patientId)
+      .order('session_date', ascending: false)
+      .order('created_at', ascending: false);
+
+  return List<Map<String, dynamic>>.from(data as List<dynamic>);
+}
+
+Future<Map<String, dynamic>?> getLatestWeightLog() async {
+  final patientId = await getCurrentPatientId();
+  if (patientId == null) return null;
+
+  final data = await _supabase
+      .from('weight_logs')
+      .select('id, before_weight, after_weight, notes, session_date, created_at')
+      .eq('patient_id', patientId)
+      .order('session_date', ascending: false)
+      .order('created_at', ascending: false)
+      .limit(1)
+      .maybeSingle();
+
+  return data;
+}
+
+Future<List<Map<String, dynamic>>> getWeightRecords() async {
+  final patientId = await getCurrentPatientId();
+  if (patientId == null) return [];
+
+  final data = await _supabase
+      .from('weight_logs')
+      .select('id, before_weight, after_weight, notes, session_date, created_at')
+      .eq('patient_id', patientId)
+      .order('session_date', ascending: false)
+      .order('created_at', ascending: false);
+
+  return List<Map<String, dynamic>>.from(data as List<dynamic>);
+}
+
 }

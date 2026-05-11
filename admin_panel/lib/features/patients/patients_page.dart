@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/patient_service.dart';
 import '../../models/patient.dart';
 import '../dashboard/dashboard_page.dart';
+import '../../services/health_monitoring_service.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 late Future<Map<String, dynamic>?> _adminInfo;
 
@@ -16,15 +19,28 @@ class PatientsPage extends ConsumerStatefulWidget {
 class _PatientsPageState extends ConsumerState<PatientsPage> {
   final PatientService _service = PatientService();
   int _selectedNavIndex = 1;
+  final HealthMonitoringService _healthService =
+    HealthMonitoringService();
 
   late Future<List<Patient>> _pendingPatients;
   late Future<List<Patient>> _allPatients;
   late Future<List<Patient>> _declinedPatients;
 
+  RealtimeChannel? _patientsChannel;
+  RealtimeChannel? _monitoringChannel;
+
   @override
   void initState() {
     super.initState();
     _loadData();
+    _setupRealtime();
+  }
+
+  @override
+  void dispose() {
+    _patientsChannel?.unsubscribe();
+    _monitoringChannel?.unsubscribe();
+    super.dispose();
   }
 
   void _loadData() {
@@ -39,6 +55,48 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       _loadData();
     });
   }
+
+void _setupRealtime() {
+  final supabase = Supabase.instance.client;
+
+  _patientsChannel = supabase
+      .channel('patients-page-patients')
+      .onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'patients',
+        callback: (payload) {
+          if (!mounted) return;
+
+          setState(() {
+            _loadData();
+          });
+        },
+      )
+      .subscribe();
+
+  _monitoringChannel = supabase
+      .channel('patients-page-monitoring')
+      .onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'blood_pressure_logs',
+        callback: (payload) {
+          if (!mounted) return;
+          setState(() {});
+        },
+      )
+      .onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'weight_logs',
+        callback: (payload) {
+          if (!mounted) return;
+          setState(() {});
+        },
+      )
+      .subscribe();
+}
 
   String _formatTime(dynamic value) {
     if (value == null) return '';
@@ -1109,7 +1167,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           backgroundColor: Colors.transparent,
           insetPadding: const EdgeInsets.all(24),
           child: Container(
-            width: 760,
+            width: 980,
             constraints: const BoxConstraints(maxHeight: 760),
             decoration: BoxDecoration(
               color: Colors.white,
@@ -1224,95 +1282,100 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     );
   }
 
-  void _showPatientDetailsModal(Patient patient) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.all(24),
-          child: Container(
-            width: 760,
-            constraints: const BoxConstraints(maxHeight: 720),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(26),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.18),
-                  blurRadius: 28,
-                  offset: const Offset(0, 14),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(26),
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    _buildPatientModalHeader(patient),
-                    Padding(
-                      padding: const EdgeInsets.all(28),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildPatientInfoSection(patient),
-                          const SizedBox(height: 28),
-                          const Row(
-                            children: [
-                              Icon(
-                                Icons.calendar_month_rounded,
-                                color: Color(0xFF2A5F7E),
-                                size: 20,
+void _showPatientDetailsModal(Patient patient) {
+  showDialog(
+    context: context,
+    builder: (context) {
+      return Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(24),
+        child: Container(
+          width: 980,
+          constraints: const BoxConstraints(maxHeight: 820),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(26),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.18),
+                blurRadius: 28,
+                offset: const Offset(0, 14),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  _buildPatientModalHeader(patient),
+                  Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildPatientInfoSection(patient),
+                        const SizedBox(height: 28),
+
+                        const Row(
+                          children: [
+                            Icon(
+                              Icons.calendar_month_rounded,
+                              color: Color(0xFF2A5F7E),
+                              size: 20,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Weekly Schedule',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 17,
+                                color: Color(0xFF26364A),
                               ),
-                              SizedBox(width: 8),
-                              Text(
-                                'Weekly Schedule',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 17,
-                                  color: Color(0xFF26364A),
-                                ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        _buildWeeklyScheduleList(patient),
+
+                        const SizedBox(height: 30),
+                        _buildHealthMonitoringSection(patient),
+
+                        const SizedBox(height: 30),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            OutlinedButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Close'),
+                            ),
+                            const SizedBox(width: 10),
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _showEditPatientModal(patient);
+                              },
+                              icon: const Icon(Icons.edit_rounded, size: 17),
+                              label: const Text('Edit'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF2A5F7E),
+                                foregroundColor: Colors.white,
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          _buildWeeklyScheduleList(patient),
-                          const SizedBox(height: 30),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              OutlinedButton(
-                                onPressed: () => Navigator.pop(context),
-                                child: const Text('Close'),
-                              ),
-                              const SizedBox(width: 10),
-                              ElevatedButton.icon(
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                  _showEditPatientModal(patient);
-                                },
-                                icon: const Icon(Icons.edit_rounded, size: 17),
-                                label: const Text('Edit'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF2A5F7E),
-                                  foregroundColor: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   Widget _buildPatientModalHeader(Patient patient) {
     return Container(
@@ -1375,55 +1438,196 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     );
   }
 
-  Widget _buildPatientInfoSection(Patient patient) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Patient Information',
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            fontSize: 17,
-            color: Color(0xFF26364A),
+Widget _buildPatientInfoSection(Patient patient) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text(
+        'Patient Information',
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          fontSize: 17,
+          color: Color(0xFF26364A),
+        ),
+      ),
+      const SizedBox(height: 16),
+      Wrap(
+        spacing: 14,
+        runSpacing: 14,
+        children: [
+          _buildDetailCard(
+            Icons.email_rounded,
+            'Email',
+            _safeText(patient.email),
           ),
-        ),
-        const SizedBox(height: 16),
-        Wrap(
-          spacing: 14,
-          runSpacing: 14,
-          children: [
-            _buildDetailCard(Icons.email_rounded, 'Email', _safeText(patient.email)),
-            _buildDetailCard(Icons.phone_rounded, 'Phone', _safeText(patient.phone)),
-            _buildDetailCard(
-              Icons.location_on_rounded,
-              'Address',
-              _safeText(patient.homeAddress),
+          _buildDetailCard(
+            Icons.phone_rounded,
+            'Phone',
+            _safeText(patient.phone),
+          ),
+          _buildDetailCard(
+            Icons.location_on_rounded,
+            'Address',
+            _safeText(patient.homeAddress),
+          ),
+          _buildDetailCard(
+            Icons.cake_rounded,
+            'Date of Birth',
+            patient.birthDate?.toString().split(' ')[0] ?? 'N/A',
+          ),
+          _buildDetailCard(
+            Icons.bloodtype_rounded,
+            'Blood Type',
+            _safeText(patient.bloodType),
+          ),
+          _buildDetailCard(
+            Icons.medical_information_rounded,
+            'Dialysis Stage',
+            _safeText(patient.dialysisStage),
+          ),
+          _buildDetailCard(
+            Icons.health_and_safety_rounded,
+            'Existing Condition',
+            _safeText(patient.existingCondition),
+          ),
+          _buildDetailCard(
+            Icons.family_restroom_rounded,
+            'Guardian',
+            _safeText(patient.emergencyContactName),
+          ),
+          _buildDetailCard(
+            Icons.contact_phone_rounded,
+            'Guardian Contact',
+            _safeText(patient.emergencyContactNumber),
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+Widget _buildHealthMonitoringSection(Patient patient) {
+  return FutureBuilder(
+    future: Future.wait([
+      _healthService.getLatestBloodPressure(
+        patientId: patient.id,
+      ),
+      _healthService.getLatestWeight(
+        patientId: patient.id,
+      ),
+    ]),
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+      }
+
+      final data = snapshot.data ?? [];
+
+      final bp = data.isNotEmpty ? data[0] : null;
+      final weight = data.length > 1 ? data[1] : null;
+
+      String latestBp = 'No record yet';
+
+      if (bp != null) {
+        latestBp =
+            '${bp['systolic']}/${bp['diastolic']} mmHg';
+      }
+
+      String latestWeight = 'No record yet';
+
+      if (weight != null) {
+        latestWeight =
+            '${weight['after_weight']} kg';
+      }
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.monitor_heart_rounded,
+                color: Color(0xFF2A5F7E),
+                size: 21,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Health Monitoring',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 17,
+                  color: Color(0xFF26364A),
+                ),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 6),
+          const Text(
+            'Track blood pressure and dialysis weight records per session.',
+            style: TextStyle(
+              color: Color(0xFF718096),
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
             ),
-            _buildDetailCard(
-              Icons.cake_rounded,
-              'Date of Birth',
-              patient.birthDate?.toString().split(' ')[0] ?? 'N/A',
-            ),
-            _buildDetailCard(
-              Icons.bloodtype_rounded,
-              'Blood Type',
-              _safeText(patient.bloodType),
-            ),
-            _buildDetailCard(
-              Icons.family_restroom_rounded,
-              'Guardian',
-              _safeText(patient.emergencyContactName),
-            ),
-            _buildDetailCard(
-              Icons.contact_phone_rounded,
-              'Guardian Contact',
-              _safeText(patient.emergencyContactNumber),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildHealthMonitoringCard(
+                  icon: Icons.favorite_rounded,
+                  title: 'Blood Pressure Monitoring',
+                  subtitle:
+                      'Record systolic and diastolic BP every session.',
+                  latestLabel: 'Latest BP',
+                  latestValue: latestBp,
+                  buttonLabel: 'Add BP Record',
+                  accentColor: const Color(0xFFEF4444),
+                  onPressed: () {
+                    _showAddBloodPressureModal(patient);
+                  },
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: _buildHealthMonitoringCard(
+                  icon: Icons.monitor_weight_rounded,
+                  title: 'Weight Monitoring',
+                  subtitle:
+                      'Record before and after dialysis weight.',
+                  latestLabel: 'Latest Weight',
+                  latestValue: latestWeight,
+                  buttonLabel: 'Add Weight Record',
+                  accentColor: const Color(0xFF2563EB),
+                  onPressed: () {
+                    _showAddWeightModal(patient);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          _buildBloodPressureRecords(patient),
+
+          const SizedBox(height: 22),
+          _buildBloodPressureChart(patient),
+
+          const SizedBox(height: 18),
+          _buildWeightRecords(patient),
+
+          const SizedBox(height: 22),
+          _buildWeightChart(patient),
+        ],
+      );
+    },
+  );
+}
 
   void _showEditPatientModal(Patient patient) {
     final emailController = TextEditingController(text: patient.email);
@@ -1576,6 +1780,1412 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     );
   }
 
+  Widget _buildHealthMonitoringCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String latestLabel,
+    required String latestValue,
+    required String buttonLabel,
+    required Color accentColor,
+    required VoidCallback onPressed,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE4EAF0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: accentColor.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  icon,
+                  color: accentColor,
+                  size: 23,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF26364A),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: Color(0xFF718096),
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE4EAF0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  latestLabel,
+                  style: const TextStyle(
+                    color: Color(0xFF718096),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  latestValue,
+                  style: const TextStyle(
+                    color: Color(0xFF26364A),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: onPressed,
+              icon: const Icon(Icons.add_rounded, size: 17),
+              label: Text(buttonLabel),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2A5F7E),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChartContainer({
+    required String title,
+    required String subtitle,
+    required Widget child,
+    required String analysis,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE4EAF0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.analytics_rounded,
+                color: Color(0xFF2A5F7E),
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                    color: Color(0xFF26364A),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: Color(0xFF718096),
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 18),
+          child,
+          const SizedBox(height: 18),
+          _buildAnalysisBox(analysis),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalysisBox(String text) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF3F7),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD7E8F0)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.info_outline_rounded,
+            color: Color(0xFF2A5F7E),
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Color(0xFF2A5F7E),
+                fontWeight: FontWeight.w700,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChartEmptyState({
+    required String title,
+    required String message,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE4EAF0)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.show_chart_rounded,
+            color: Color(0xFF9AA9B8),
+            size: 24,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF26364A),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  message,
+                  style: const TextStyle(
+                    color: Color(0xFF718096),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBloodPressureRecords(Patient patient) {
+  return FutureBuilder<List<dynamic>>(
+    future: _healthService.getBloodPressureLogs(
+      patientId: patient.id,
+    ),
+    builder: (context, snapshot) {
+      if (snapshot.connectionState ==
+          ConnectionState.waiting) {
+        return const Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+      }
+
+      final records = snapshot.data ?? [];
+
+      if (records.isEmpty) {
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: const Color(0xFFE4EAF0),
+            ),
+          ),
+          child: const Text(
+            'No blood pressure records yet.',
+            style: TextStyle(
+              color: Color(0xFF718096),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        );
+      }
+
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: const Color(0xFFE4EAF0),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(
+                  Icons.history_rounded,
+                  color: Color(0xFF2A5F7E),
+                  size: 18,
+                ),
+                SizedBox(width: 8),
+                Text(
+                  'Recent Blood Pressure Records',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                    color: Color(0xFF26364A),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            ...records.reversed.take(5).map((record) {
+              final systolic =
+                  record['systolic']?.toString() ?? '-';
+
+              final diastolic =
+                  record['diastolic']?.toString() ?? '-';
+
+              final date =
+                  record['session_date']?.toString() ?? '';
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: const Color(0xFFE4EAF0),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.favorite_rounded,
+                        color: Color(0xFFEF4444),
+                      ),
+                    ),
+
+                    const SizedBox(width: 14),
+
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$systolic / $diastolic mmHg',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF26364A),
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            date,
+                            style: const TextStyle(
+                              color: Color(0xFF718096),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF3F7),
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                      child: Text(
+                        _healthService.analyzeBloodPressure(
+                          systolic: int.tryParse(
+                                systolic,
+                              ) ??
+                              0,
+                          diastolic: int.tryParse(
+                                diastolic,
+                              ) ??
+                              0,
+                        ),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF2A5F7E),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Widget _buildBloodPressureChart(Patient patient) {
+  return FutureBuilder<List<dynamic>>(
+    future: _healthService.getBloodPressureLogs(patientId: patient.id),
+    builder: (context, snapshot) {
+      final records = snapshot.data ?? [];
+
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const Center(child: CircularProgressIndicator());
+      }
+
+      if (records.length < 2) {
+        return _buildChartEmptyState(
+          title: 'Blood Pressure Chart',
+          message: 'At least 2 BP records are needed to show a trend chart.',
+        );
+      }
+
+      final sorted = [...records];
+      sorted.sort((a, b) {
+        return a['session_date'].toString().compareTo(
+              b['session_date'].toString(),
+            );
+      });
+
+      final systolicSpots = <FlSpot>[];
+      final diastolicSpots = <FlSpot>[];
+
+      for (int i = 0; i < sorted.length; i++) {
+        systolicSpots.add(
+          FlSpot(
+            i.toDouble(),
+            double.tryParse(sorted[i]['systolic'].toString()) ?? 0,
+          ),
+        );
+
+        diastolicSpots.add(
+          FlSpot(
+            i.toDouble(),
+            double.tryParse(sorted[i]['diastolic'].toString()) ?? 0,
+          ),
+        );
+      }
+
+      final latest = sorted.last;
+      final latestSystolic =
+          int.tryParse(latest['systolic'].toString()) ?? 0;
+      final latestDiastolic =
+          int.tryParse(latest['diastolic'].toString()) ?? 0;
+
+      return _buildChartContainer(
+        title: 'Blood Pressure Trend',
+        subtitle: 'Systolic and diastolic readings per dialysis session.',
+        child: SizedBox(
+          height: 260,
+          child: LineChart(
+            LineChartData(
+              minY: 40,
+              maxY: 200,
+              gridData: FlGridData(show: true),
+              titlesData: FlTitlesData(
+                rightTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                topTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 36,
+                    interval: 1,
+                    getTitlesWidget: (value, meta) {
+                      final index = value.toInt();
+
+                      if (index < 0 || index >= sorted.length) {
+                        return const SizedBox.shrink();
+                      }
+
+                      final date = sorted[index]['session_date'].toString();
+
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          date.length >= 10 ? date.substring(5, 10) : date,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Color(0xFF718096),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                leftTitles: const AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 42,
+                  ),
+                ),
+              ),
+              borderData: FlBorderData(
+                show: true,
+                border: Border.all(color: const Color(0xFFE4EAF0)),
+              ),
+              lineBarsData: [
+                LineChartBarData(
+                  spots: systolicSpots,
+                  isCurved: true,
+                  barWidth: 3,
+                  dotData: FlDotData(show: true),
+                  color: const Color(0xFFEF4444),
+                ),
+                LineChartBarData(
+                  spots: diastolicSpots,
+                  isCurved: true,
+                  barWidth: 3,
+                  dotData: FlDotData(show: true),
+                  color: const Color(0xFF2563EB),
+                ),
+              ],
+            ),
+          ),
+        ),
+        analysis: _healthService.analyzeBloodPressure(
+          systolic: latestSystolic,
+          diastolic: latestDiastolic,
+        ),
+      );
+    },
+  );
+}
+
+Widget _buildWeightRecords(Patient patient) {
+  return FutureBuilder<List<dynamic>>(
+    future: _healthService.getWeightLogs(
+      patientId: patient.id,
+    ),
+    builder: (context, snapshot) {
+      if (snapshot.connectionState ==
+          ConnectionState.waiting) {
+        return const Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+      }
+
+      final records = snapshot.data ?? [];
+
+      if (records.isEmpty) {
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: const Color(0xFFE4EAF0),
+            ),
+          ),
+          child: const Text(
+            'No weight records yet.',
+            style: TextStyle(
+              color: Color(0xFF718096),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        );
+      }
+
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: const Color(0xFFE4EAF0),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(
+                  Icons.monitor_weight_rounded,
+                  color: Color(0xFF2563EB),
+                  size: 18,
+                ),
+                SizedBox(width: 8),
+                Text(
+                  'Recent Weight Records',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                    color: Color(0xFF26364A),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            ...records.reversed.take(5).map((record) {
+              final before =
+                  record['before_weight']?.toString() ?? '-';
+
+              final after =
+                  record['after_weight']?.toString() ?? '-';
+
+              final date =
+                  record['session_date']?.toString() ?? '';
+
+              final beforeDouble =
+                  double.tryParse(before) ?? 0;
+
+              final afterDouble =
+                  double.tryParse(after) ?? 0;
+
+              final difference =
+                  (beforeDouble - afterDouble)
+                      .toStringAsFixed(1);
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: const Color(0xFFE4EAF0),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDBEAFE),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.monitor_weight_rounded,
+                        color: Color(0xFF2563EB),
+                      ),
+                    ),
+
+                    const SizedBox(width: 14),
+
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Before: $before kg • After: $after kg',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF26364A),
+                              fontSize: 14,
+                            ),
+                          ),
+
+                          const SizedBox(height: 4),
+
+                          Text(
+                            'Weight Removed: $difference kg',
+                            style: const TextStyle(
+                              color: Color(0xFF2563EB),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+
+                          const SizedBox(height: 4),
+
+                          Text(
+                            date,
+                            style: const TextStyle(
+                              color: Color(0xFF718096),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF3F7),
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                      child: Text(
+                        _healthService.analyzeWeightDifference(
+                          beforeWeight: beforeDouble,
+                          afterWeight: afterDouble,
+                        ),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF2A5F7E),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Widget _buildWeightChart(Patient patient) {
+  return FutureBuilder<List<dynamic>>(
+    future: _healthService.getWeightLogs(patientId: patient.id),
+    builder: (context, snapshot) {
+      final records = snapshot.data ?? [];
+
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const Center(child: CircularProgressIndicator());
+      }
+
+      if (records.length < 2) {
+        return _buildChartEmptyState(
+          title: 'Weight Chart',
+          message: 'At least 2 weight records are needed to show a trend chart.',
+        );
+      }
+
+      final sorted = [...records];
+      sorted.sort((a, b) {
+        return a['session_date'].toString().compareTo(
+              b['session_date'].toString(),
+            );
+      });
+
+      final beforeSpots = <FlSpot>[];
+      final afterSpots = <FlSpot>[];
+
+      for (int i = 0; i < sorted.length; i++) {
+        beforeSpots.add(
+          FlSpot(
+            i.toDouble(),
+            double.tryParse(sorted[i]['before_weight'].toString()) ?? 0,
+          ),
+        );
+
+        afterSpots.add(
+          FlSpot(
+            i.toDouble(),
+            double.tryParse(sorted[i]['after_weight'].toString()) ?? 0,
+          ),
+        );
+      }
+
+      final latest = sorted.last;
+
+      final beforeWeight =
+          double.tryParse(latest['before_weight'].toString()) ?? 0;
+
+      final afterWeight =
+          double.tryParse(latest['after_weight'].toString()) ?? 0;
+
+      final minY = sorted
+              .map((e) => double.tryParse(e['after_weight'].toString()) ?? 0)
+              .reduce((a, b) => a < b ? a : b) -
+          5;
+
+      final maxY = sorted
+              .map((e) => double.tryParse(e['before_weight'].toString()) ?? 0)
+              .reduce((a, b) => a > b ? a : b) +
+          5;
+
+      return _buildChartContainer(
+        title: 'Weight Monitoring Trend',
+        subtitle: 'Before and after dialysis weight per session.',
+        child: SizedBox(
+          height: 260,
+          child: LineChart(
+            LineChartData(
+              minY: minY < 0 ? 0 : minY,
+              maxY: maxY,
+              gridData: FlGridData(show: true),
+              titlesData: FlTitlesData(
+                rightTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                topTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 36,
+                    interval: 1,
+                    getTitlesWidget: (value, meta) {
+                      final index = value.toInt();
+
+                      if (index < 0 || index >= sorted.length) {
+                        return const SizedBox.shrink();
+                      }
+
+                      final date = sorted[index]['session_date'].toString();
+
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          date.length >= 10 ? date.substring(5, 10) : date,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Color(0xFF718096),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                leftTitles: const AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 42,
+                  ),
+                ),
+              ),
+              borderData: FlBorderData(
+                show: true,
+                border: Border.all(color: const Color(0xFFE4EAF0)),
+              ),
+              lineBarsData: [
+                LineChartBarData(
+                  spots: beforeSpots,
+                  isCurved: true,
+                  barWidth: 3,
+                  dotData: FlDotData(show: true),
+                  color: const Color(0xFF2563EB),
+                ),
+                LineChartBarData(
+                  spots: afterSpots,
+                  isCurved: true,
+                  barWidth: 3,
+                  dotData: FlDotData(show: true),
+                  color: const Color(0xFF16A34A),
+                ),
+              ],
+            ),
+          ),
+        ),
+        analysis: _healthService.analyzeWeightDifference(
+          beforeWeight: beforeWeight,
+          afterWeight: afterWeight,
+        ),
+      );
+    },
+  );
+}
+
+  void _showAddBloodPressureModal(Patient patient) {
+    final systolicController = TextEditingController();
+    final diastolicController = TextEditingController();
+    final notesController = TextEditingController();
+
+    DateTime selectedDate = DateTime.now();
+
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.all(24),
+              child: Container(
+                width: 520,
+                padding: const EdgeInsets.all(28),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(
+                          Icons.favorite_rounded,
+                          color: Color(0xFFEF4444),
+                          size: 24,
+                        ),
+                        SizedBox(width: 10),
+                        Text(
+                          'Add Blood Pressure Record',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF26364A),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 6),
+
+                    Text(
+                      patient.name,
+                      style: const TextStyle(
+                        color: Color(0xFF718096),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    const Text(
+                      'Session Date',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF26364A),
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDate,
+                          firstDate: DateTime(2024),
+                          lastDate: DateTime(2100),
+                        );
+
+                        if (picked != null) {
+                          setModalState(() {
+                            selectedDate = picked;
+                          });
+                        }
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 16,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: const Color(0xFFE4EAF0),
+                          ),
+                        ),
+                        child: Text(
+                          selectedDate.toString().split(' ')[0],
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF26364A),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildEditField(
+                            label: 'Systolic',
+                            controller: systolicController,
+                            icon: Icons.favorite_rounded,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: _buildEditField(
+                            label: 'Diastolic',
+                            controller: diastolicController,
+                            icon: Icons.favorite_border_rounded,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 4),
+
+                    _buildEditField(
+                      label: 'Notes (Optional)',
+                      controller: notesController,
+                      icon: Icons.notes_rounded,
+                      maxLines: 3,
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        OutlinedButton(
+                          onPressed: isSaving
+                              ? null
+                              : () => Navigator.pop(dialogContext),
+                          child: const Text('Cancel'),
+                        ),
+
+                        const SizedBox(width: 10),
+
+                        ElevatedButton.icon(
+                          onPressed: isSaving
+                              ? null
+                              : () async {
+                                  final systolic = int.tryParse(
+                                    systolicController.text.trim(),
+                                  );
+
+                                  final diastolic = int.tryParse(
+                                    diastolicController.text.trim(),
+                                  );
+
+                                  if (systolic == null ||
+                                      diastolic == null) {
+                                    _showMessage(
+                                      'Please enter valid BP values.',
+                                      isError: true,
+                                    );
+                                    return;
+                                  }
+
+                                  try {
+                                    setModalState(() {
+                                      isSaving = true;
+                                    });
+
+                                    final clinicId =
+                                        await _service.getCurrentClinicId();
+
+                                    if (clinicId == null) {
+                                      throw Exception(
+                                        'No clinic found.',
+                                      );
+                                    }
+
+                                    await _healthService.addBloodPressureLog(
+                                      patientId: patient.id,
+                                      clinicId: clinicId,
+                                      sessionDate: selectedDate
+                                          .toIso8601String()
+                                          .split('T')[0],
+                                      systolic: systolic,
+                                      diastolic: diastolic,
+                                      notes: notesController.text.trim(),
+                                    );
+
+                                    if (!mounted) return;
+
+                                    Navigator.pop(dialogContext);
+
+                                    _showMessage(
+                                      'Blood pressure record added.',
+                                    );
+
+                                    setState(() {});
+                                  } catch (e) {
+                                    _showMessage(
+                                      'Error: $e',
+                                      isError: true,
+                                    );
+                                  } finally {
+                                    if (mounted) {
+                                      setModalState(() {
+                                        isSaving = false;
+                                      });
+                                    }
+                                  }
+                                },
+                          icon: isSaving
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.save_rounded,
+                                  size: 17,
+                                ),
+                          label: Text(
+                            isSaving ? 'Saving...' : 'Save Record',
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF2A5F7E),
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showAddWeightModal(Patient patient) {
+    final beforeController = TextEditingController();
+    final afterController = TextEditingController();
+    final notesController = TextEditingController();
+
+    DateTime selectedDate = DateTime.now();
+
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.all(24),
+              child: Container(
+                width: 520,
+                padding: const EdgeInsets.all(28),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(
+                          Icons.monitor_weight_rounded,
+                          color: Color(0xFF2563EB),
+                          size: 24,
+                        ),
+                        SizedBox(width: 10),
+                        Text(
+                          'Add Weight Record',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF26364A),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 6),
+
+                    Text(
+                      patient.name,
+                      style: const TextStyle(
+                        color: Color(0xFF718096),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    const Text(
+                      'Session Date',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF26364A),
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDate,
+                          firstDate: DateTime(2024),
+                          lastDate: DateTime(2100),
+                        );
+
+                        if (picked != null) {
+                          setModalState(() {
+                            selectedDate = picked;
+                          });
+                        }
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 16,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: const Color(0xFFE4EAF0),
+                          ),
+                        ),
+                        child: Text(
+                          selectedDate.toString().split(' ')[0],
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF26364A),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildEditField(
+                            label: 'Before Dialysis (kg)',
+                            controller: beforeController,
+                            icon: Icons.scale_rounded,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: _buildEditField(
+                            label: 'After Dialysis (kg)',
+                            controller: afterController,
+                            icon: Icons.monitor_weight_rounded,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 4),
+
+                    _buildEditField(
+                      label: 'Notes (Optional)',
+                      controller: notesController,
+                      icon: Icons.notes_rounded,
+                      maxLines: 3,
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        OutlinedButton(
+                          onPressed: isSaving
+                              ? null
+                              : () => Navigator.pop(dialogContext),
+                          child: const Text('Cancel'),
+                        ),
+
+                        const SizedBox(width: 10),
+
+                        ElevatedButton.icon(
+                          onPressed: isSaving
+                              ? null
+                              : () async {
+                                  final beforeWeight =
+                                      double.tryParse(
+                                    beforeController.text.trim(),
+                                  );
+
+                                  final afterWeight =
+                                      double.tryParse(
+                                    afterController.text.trim(),
+                                  );
+
+                                  if (beforeWeight == null ||
+                                      afterWeight == null) {
+                                    _showMessage(
+                                      'Please enter valid weights.',
+                                      isError: true,
+                                    );
+                                    return;
+                                  }
+
+                                  try {
+                                    setModalState(() {
+                                      isSaving = true;
+                                    });
+
+                                    final clinicId =
+                                        await _service.getCurrentClinicId();
+
+                                    if (clinicId == null) {
+                                      throw Exception(
+                                        'No clinic found.',
+                                      );
+                                    }
+
+                                    await _healthService.addWeightLog(
+                                      patientId: patient.id,
+                                      clinicId: clinicId,
+                                      sessionDate: selectedDate
+                                          .toIso8601String()
+                                          .split('T')[0],
+                                      beforeWeight: beforeWeight,
+                                      afterWeight: afterWeight,
+                                      notes: notesController.text.trim(),
+                                    );
+
+                                    if (!mounted) return;
+
+                                    Navigator.pop(dialogContext);
+
+                                    _showMessage(
+                                      'Weight record added.',
+                                    );
+
+                                    setState(() {});
+                                  } catch (e) {
+                                    _showMessage(
+                                      'Error: $e',
+                                      isError: true,
+                                    );
+                                  } finally {
+                                    if (mounted) {
+                                      setModalState(() {
+                                        isSaving = false;
+                                      });
+                                    }
+                                  }
+                                },
+                          icon: isSaving
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.save_rounded,
+                                  size: 17,
+                                ),
+                          label: Text(
+                            isSaving ? 'Saving...' : 'Save Record',
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF2A5F7E),
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
   Widget _buildLockedField(String label, String value) {
     return Container(
       width: double.infinity,
@@ -1649,7 +3259,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
 
   Widget _buildDetailCard(IconData icon, String label, String value) {
     return Container(
-      width: 320,
+      width: 290,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),

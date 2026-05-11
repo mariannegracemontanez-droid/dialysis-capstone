@@ -8,6 +8,8 @@ class Patient {
   final DateTime? birthDate;
   final String? timeSlot;
   final String? bloodType;
+  final String? dialysisStage;
+  final String? existingCondition;
   final String? emergencyContactName;
   final String? emergencyContactNumber;
   final String? address;
@@ -25,6 +27,8 @@ class Patient {
     this.birthDate,
     this.timeSlot,
     this.bloodType,
+    this.dialysisStage,
+    this.existingCondition,
     this.emergencyContactName,
     this.emergencyContactNumber,
     this.address,
@@ -47,6 +51,8 @@ class Patient {
       birthDate: birthDateValue != null ? DateTime.tryParse(birthDateValue.toString()) : null,
       timeSlot: json['time_slot'] ?? profile?['time_slot'],
       bloodType: json['blood_type'] ?? profile?['blood_type'],
+      dialysisStage: json['dialysis_stage'],
+      existingCondition: json['existing_condition'],
       emergencyContactName: json['emergency_contact_name'] ?? profile?['emergency_contact__name'],
       emergencyContactNumber: json['emergency_contact_number'] ?? profile?['emergency_contact__contact'],      status: json['status'] ?? profile?['status'] ?? 'pending',
       createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,

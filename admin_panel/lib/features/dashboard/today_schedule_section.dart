@@ -30,6 +30,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
   late String selectedDay;
 
   bool isLoading = false;
+
   List<dynamic> amPatients = [];
   List<dynamic> pmPatients = [];
 
@@ -40,19 +41,34 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     loadSelectedDaySchedule();
   }
 
+  @override
+  void didUpdateWidget(covariant TodayScheduleSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.clinicId != widget.clinicId ||
+        oldWidget.machineCount != widget.machineCount) {
+      loadSelectedDaySchedule();
+    }
+  }
+
   String _getToday() {
     final now = DateTime.now();
 
-    if (now.weekday == DateTime.sunday) {
-      return 'Monday';
+    if (now.weekday >= DateTime.monday &&
+        now.weekday <= DateTime.saturday) {
+      return days[now.weekday - 1];
     }
 
-    return days[now.weekday - 1];
+    return 'Monday';
   }
 
   DateTime getStartOfWeek() {
     final now = DateTime.now();
-    return now.subtract(Duration(days: now.weekday - 1));
+    return DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: now.weekday - 1));
   }
 
   DateTime getDateForDay(int index) {
@@ -61,27 +77,19 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
 
   String getDateForSelectedDay() {
     final index = days.indexOf(selectedDay);
-    final date = getDateForDay(index);
+    final safeIndex = index < 0 ? 0 : index;
+    final date = getDateForDay(safeIndex);
+
     return date.toIso8601String().split('T')[0];
   }
 
   String getPatientName(dynamic item) {
-    final patient = item['patients'];
-
-    if (patient == null) {
-      return item['patient_id']?.toString() ?? 'Unknown Patient';
-    }
-
-    final fullName = patient['full_name'];
-
-    if (fullName != null && fullName.toString().trim().isNotEmpty) {
-      return fullName.toString();
-    }
-
-    return item['patient_id']?.toString() ?? 'Unknown Patient';
+    return _service.getPatientName(item);
   }
 
   Future<void> loadSelectedDaySchedule() async {
+    if (!mounted) return;
+
     setState(() => isLoading = true);
 
     try {
@@ -115,186 +123,226 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     }
   }
 
-  Future<void> openAddModal(String shift) async {
-    try {
-      final selectedDate = getDateForSelectedDay();
+Future<void> openAddModal(String shift) async {
+  try {
+    final selectedDate = getDateForSelectedDay();
 
-      final patients = await _service.getEligiblePatients(
-        widget.clinicId,
-        selectedDay,
-      );
+    final patients = await _service.getEligiblePatients(
+      widget.clinicId,
+      selectedDay,
+    );
 
-      final assignedPatientIds = [
-        ...amPatients.map((item) => item['patient_id']),
-        ...pmPatients.map((item) => item['patient_id']),
-      ];
+    final latestAssignments = await _service.getDailyAssignments(
+      clinicId: widget.clinicId,
+      scheduleDate: selectedDate,
+    );
 
-      final availablePatients = patients.where((item) {
-        return !assignedPatientIds.contains(item['patient_id']);
-      }).toList();
+    final assignedPatientIds = latestAssignments
+        .map((item) => item['patient_id']?.toString())
+        .where((id) => id != null)
+        .toSet();
 
-      if (!mounted) return;
+    final availablePatients = patients.where((item) {
+      return !assignedPatientIds.contains(item['patient_id']?.toString());
+    }).toList();
 
-      showDialog(
-        context: context,
-        builder: (dialogContext) {
-          return AlertDialog(
-            backgroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(22),
-            ),
-            title: Text(
-              'Select Patient for $shift Shift',
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF1E293B),
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        bool dialogIsAdding = false;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
               ),
-            ),
-            content: SizedBox(
-              width: 500,
-              height: 430,
-              child: availablePatients.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'No available patients scheduled for this day.',
-                        style: TextStyle(
-                          color: Color(0xFF64748B),
-                          fontWeight: FontWeight.w600,
+              title: Text(
+                'Select Patient for $shift Shift',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+              content: SizedBox(
+                width: 500,
+                height: 430,
+                child: availablePatients.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'No available patients scheduled for this day.',
+                          style: TextStyle(
+                            color: Color(0xFF64748B),
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                    )
-                  : ListView.separated(
-                      itemCount: availablePatients.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 8),
-                      itemBuilder: (context, index) {
-                        final item = availablePatients[index];
-                        final patientName = getPatientName(item);
+                      )
+                    : ListView.separated(
+                        itemCount: availablePatients.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final item = availablePatients[index];
+                          final patientName = getPatientName(item);
 
-                        return InkWell(
-                          borderRadius: BorderRadius.circular(14),
-                          onTap: () async {
-                            try {
-                              await _service.assignDailySchedule(
-                                weeklyScheduleId: item['id'],
-                                patientId: item['patient_id'],
-                                clinicId: widget.clinicId,
-                                shift: shift,
-                                scheduleDate: selectedDate,
-                              );
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(14),
+                            onTap: dialogIsAdding
+                                ? null
+                                : () async {
+                                    setDialogState(() {
+                                      dialogIsAdding = true;
+                                    });
 
-                              if (!mounted) return;
+                                    try {
+                                      await _service.assignDailySchedule(
+                                        weeklyScheduleId: item['id'],
+                                        patientId: item['patient_id'],
+                                        clinicId: widget.clinicId,
+                                        shift: shift,
+                                        scheduleDate: selectedDate,
+                                      );
 
-                              Navigator.pop(dialogContext);
-                              await loadSelectedDaySchedule();
+                                      if (!mounted) return;
 
-                              if (!mounted) return;
+                                      Navigator.of(dialogContext).pop();
 
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    '$patientName added to $shift Shift.',
-                                  ),
-                                  backgroundColor: Colors.green,
+                                      await loadSelectedDaySchedule();
+
+                                      if (!mounted) return;
+
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            '$patientName added to $shift Shift.',
+                                          ),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      );
+                                    } catch (e) {
+                                      debugPrint('Add patient error: $e');
+
+                                      if (!mounted) return;
+
+                                      setDialogState(() {
+                                        dialogIsAdding = false;
+                                      });
+
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Failed to add patient: $e',
+                                          ),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  },
+                            child: Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(0xFFE2E8F0),
                                 ),
-                              );
-                            } catch (e) {
-                              debugPrint('Add patient error: $e');
-
-                              if (!mounted) return;
-
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Failed to add patient: $e'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: const Color(0xFFE2E8F0),
                               ),
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 38,
-                                  height: 38,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFE0F2FE),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: const Icon(
-                                    Icons.person_rounded,
-                                    color: Color(0xFF0369A1),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    patientName,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFF1E293B),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 38,
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFE0F2FE),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(
+                                      Icons.person_rounded,
+                                      color: Color(0xFF0369A1),
                                     ),
                                   ),
-                                ),
-                                const Icon(
-                                  Icons.chevron_right_rounded,
-                                  color: Color(0xFF94A3B8),
-                                ),
-                              ],
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      patientName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF1E293B),
+                                      ),
+                                    ),
+                                  ),
+                                  dialogIsAdding
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.chevron_right_rounded,
+                                          color: Color(0xFF94A3B8),
+                                        ),
+                                ],
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          );
-        },
-      );
-    } catch (e) {
-      debugPrint('Open modal error: $e');
+                          );
+                        },
+                      ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  } catch (e) {
+    debugPrint('Open modal error: $e');
 
-      if (!mounted) return;
+    if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error loading patients: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Error loading patients: $e'),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
+}
 
-  Future<void> removePatient(dynamic item) async {
-    try {
-      await _service.deleteDailySchedule(item['id']);
-      await loadSelectedDaySchedule();
+Future<void> removePatient(dynamic item) async {
+  try {
+    debugPrint('Removing daily schedule item: $item');
 
-      if (!mounted) return;
+    await _service.deleteDailySchedule(
+      dailyScheduleId: item['id'].toString(),
+      clinicId: widget.clinicId,
+    );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Patient removed from schedule.'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
+    await loadSelectedDaySchedule();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to remove patient: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Patient removed from schedule.'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  } catch (e) {
+    debugPrint('Remove patient error: $e');
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Failed to remove patient: $e'),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
+}
 
   Widget buildDayTabs() {
     return Row(
@@ -333,19 +381,23 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                 children: [
                   Text(
                     day,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
-                      color: Color(0xFF0F172A),
+                      color: isSelected
+                          ? Colors.white
+                          : const Color(0xFF0F172A),
                     ),
                   ),
                   const SizedBox(height: 3),
                   Text(
                     '${date.day}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF475569),
+                      fontWeight: FontWeight.w700,
+                      color: isSelected
+                          ? Colors.white
+                          : const Color(0xFF475569),
                     ),
                   ),
                 ],
@@ -395,7 +447,9 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                   ),
                 ),
                 ElevatedButton.icon(
-                  onPressed: isFull ? null : () => openAddModal(shift),
+                  onPressed: isFull || isLoading
+                      ? null
+                      : () => openAddModal(shift),
                   icon: const Icon(Icons.add_rounded, size: 16),
                   label: const Text('Add'),
                   style: ElevatedButton.styleFrom(
@@ -430,7 +484,8 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                 2: FixedColumnWidth(46),
               },
               children: List.generate(widget.machineCount, (index) {
-                final patient = index < patients.length ? patients[index] : null;
+                final patient =
+                    index < patients.length ? patients[index] : null;
 
                 return TableRow(
                   decoration: BoxDecoration(
@@ -439,7 +494,9 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                   ),
                   children: [
                     numberCell('${index + 1}'),
-                    patientCell(patient == null ? '' : getPatientName(patient)),
+                    patientCell(
+                      patient == null ? '' : getPatientName(patient),
+                    ),
                     tableActionCell(patient),
                   ],
                 );
@@ -533,4 +590,5 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
       ],
     );
   }
+  
 }

@@ -644,7 +644,7 @@ class _DonationsPageState extends State<DonationsPage> {
                                               onRefresh: _loadDonations,
                                             ),
                                           ))
-                                      .toList(),
+                                      ,
                                   const SizedBox(height: 20),
                                   const Text('Approved Donations', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF2E7D32))),
                                   const SizedBox(height: 12),
@@ -658,7 +658,7 @@ class _DonationsPageState extends State<DonationsPage> {
                                               onRefresh: _loadDonations,
                                             ),
                                           ))
-                                      .toList(),
+                                      ,
                                   const SizedBox(height: 20),
                                   const Text('Rejected Donations', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFFB00020))),
                                   const SizedBox(height: 12),
@@ -672,7 +672,7 @@ class _DonationsPageState extends State<DonationsPage> {
                                               onRefresh: _loadDonations,
                                             ),
                                           ))
-                                      .toList(),
+                                      ,
                                 ],
                               ),
                   ],
