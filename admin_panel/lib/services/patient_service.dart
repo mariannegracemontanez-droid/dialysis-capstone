@@ -99,6 +99,7 @@ Future<void> updatePatientInfo({
         'name': file.name,
         'path': filePath,
         'url': signedUrl,
+        'uploaded_at': file.createdAt,
       });
     }
 

@@ -203,169 +203,252 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
         .length;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F9FB),
+      backgroundColor: const Color(0xFFF3F7FA),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
                 children: [
                   IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(
-                      Icons.arrow_back,
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 20,
                       color: Color(0xFF2C5F7D),
                     ),
-                    onPressed: () => Navigator.of(context).pop(),
                   ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Your medical background',
-                    style: TextStyle(
-                      color: Color(0xFF2C5F7D),
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+                  const SizedBox(width: 4),
+                  const Expanded(
+                    child: Text(
+                      'Medical Documents',
+                      style: TextStyle(
+                        color: Color(0xFF173B4F),
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              LinearProgressIndicator(
-                value: 0.83,
-                color: const Color(0xFF2C5F7D),
-                backgroundColor: const Color(0xFFE7F0F3),
-                minHeight: 8,
+
+              const SizedBox(height: 8),
+
+              const Text(
+                'Upload the required documents requested by your chosen clinic.',
+                style: TextStyle(
+                  color: Color(0xFF6B7C86),
+                  fontSize: 14,
+                  height: 1.4,
+                ),
               ),
-              const SizedBox(height: 24),
-              Expanded(
-                child: Card(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24),
+
+              const SizedBox(height: 22),
+
+              Row(
+                children: [
+                  const Text(
+                    'Step 4 of 5',
+                    style: TextStyle(
+                      color: Color(0xFF2C5F7D),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                  elevation: 4,
-                  shadowColor: Colors.black.withOpacity(0.08),
-                  child: Padding(
-                    padding: const EdgeInsets.all(22),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const Text(
-                            'Do you have existing medical records?',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
+                  const Spacer(),
+                  Text(
+                    '80%',
+                    style: TextStyle(
+                      color: Colors.black.withOpacity(0.45),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 10),
+
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: const LinearProgressIndicator(
+                  value: 0.8,
+                  minHeight: 8,
+                  color: Color(0xFF2C5F7D),
+                  backgroundColor: Color(0xFFDDEAF0),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: const Color(0xFFE1EAF0)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          'Submit Requirements',
+                          style: TextStyle(
+                            color: Color(0xFF173B4F),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
                           ),
-                          const SizedBox(height: 14),
-                          Text(
-                            'Upload medical reports or referral notes from your hospital or doctor.',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[700],
-                            ),
+                        ),
+
+                        const SizedBox(height: 6),
+
+                        const Text(
+                          'Accepted files are selected from your gallery and uploaded securely.',
+                          style: TextStyle(
+                            color: Color(0xFF7A8A94),
+                            fontSize: 13,
+                            height: 1.4,
                           ),
-                          const SizedBox(height: 16),
-                          Text(
-                            clinicRequirements.isEmpty
-                                ? 'No clinic-specific requirements were selected. Upload any relevant medical documents you have.'
-                                : 'Upload the documents requested by your chosen clinic.',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[700],
-                            ),
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF4F8FA),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFFE3EDF2)),
                           ),
-                          const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          child: Row(
                             children: [
-                              Text(
-                                'Uploaded: $uploadedCount / ${clinicRequirements.length}',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: Color(0xFF2C5F7D),
-                                  fontWeight: FontWeight.w600,
-                                ),
+                              const Icon(
+                                Icons.folder_copy_outlined,
+                                color: Color(0xFF2C5F7D),
+                                size: 22,
                               ),
-                              Text(
-                                '${clinicRequirements.length} required',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: Color(0xFF6C7A8E),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Uploaded: $uploadedCount / ${clinicRequirements.length}',
+                                  style: const TextStyle(
+                                    color: Color(0xFF173B4F),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Clinic requirements',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
+                        ),
+
+                        const SizedBox(height: 22),
+
+                        const Text(
+                          'Clinic Requirements',
+                          style: TextStyle(
+                            color: Color(0xFF173B4F),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        if (clinicRequirements.isEmpty)
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF4F8FA),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: const Color(0xFFE3EDF2),
+                              ),
+                            ),
+                            child: const Text(
+                              'No clinic requirements were selected. You may continue if you have no documents to upload.',
+                              style: TextStyle(
+                                color: Color(0xFF5B6D7D),
+                                fontSize: 13,
+                                height: 1.4,
+                              ),
+                            ),
+                          )
+                        else
+                          ...clinicRequirements.map((item) {
+                            final key = item['key']!;
+                            final label = item['label']!;
+                            final uploaded =
+                                _documentUrls[key]?.isNotEmpty ?? false;
+                            final uploading = _isUploading[key] == true;
+
+                            return _buildRequirementRow(
+                              label: label,
+                              uploaded: uploaded,
+                              uploading: uploading,
+                              onUpload: () => _pickDocumentFor(key),
+                            );
+                          }),
+
+                        if (_uploadError != null) ...[
+                          const SizedBox(height: 14),
+                          Container(
+                            padding: const EdgeInsets.all(13),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.red.withOpacity(0.20),
+                              ),
+                            ),
+                            child: Text(
+                              _uploadError!,
+                              style: TextStyle(
+                                color: Colors.red.shade700,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          if (clinicRequirements.isEmpty)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 18,
-                                horizontal: 16,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEEF4F8),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: const Text(
-                                'No clinic requirements were selected. You may continue if you have no documents to upload.',
-                                style: TextStyle(fontSize: 14),
-                              ),
-                            )
-                          else
-                            ...clinicRequirements.map((item) {
-                              final key = item['key']!;
-                              final label = item['label']!;
-                              final uploaded =
-                                  _documentUrls[key]?.isNotEmpty ?? false;
-                              final uploading = _isUploading[key] == true;
-                              return _buildRequirementRow(
-                                label: label,
-                                uploaded: uploaded,
-                                uploading: uploading,
-                                onUpload: () => _pickDocumentFor(key),
-                              );
-                            }),
-                          if (_uploadError != null) ...[
-                            const SizedBox(height: 12),
-                            Text(
-                              _uploadError!,
-                              style: const TextStyle(color: Colors.red),
-                            ),
-                          ],
-                          const SizedBox(height: 24),
                         ],
-                      ),
+                      ],
                     ),
                   ),
                 ),
               ),
+
               const SizedBox(height: 20),
+
               SizedBox(
-                height: 56,
+                height: 54,
                 child: ElevatedButton(
                   onPressed: _handleNext,
                   style: ElevatedButton.styleFrom(
+                    elevation: 0,
                     backgroundColor: const Color(0xFF2C5F7D),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                   ),
                   child: const Text(
-                    'Next',
+                    'NEXT',
                     style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
                     ),
                   ),
                 ),
@@ -383,31 +466,56 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
     required bool uploading,
     required VoidCallback onUpload,
   }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: uploaded ? const Color(0xFFF0F8F5) : const Color(0xFFF4F8FA),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: uploaded ? const Color(0xFFBFE5D2) : const Color(0xFFE3EDF2),
+        ),
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Icon(
-            uploaded ? Icons.check_circle : Icons.radio_button_unchecked,
-            color: uploaded ? const Color(0xFF2C5F7D) : Colors.grey,
-            size: 20,
+            uploaded ? Icons.check_circle_rounded : Icons.upload_file_outlined,
+            color: uploaded ? const Color(0xFF2A9D65) : const Color(0xFF2C5F7D),
+            size: 22,
           ),
+
+          const SizedBox(width: 12),
+
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF173B4F),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+              ),
+            ),
+          ),
+
           const SizedBox(width: 10),
-          Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
-          const SizedBox(width: 10),
+
           SizedBox(
             height: 38,
             child: ElevatedButton(
               onPressed: uploading ? null : onUpload,
               style: ElevatedButton.styleFrom(
+                elevation: 0,
                 backgroundColor: uploaded
-                    ? const Color(0xFF2C5F7D)
-                    : const Color(0xFF4F82A4),
+                    ? const Color(0xFF2A9D65)
+                    : const Color(0xFF2C5F7D),
+                disabledBackgroundColor: const Color(
+                  0xFF2C5F7D,
+                ).withOpacity(0.5),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                minimumSize: const Size(100, 38),
               ),
               child: uploading
                   ? const SizedBox(
@@ -418,7 +526,14 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
                         color: Colors.white,
                       ),
                     )
-                  : Text(uploaded ? 'Replace' : 'Upload'),
+                  : Text(
+                      uploaded ? 'Replace' : 'Upload',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
             ),
           ),
         ],

@@ -119,212 +119,286 @@ class _SetupPageState extends State<SetupPage> {
     Navigator.of(context).pushNamed('/location', arguments: updated);
   }
 
-  @override
+@override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFEAF2F9),
+      backgroundColor: const Color(0xFFF3F7FA),
       body: SafeArea(
         child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(
-                decoration: const BoxDecoration(
-                  color: Color(0xFF2C5F7D),
-                  borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(36),
-                    bottomRight: Radius.circular(36),
+          physics: const BouncingScrollPhysics(),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Set Up',
+                  style: TextStyle(
+                    color: Color(0xFF173B4F),
+                    fontSize: 30,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
-                padding: const EdgeInsets.fromLTRB(24, 26, 24, 32),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
+
+                const SizedBox(height: 8),
+
+                const Text(
+                  'Complete your medical and contact information to continue.',
+                  style: TextStyle(
+                    color: Color(0xFF6B7C86),
+                    fontSize: 15,
+                    height: 1.4,
+                  ),
+                ),
+
+                const SizedBox(height: 26),
+
+                Row(
+                  children: [
+                    const Text(
+                      'Step 1 of 5',
+                      style: TextStyle(
+                        color: Color(0xFF2C5F7D),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const Spacer(),
                     Text(
-                      'Set Up',
+                      '20%',
+                      style: TextStyle(
+                        color: Colors.black.withOpacity(0.45),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 10),
+
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: LinearProgressIndicator(
+                    value: 0.2,
+                    minHeight: 8,
+                    color: const Color(0xFF2C5F7D),
+                    backgroundColor: const Color(0xFFDDEAF0),
+                  ),
+                ),
+
+                const SizedBox(height: 28),
+
+                Container(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: const Color(0xFFE1EAF0)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Personal Information',
+                        style: TextStyle(
+                          color: Color(0xFF173B4F),
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+
+                      const SizedBox(height: 6),
+
+                      const Text(
+                        'Tell us more about the patient.',
+                        style: TextStyle(
+                          color: Color(0xFF7A8A94),
+                          fontSize: 13,
+                        ),
+                      ),
+
+                      const SizedBox(height: 22),
+
+                      TextField(
+                        controller: _dobController,
+                        readOnly: true,
+                        onTap: _pickDob,
+                        decoration: _setupInputDecoration(
+                          label: 'Date of Birth',
+                          icon: Icons.calendar_month_outlined,
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      TextField(
+                        controller: _homeAddressController,
+                        maxLines: 2,
+                        decoration: _setupInputDecoration(
+                          label: 'Home Address',
+                          icon: Icons.home_outlined,
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      DropdownButtonFormField<String>(
+                        initialValue: _selectedBloodType,
+                        decoration: _setupInputDecoration(
+                          label: 'Blood Type',
+                          icon: Icons.bloodtype_outlined,
+                        ),
+                        items: _bloodTypes.map((type) {
+                          return DropdownMenuItem(
+                            value: type,
+                            child: Text(type),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() {
+                              _selectedBloodType = value;
+                            });
+                          }
+                        },
+                      ),
+
+                      const SizedBox(height: 26),
+
+                      const Divider(color: Color(0xFFE4EEF3), height: 1),
+
+                      const SizedBox(height: 24),
+
+                      const Text(
+                        'Emergency Contact',
+                        style: TextStyle(
+                          color: Color(0xFF173B4F),
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+
+                      const SizedBox(height: 6),
+
+                      const Text(
+                        'Add a contact person we can reach if needed.',
+                        style: TextStyle(
+                          color: Color(0xFF7A8A94),
+                          fontSize: 13,
+                        ),
+                      ),
+
+                      const SizedBox(height: 22),
+
+                      TextField(
+                        controller: _emergencyNameController,
+                        decoration: _setupInputDecoration(
+                          label: 'Contact Name',
+                          icon: Icons.person_outline,
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      TextField(
+                        controller: _emergencyNumberController,
+                        keyboardType: TextInputType.phone,
+                        decoration: _setupInputDecoration(
+                          label: 'Phone Number',
+                          icon: Icons.phone_outlined,
+                        ),
+                      ),
+
+                      if (_errorMessage != null) ...[
+                        const SizedBox(height: 18),
+                        Container(
+                          padding: const EdgeInsets.all(13),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.red.withOpacity(0.20),
+                            ),
+                          ),
+                          child: Text(
+                            _errorMessage!,
+                            style: TextStyle(
+                              color: Colors.red.shade700,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 28),
+
+                SizedBox(
+                  height: 54,
+                  child: ElevatedButton(
+                    onPressed: _handleNext,
+                    style: ElevatedButton.styleFrom(
+                      elevation: 0,
+                      backgroundColor: const Color(0xFF2C5F7D),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      'NEXT',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
                       ),
                     ),
-                    SizedBox(height: 12),
-                    Text(
-                      'Provide your basic medical and contact information so we can recommend the right clinics for you.',
-                      style: TextStyle(color: Color(0xFFDBE9F2), fontSize: 16),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 24),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    LinearProgressIndicator(
-                      value: 0.33,
-                      color: const Color(0xFF2C5F7D),
-                      backgroundColor: const Color(0xFFD9EAF1),
-                      minHeight: 9,
-                    ),
-                    const SizedBox(height: 24),
-                    Card(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      elevation: 4,
-                      shadowColor: Colors.black.withOpacity(0.09),
-                      child: Padding(
-                        padding: const EdgeInsets.all(22),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const Text(
-                              'Personal Information',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            TextField(
-                              controller: _dobController,
-                              readOnly: true,
-                              onTap: _pickDob,
-                              decoration: InputDecoration(
-                                labelText: 'Date of Birth',
-                                suffixIcon: const Icon(Icons.calendar_month),
-                                filled: true,
-                                fillColor: const Color(0xFFF1F7FA),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(18),
-                                  borderSide: BorderSide.none,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            TextField(
-                              controller: _homeAddressController,
-                              maxLines: 2,
-                              decoration: InputDecoration(
-                                labelText: 'Home Address',
-                                prefixIcon: const Icon(Icons.home),
-                                filled: true,
-                                fillColor: const Color(0xFFF1F7FA),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(18),
-                                  borderSide: BorderSide.none,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            DropdownButtonFormField<String>(
-                              initialValue: _selectedBloodType,
-                              decoration: InputDecoration(
-                                labelText: 'Blood Type',
-                                filled: true,
-                                fillColor: const Color(0xFFF1F7FA),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(18),
-                                  borderSide: BorderSide.none,
-                                ),
-                              ),
-                              items: _bloodTypes.map((type) {
-                                return DropdownMenuItem(
-                                  value: type,
-                                  child: Text(type),
-                                );
-                              }).toList(),
-                              onChanged: (value) {
-                                if (value != null) {
-                                  setState(() {
-                                    _selectedBloodType = value;
-                                  });
-                                }
-                              },
-                            ),
-                            const SizedBox(height: 16),
-                            const Divider(),
-                            const SizedBox(height: 16),
-                            const Text(
-                              'Emergency Contact',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            TextField(
-                              controller: _emergencyNameController,
-                              decoration: InputDecoration(
-                                labelText: 'Name',
-                                prefixIcon: const Icon(Icons.person_outline),
-                                filled: true,
-                                fillColor: const Color(0xFFF1F7FA),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(18),
-                                  borderSide: BorderSide.none,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            TextField(
-                              controller: _emergencyNumberController,
-                              keyboardType: TextInputType.phone,
-                              decoration: InputDecoration(
-                                labelText: 'Phone Number',
-                                prefixIcon: const Icon(Icons.phone_android),
-                                filled: true,
-                                fillColor: const Color(0xFFF1F7FA),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(18),
-                                  borderSide: BorderSide.none,
-                                ),
-                              ),
-                            ),
-                            if (_errorMessage != null) ...[
-                              const SizedBox(height: 16),
-                              Text(
-                                _errorMessage!,
-                                style: const TextStyle(
-                                  color: Colors.red,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-                    SizedBox(
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: _handleNext,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2C5F7D),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                        ),
-                        child: const Text(
-                          'Next',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  InputDecoration _setupInputDecoration({
+    required String label,
+    required IconData icon,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(
+        color: Color(0xFF6F7F89),
+        fontWeight: FontWeight.w500,
+      ),
+      prefixIcon: Icon(icon, color: const Color(0xFF5F7280)),
+      filled: true,
+      fillColor: const Color(0xFFF4F8FA),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFE3EDF2)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF2C5F7D), width: 1.2),
       ),
     );
   }

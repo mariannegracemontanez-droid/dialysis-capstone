@@ -28,65 +28,74 @@ class _HomeTabState extends State<HomeTab> {
     final userName = widget.user?.fullName ?? 'Patient';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F9FA),
+      backgroundColor: const Color(0xFFF3F7FA),
       body: SafeArea(
         child: Column(
           children: [
             Container(
               width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 26),
               decoration: const BoxDecoration(
                 color: Color(0xFF225E72),
                 borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(32),
-                  bottomRight: Radius.circular(32),
+                  bottomLeft: Radius.circular(22),
+                  bottomRight: Radius.circular(22),
                 ),
               ),
-              padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(
                         child: Text(
-                          'Hello, $userName!',
+                          'Hello, $userName',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 24,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                       ),
-                      IconButton(
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const NotificationPage(),
-                            ),
-                          );
-                        },
-                        icon: const Icon(
-                          Icons.notifications_none,
-                          color: Colors.white,
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: IconButton(
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => const NotificationPage(),
+                              ),
+                            );
+                          },
+                          icon: const Icon(
+                            Icons.notifications_none_rounded,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ],
                   ),
+
                   const SizedBox(height: 8),
+
                   const Text(
                     'How are you feeling today?',
                     style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
+                      color: Color(0xFFD9EDF3),
+                      fontSize: 15,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
+
                   const SizedBox(height: 20),
+
                   Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                     child: TextField(
                       controller: _searchController,
@@ -95,37 +104,40 @@ class _HomeTabState extends State<HomeTab> {
                           _searchText = value;
                         });
                       },
-                      decoration: InputDecoration(
-                        hintText: 'Search for booking...donation...etc...',
-                        prefixIcon: const Icon(
-                          Icons.search,
+                      decoration: const InputDecoration(
+                        hintText: 'Search appointments, health logs...',
+                        hintStyle: TextStyle(
+                          color: Color(0xFF8B9AA6),
+                          fontSize: 14,
+                        ),
+                        prefixIcon: Icon(
+                          Icons.search_rounded,
                           color: Color(0xFF225E72),
                         ),
                         border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 16,
-                        ),
+                        contentPadding: EdgeInsets.symmetric(vertical: 15),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
+
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 20,
-                ),
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'Upcoming Appointments',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                      const Expanded(
+                        child: Text(
+                          'Upcoming Appointments',
+                          style: TextStyle(
+                            color: Color(0xFF173B4F),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                       TextButton(
@@ -137,57 +149,102 @@ class _HomeTabState extends State<HomeTab> {
                             ),
                           );
                         },
-                        child: const Text('View all'),
+                        child: const Text(
+                          'View all',
+                          style: TextStyle(
+                            color: Color(0xFF225E72),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+
+                  const SizedBox(height: 12),
+
                   Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE8F4F7),
-                      borderRadius: BorderRadius.circular(24),
-                    ),
                     padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: const Color(0xFFE1EAF0)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text(
-                              'Dialysis Session',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
                             Container(
-                              padding: const EdgeInsets.all(10),
+                              width: 48,
+                              height: 48,
                               decoration: BoxDecoration(
-                                color: const Color(0xFF225E72),
+                                color: const Color(0xFFE8F1F5),
                                 borderRadius: BorderRadius.circular(14),
                               ),
                               child: const Icon(
-                                Icons.calendar_today,
-                                color: Colors.white,
+                                Icons.calendar_month_outlined,
+                                color: Color(0xFF225E72),
+                                size: 24,
+                              ),
+                            ),
+
+                            const SizedBox(width: 14),
+
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Dialysis Session',
+                                    style: TextStyle(
+                                      color: Color(0xFF173B4F),
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Schedule status',
+                                    style: TextStyle(
+                                      color: Color(0xFF7A8A94),
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 18),
-                        const Text(
-                          'Schedule is not available yet.',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
+
+                        const SizedBox(height: 20),
+
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF4F8FA),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFFE3EDF2)),
+                          ),
+                          child: const Text(
+                            'Schedule is not available yet. The scheduling feature will appear here once it is ready.',
+                            style: TextStyle(
+                              color: Color(0xFF5B6D7D),
+                              fontSize: 13,
+                              height: 1.4,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'The scheduling feature will appear here once it is ready.',
-                          style: TextStyle(color: Colors.black54),
-                        ),
-                        const SizedBox(height: 24),
+
+                        const SizedBox(height: 18),
+
                         Row(
                           children: [
                             Expanded(
@@ -201,25 +258,29 @@ class _HomeTabState extends State<HomeTab> {
                                   );
                                 },
                                 style: ElevatedButton.styleFrom(
+                                  elevation: 0,
                                   backgroundColor: const Color(0xFF225E72),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 14,
                                   ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
                                 ),
                                 child: const Text(
-                                  'View Appointment',
+                                  'VIEW',
                                   style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.6,
                                   ),
                                 ),
                               ),
                             ),
+
                             const SizedBox(width: 12),
+
                             Expanded(
                               child: OutlinedButton(
                                 onPressed: () {
@@ -234,19 +295,20 @@ class _HomeTabState extends State<HomeTab> {
                                   side: const BorderSide(
                                     color: Color(0xFF225E72),
                                   ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 14,
                                   ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
                                 ),
                                 child: const Text(
-                                  'View History',
+                                  'HISTORY',
                                   style: TextStyle(
                                     color: Color(0xFF225E72),
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.6,
                                   ),
                                 ),
                               ),
@@ -256,55 +318,81 @@ class _HomeTabState extends State<HomeTab> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 24),
+
+                  const SizedBox(height: 22),
+
                   Container(
+                    padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
                       color: const Color(0xFF225E72),
-                      borderRadius: BorderRadius.circular(24),
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
                     ),
-                    padding: const EdgeInsets.all(22),
                     child: Row(
                       children: [
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
-                              Text(
+                            children: [
+                              const Text(
                                 'Health Monitoring',
                                 style: TextStyle(
                                   color: Colors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              SizedBox(height: 8),
-                              Text(
-                                'Track your health based on your daily logs and activities.',
+
+                              const SizedBox(height: 8),
+
+                              const Text(
+                                'Track water intake, health logs, and daily care updates.',
                                 style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 14,
+                                  color: Color(0xFFD9EDF3),
+                                  fontSize: 13,
+                                  height: 1.4,
                                 ),
                               ),
-                              SizedBox(height: 16),
+
+                              const SizedBox(height: 16),
+
                               TextButton(
                                 onPressed: null,
-                                child: Text(
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(10, 10),
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: const Text(
                                   'Learn More',
-                                  style: TextStyle(color: Colors.white),
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
                         ),
+
+                        const SizedBox(width: 14),
+
                         Container(
-                          height: 80,
-                          width: 80,
+                          height: 74,
+                          width: 74,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF1B4B5C),
-                            borderRadius: BorderRadius.circular(20),
+                            color: Colors.white.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(18),
                           ),
                           child: const Icon(
-                            Icons.water_drop,
+                            Icons.water_drop_outlined,
                             color: Colors.white,
                             size: 34,
                           ),
@@ -312,23 +400,22 @@ class _HomeTabState extends State<HomeTab> {
                       ],
                     ),
                   ),
+
                   if (_searchText.isNotEmpty) ...[
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 22),
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color.fromRGBO(0, 0, 0, 0.05),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE1EAF0)),
                       ),
                       child: Text(
                         'Search results for "$_searchText" will appear here.',
+                        style: const TextStyle(
+                          color: Color(0xFF5B6D7D),
+                          fontSize: 13,
+                        ),
                       ),
                     ),
                   ],

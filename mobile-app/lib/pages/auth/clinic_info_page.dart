@@ -145,303 +145,458 @@ class _ClinicInfoPageState extends State<ClinicInfoPage> {
   @override
   Widget build(BuildContext context) {
     final clinic = widget.arguments.clinic;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F9FB),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF2C5F7D),
-        title: const Text('Clinic Information'),
-      ),
+      backgroundColor: const Color(0xFFF3F7FA),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(18),
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Card(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(22),
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 20,
+                      color: Color(0xFF2C5F7D),
+                    ),
+                  ),
+
+                  const SizedBox(width: 4),
+
+                  const Text(
+                    'Clinic Information',
+                    style: TextStyle(
+                      color: Color(0xFF173B4F),
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
+
+              const Text(
+                'Review your selected clinic and complete the remaining medical information.',
+                style: TextStyle(
+                  color: Color(0xFF6B7C86),
+                  fontSize: 14,
+                  height: 1.4,
                 ),
-                elevation: 4,
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            height: 56,
-                            width: 56,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF2C5F7D),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Icon(
-                              Icons.local_hospital,
-                              color: Colors.white,
-                              size: 28,
-                            ),
+              ),
+
+              const SizedBox(height: 22),
+
+              Row(
+                children: [
+                  const Text(
+                    'Step 3 of 5',
+                    style: TextStyle(
+                      color: Color(0xFF2C5F7D),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '60%',
+                    style: TextStyle(
+                      color: Colors.black.withOpacity(0.45),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 10),
+
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: const LinearProgressIndicator(
+                  value: 0.6,
+                  minHeight: 8,
+                  color: Color(0xFF2C5F7D),
+                  backgroundColor: Color(0xFFDDEAF0),
+                ),
+              ),
+
+              const SizedBox(height: 26),
+
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFE1EAF0)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 54,
+                          height: 54,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2C5F7D),
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  clinic['name']?.toString() ??
-                                      'Selected Clinic',
-                                  style: const TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                if (clinic['address'] != null)
-                                  Text(
-                                    clinic['address'].toString(),
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.black87,
-                                    ),
-                                  ),
-                              ],
-                            ),
+                          child: const Icon(
+                            Icons.local_hospital_rounded,
+                            color: Colors.white,
+                            size: 28,
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      if (clinic['operating_hours'] != null ||
-                          clinic['contact_number'] != null)
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Operating Hours',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.black54,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  if (clinic['operating_hours'] != null)
-                                    Text(
-                                      clinic['operating_hours'].toString(),
-                                      style: const TextStyle(fontSize: 14),
-                                    ),
-                                ],
-                              ),
-                            ),
-                            if (clinic['contact_number'] != null)
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Contact',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Colors.black54,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      clinic['contact_number'].toString(),
-                                      style: const TextStyle(fontSize: 14),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                          ],
                         ),
-                      const SizedBox(height: 18),
-                      const Text(
-                        'Required documents',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      ..._clinicRequirements.map(
-                        (requirement) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Row(
+
+                        const SizedBox(width: 14),
+
+                        Expanded(
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Padding(
-                                padding: EdgeInsets.only(top: 2),
-                                child: Icon(
-                                  Icons.check_circle,
-                                  size: 18,
-                                  color: Color(0xFF2C5F7D),
+                              Text(
+                                clinic['name']?.toString() ?? 'Selected Clinic',
+                                style: const TextStyle(
+                                  color: Color(0xFF173B4F),
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  requirement,
-                                  style: const TextStyle(fontSize: 14),
+
+                              const SizedBox(height: 6),
+
+                              if (clinic['address'] != null)
+                                Text(
+                                  clinic['address'].toString(),
+                                  style: const TextStyle(
+                                    color: Color(0xFF6B7C86),
+                                    fontSize: 13,
+                                    height: 1.4,
+                                  ),
                                 ),
-                              ),
                             ],
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Card(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                elevation: 4,
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        'Dialysis stage',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        initialValue: _selectedStage,
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'Stage 1',
-                            child: Text('Stage 1'),
+                      ],
+                    ),
+
+                    const SizedBox(height: 22),
+
+                    Row(
+                      children: [
+                        if (clinic['operating_hours'] != null)
+                          Expanded(
+                            child: _buildClinicInfoItem(
+                              'Operating Hours',
+                              clinic['operating_hours'].toString(),
+                              Icons.schedule_outlined,
+                            ),
                           ),
-                          DropdownMenuItem(
-                            value: 'Stage 2',
-                            child: Text('Stage 2'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'Stage 3',
-                            child: Text('Stage 3'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'Stage 4',
-                            child: Text('Stage 4'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'Stage 5',
-                            child: Text('Stage 5'),
+
+                        if (clinic['contact_number'] != null) ...[
+                          const SizedBox(width: 14),
+
+                          Expanded(
+                            child: _buildClinicInfoItem(
+                              'Contact',
+                              clinic['contact_number'].toString(),
+                              Icons.phone_outlined,
+                            ),
                           ),
                         ],
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() => _selectedStage = value);
-                          }
-                        },
-                        decoration: InputDecoration(
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          filled: true,
-                          fillColor: const Color(0xFFF6FAFF),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    const Row(
+                      children: [
+                        Icon(
+                          Icons.description_outlined,
+                          size: 18,
+                          color: Color(0xFF2C5F7D),
                         ),
-                      ),
-                      const SizedBox(height: 18),
-                      const Text(
-                        'Existing conditions',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ..._conditions.map(
-                        (condition) => CheckboxListTile(
-                          value: _selectedConditions.contains(condition),
-                          title: Text(condition),
-                          contentPadding: EdgeInsets.zero,
-                          activeColor: const Color(0xFF2C5F7D),
-                          onChanged: (_) => _toggleCondition(condition),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      const Text(
-                        'Date of birth',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      GestureDetector(
-                        onTap: _pickBirthDate,
-                        child: AbsorbPointer(
-                          child: TextField(
-                            controller: _dateOfBirthController,
-                            decoration: InputDecoration(
-                              hintText: 'YYYY-MM-DD',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              suffixIcon: const Icon(Icons.calendar_today),
-                              filled: true,
-                              fillColor: const Color(0xFFF6FAFF),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      _buildTextField('Home address', _homeAddressController),
-                      const SizedBox(height: 18),
-                      _buildTextField(
-                        'Blood type',
-                        _bloodTypeController,
-                        hint: 'e.g., O+, A-, B+',
-                      ),
-                      const SizedBox(height: 18),
-                      _buildTextField(
-                        'Emergency contact name',
-                        _emergencyContactNameController,
-                      ),
-                      const SizedBox(height: 18),
-                      _buildTextField(
-                        'Emergency contact number',
-                        _emergencyContactNumberController,
-                        keyboardType: TextInputType.phone,
-                      ),
-                      if (_errorMessage != null) ...[
-                        const SizedBox(height: 16),
+                        SizedBox(width: 8),
                         Text(
-                          _errorMessage!,
-                          style: const TextStyle(color: Colors.red),
+                          'Required Documents',
+                          style: TextStyle(
+                            color: Color(0xFF173B4F),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ],
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        height: 54,
-                        child: ElevatedButton(
-                          onPressed: _handleNext,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2C5F7D),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    ..._clinicRequirements.map(
+                      (requirement) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              margin: const EdgeInsets.only(top: 2),
+                              child: const Icon(
+                                Icons.check_circle,
+                                size: 18,
+                                color: Color(0xFF2C5F7D),
+                              ),
+                            ),
+
+                            const SizedBox(width: 10),
+
+                            Expanded(
+                              child: Text(
+                                requirement,
+                                style: const TextStyle(
+                                  color: Color(0xFF5B6D7D),
+                                  fontSize: 13,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 22),
+
+              Container(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFE1EAF0)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Medical Information',
+                      style: TextStyle(
+                        color: Color(0xFF173B4F),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+
+                    const SizedBox(height: 6),
+
+                    const Text(
+                      'Complete the patient medical profile.',
+                      style: TextStyle(color: Color(0xFF7A8A94), fontSize: 13),
+                    ),
+
+                    const SizedBox(height: 22),
+
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedStage,
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'Stage 1',
+                          child: Text('Stage 1'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Stage 2',
+                          child: Text('Stage 2'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Stage 3',
+                          child: Text('Stage 3'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Stage 4',
+                          child: Text('Stage 4'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Stage 5',
+                          child: Text('Stage 5'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _selectedStage = value);
+                        }
+                      },
+                      decoration: _modernInputDecoration(
+                        'Dialysis Stage',
+                        Icons.monitor_heart_outlined,
+                      ),
+                    ),
+
+                    const SizedBox(height: 22),
+
+                    const Text(
+                      'Existing Conditions',
+                      style: TextStyle(
+                        color: Color(0xFF173B4F),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: _conditions.map((condition) {
+                        final selected = _selectedConditions.contains(
+                          condition,
+                        );
+
+                        return GestureDetector(
+                          onTap: () => _toggleCondition(condition),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? const Color(0xFF2C5F7D)
+                                  : const Color(0xFFF4F8FA),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: selected
+                                    ? const Color(0xFF2C5F7D)
+                                    : const Color(0xFFE3EDF2),
+                              ),
+                            ),
+                            child: Text(
+                              condition,
+                              style: TextStyle(
+                                color: selected
+                                    ? Colors.white
+                                    : const Color(0xFF5B6D7D),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
-                          child: const Text(
-                            'Continue to documents',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
+                        );
+                      }).toList(),
+                    ),
+
+                    const SizedBox(height: 22),
+
+                    _buildModernTextField(
+                      label: 'Date of Birth',
+                      controller: _dateOfBirthController,
+                      icon: Icons.calendar_month_outlined,
+                      readOnly: true,
+                      onTap: _pickBirthDate,
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    _buildModernTextField(
+                      label: 'Home Address',
+                      controller: _homeAddressController,
+                      icon: Icons.home_outlined,
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    _buildModernTextField(
+                      label: 'Blood Type',
+                      controller: _bloodTypeController,
+                      icon: Icons.bloodtype_outlined,
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    _buildModernTextField(
+                      label: 'Emergency Contact Name',
+                      controller: _emergencyContactNameController,
+                      icon: Icons.person_outline,
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    _buildModernTextField(
+                      label: 'Emergency Contact Number',
+                      controller: _emergencyContactNumberController,
+                      icon: Icons.phone_outlined,
+                      keyboardType: TextInputType.phone,
+                    ),
+
+                    if (_errorMessage != null) ...[
+                      const SizedBox(height: 18),
+
+                      Container(
+                        padding: const EdgeInsets.all(13),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.red.withOpacity(0.20),
+                          ),
+                        ),
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(
+                            color: Colors.red.shade700,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
                     ],
-                  ),
+
+                    const SizedBox(height: 28),
+
+                    SizedBox(
+                      height: 54,
+                      child: ElevatedButton(
+                        onPressed: _handleNext,
+                        style: ElevatedButton.styleFrom(
+                          elevation: 0,
+                          backgroundColor: const Color(0xFF2C5F7D),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: const Text(
+                          'Continue To Documents',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -451,28 +606,81 @@ class _ClinicInfoPageState extends State<ClinicInfoPage> {
     );
   }
 
-  Widget _buildTextField(
-    String label,
-    TextEditingController controller, {
-    String? hint,
+  Widget _buildClinicInfoItem(String title, String value, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F8FA),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE3EDF2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: const Color(0xFF2C5F7D)),
+
+          const SizedBox(height: 10),
+
+          Text(
+            title,
+            style: const TextStyle(color: Color(0xFF7A8A94), fontSize: 12),
+          ),
+
+          const SizedBox(height: 4),
+
+          Text(
+            value,
+            style: const TextStyle(
+              color: Color(0xFF173B4F),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModernTextField({
+    required String label,
+    required TextEditingController controller,
+    required IconData icon,
+    bool readOnly = false,
+    VoidCallback? onTap,
     TextInputType keyboardType = TextInputType.text,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        TextField(
-          controller: controller,
-          keyboardType: keyboardType,
-          decoration: InputDecoration(
-            hintText: hint ?? 'Enter $label',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-            filled: true,
-            fillColor: const Color(0xFFF6FAFF),
-          ),
-        ),
-      ],
+    return TextField(
+      controller: controller,
+      readOnly: readOnly,
+      onTap: onTap,
+      keyboardType: keyboardType,
+      decoration: _modernInputDecoration(label, icon),
+    );
+  }
+
+  InputDecoration _modernInputDecoration(String label, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(
+        color: Color(0xFF6F7F89),
+        fontWeight: FontWeight.w500,
+      ),
+      prefixIcon: Icon(icon, color: const Color(0xFF5F7280)),
+      filled: true,
+      fillColor: const Color(0xFFF4F8FA),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFE3EDF2)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF2C5F7D), width: 1.2),
+      ),
     );
   }
 }

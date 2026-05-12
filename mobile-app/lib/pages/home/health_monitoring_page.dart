@@ -18,6 +18,7 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
   final int _dailyGoalMl = 1000;
   bool _isLoading = true;
   int _todayTotalMl = 0;
+  int _selectedTabIndex = 0;
   List<Map<String, dynamic>> _todayLogs = [];
   List<Map<String, dynamic>> _historyLogs = [];
   Map<String, dynamic>? _latestBloodPressure;
@@ -1390,88 +1391,134 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF6FBFB),
       body: SafeArea(
-        child: DefaultTabController(
-          length: 2,
-          child: Column(
-            children: [
-              Container(
-                width: double.infinity,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF225E72), Color(0xFF1D4356)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 26),
+              decoration: const BoxDecoration(
+                color: Color(0xFF225E72),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(22),
+                  bottomRight: Radius.circular(22),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Health Monitoring',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 18,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+
+                  const SizedBox(height: 8),
+
+                  const Text(
+                    'Track your health records, water intake, and dialysis monitoring progress.',
+                    style: TextStyle(
+                      color: Color(0xFFD9EDF3),
+                      fontSize: 14,
+                      height: 1.4,
+                    ),
+                  ),
+
+                  const SizedBox(height: 22),
+
+                  Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.14),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
                       children: [
-                        IconButton(
-                          onPressed: () {},
-                          icon: const Icon(
-                            Icons.notifications_none,
-                            color: Colors.white,
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedTabIndex = 0;
+                              });
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              decoration: BoxDecoration(
+                                color: _selectedTabIndex == 0
+                                    ? Colors.white
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                'Overview',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: _selectedTabIndex == 0
+                                      ? const Color(0xFF225E72)
+                                      : Colors.white70,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedTabIndex = 1;
+                              });
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              decoration: BoxDecoration(
+                                color: _selectedTabIndex == 1
+                                    ? Colors.white
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                'History',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: _selectedTabIndex == 1
+                                      ? const Color(0xFF225E72)
+                                      : Colors.white70,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Health Monitoring',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Track your vital signs and progress',
-                      style: TextStyle(color: Colors.white70, fontSize: 15),
-                    ),
-                    const SizedBox(height: 20),
-                    Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.16),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: TabBar(
-                        indicator: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        labelColor: const Color(0xFF225E72),
-                        unselectedLabelColor: Colors.white70,
-                        tabs: const [
-                          Tab(text: 'Overview'),
-                          Tab(text: 'History'),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              Expanded(
-                child: _isLoading
-                    ? const Center(
-                        child: CircularProgressIndicator(
-                          color: Color(0xFF225E72),
-                        ),
-                      )
-                    : TabBarView(
-                        children: [_buildOverviewTab(), _buildHistoryTab()],
+            ),
+
+            Expanded(
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF225E72),
                       ),
-              ),
-            ],
-          ),
+                    )
+                  : AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      child: _selectedTabIndex == 0
+                          ? _buildOverviewTab()
+                          : _buildHistoryTab(),
+                    ),
+            ),
+          ],
         ),
       ),
     );

@@ -79,160 +79,289 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
         ? 'None'
         : widget.signupData.insuranceOptions.join(', ');
 
-    final medicalDocumentName =
-        widget.signupData.medicalDocumentPaths.isNotEmpty
-        ? widget.signupData.medicalDocumentPaths
-              .map((path) => path.split('/').last)
-              .join(', ')
-        : widget.signupData.medicalDocumentPath.isEmpty
-        ? 'Not provided'
-        : widget.signupData.medicalDocumentPath.split('/').last;
-
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F9FB),
+      backgroundColor: const Color(0xFFF3F7FA),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
                 children: [
                   IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(
-                      Icons.arrow_back,
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 20,
                       color: Color(0xFF2C5F7D),
                     ),
-                    onPressed: () => Navigator.of(context).pop(),
                   ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Confirm Your Information',
-                    style: TextStyle(
-                      color: Color(0xFF2C5F7D),
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+
+                  const SizedBox(width: 4),
+
+                  const Expanded(
+                    child: Text(
+                      'Confirm Information',
+                      style: TextStyle(
+                        color: Color(0xFF173B4F),
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              LinearProgressIndicator(
-                value: 1.0,
-                color: const Color(0xFF2C5F7D),
-                backgroundColor: const Color(0xFFE7F0F3),
-                minHeight: 8,
+
+              const SizedBox(height: 8),
+
+              const Text(
+                'Please review all information before submitting your application.',
+                style: TextStyle(
+                  color: Color(0xFF6B7C86),
+                  fontSize: 14,
+                  height: 1.4,
+                ),
               ),
+
+              const SizedBox(height: 22),
+
+              Row(
+                children: [
+                  const Text(
+                    'Final Review',
+                    style: TextStyle(
+                      color: Color(0xFF2C5F7D),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '100%',
+                    style: TextStyle(
+                      color: const Color.fromARGB(
+                        255,
+                        24,
+                        138,
+                        28,
+                      ).withOpacity(0.45),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 10),
+
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: const LinearProgressIndicator(
+                  value: 1,
+                  minHeight: 8,
+                  color: Color.fromARGB(255, 56, 224, 58),
+                  backgroundColor: Color(0xFFDDEAF0),
+                ),
+              ),
+
               const SizedBox(height: 24),
+
               Expanded(
                 child: SingleChildScrollView(
-                  child: Card(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(24),
+                  physics: const BouncingScrollPhysics(),
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: const Color(0xFFE1EAF0)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
                     ),
-                    elevation: 4,
-                    shadowColor: Colors.black.withOpacity(0.08),
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const Text(
-                            'Review your account details before creation.',
-                            style: TextStyle(
-                              color: Color(0xFF3B5D6C),
-                              fontSize: 16,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(
+                              Icons.verified_user_outlined,
+                              color: Color(0xFF2C5F7D),
+                              size: 20,
                             ),
-                          ),
-                          const SizedBox(height: 24),
-                          _buildInfoRow(
-                            'Patient Name',
-                            widget.signupData.fullName,
-                          ),
-                          _buildInfoRow('Email', widget.signupData.email),
-                          _buildInfoRow('Phone', widget.signupData.phone),
-                          _buildInfoRow(
-                            'Date of Birth',
-                            widget.signupData.dateOfBirth,
-                          ),
-                          _buildInfoRow(
-                            'Home Address',
-                            widget.signupData.homeAddress,
-                          ),
-                          _buildInfoRow(
-                            'Blood Type',
-                            widget.signupData.bloodType,
-                          ),
-                          _buildInfoRow(
-                            'Emergency Contact',
-                            widget.signupData.emergencyContactName.isEmpty
-                                ? 'Not provided'
-                                : '${widget.signupData.emergencyContactName} (${widget.signupData.emergencyContactNumber})',
-                          ),
-                          _buildInfoRow(
-                            'Selected Clinic',
-                            widget.signupData.clinicName.isEmpty
-                                ? 'Not selected'
-                                : widget.signupData.clinicName,
-                          ),
-                          _buildInfoRow(
-                            'CKD Level',
-                            widget.signupData.ckdLevel,
-                          ),
-                          _buildInfoRow(
-                            'Conditions',
-                            widget.signupData.conditions.isEmpty
-                                ? 'None'
-                                : widget.signupData.conditions.join(', '),
-                          ),
-                          _buildInfoRow('Insurance', insuranceLabel),
-                          _buildInfoRow(
-                            'Budget range',
-                            widget.signupData.budgetRange,
-                          ),
-                          _buildInfoRow(
-                            'Preferred clinic type',
-                            widget.signupData.preferredClinicType,
-                          ),
-                          if (_errorMessage != null) ...[
-                            const SizedBox(height: 16),
+                            SizedBox(width: 10),
                             Text(
-                              _errorMessage!,
-                              style: const TextStyle(color: Colors.red),
+                              'Review Details',
+                              style: TextStyle(
+                                color: Color(0xFF173B4F),
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
                           ],
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        const Text(
+                          'Make sure your information is correct before continuing.',
+                          style: TextStyle(
+                            color: Color(0xFF7A8A94),
+                            fontSize: 13,
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        _buildInfoRow(
+                          icon: Icons.person_outline,
+                          label: 'Patient Name',
+                          value: widget.signupData.fullName,
+                        ),
+
+                        _buildInfoRow(
+                          icon: Icons.alternate_email,
+                          label: 'Email',
+                          value: widget.signupData.email,
+                        ),
+
+                        _buildInfoRow(
+                          icon: Icons.phone_outlined,
+                          label: 'Phone Number',
+                          value: widget.signupData.phone,
+                        ),
+
+                        _buildInfoRow(
+                          icon: Icons.calendar_month_outlined,
+                          label: 'Date of Birth',
+                          value: widget.signupData.dateOfBirth,
+                        ),
+
+                        _buildInfoRow(
+                          icon: Icons.home_outlined,
+                          label: 'Home Address',
+                          value: widget.signupData.homeAddress,
+                        ),
+
+                        _buildInfoRow(
+                          icon: Icons.bloodtype_outlined,
+                          label: 'Blood Type',
+                          value: widget.signupData.bloodType,
+                        ),
+
+                        _buildInfoRow(
+                          icon: Icons.emergency_outlined,
+                          label: 'Emergency Contact',
+                          value: widget.signupData.emergencyContactName.isEmpty
+                              ? 'Not provided'
+                              : '${widget.signupData.emergencyContactName} (${widget.signupData.emergencyContactNumber})',
+                        ),
+
+                        _buildInfoRow(
+                          icon: Icons.local_hospital_outlined,
+                          label: 'Selected Clinic',
+                          value: widget.signupData.clinicName.isEmpty
+                              ? 'Not selected'
+                              : widget.signupData.clinicName,
+                        ),
+
+                        _buildInfoRow(
+                          icon: Icons.monitor_heart_outlined,
+                          label: 'CKD Level',
+                          value: widget.signupData.ckdLevel,
+                        ),
+
+                        _buildInfoRow(
+                          icon: Icons.medical_information_outlined,
+                          label: 'Conditions',
+                          value: widget.signupData.conditions.isEmpty
+                              ? 'None'
+                              : widget.signupData.conditions.join(', '),
+                        ),
+
+                        _buildInfoRow(
+                          icon: Icons.health_and_safety_outlined,
+                          label: 'Insurance',
+                          value: insuranceLabel,
+                        ),
+
+                        _buildInfoRow(
+                          icon: Icons.payments_outlined,
+                          label: 'Budget Range',
+                          value: widget.signupData.budgetRange,
+                        ),
+
+                        _buildInfoRow(
+                          icon: Icons.business_outlined,
+                          label: 'Preferred Clinic Type',
+                          value: widget.signupData.preferredClinicType,
+                        ),
+
+                        if (_errorMessage != null) ...[
+                          const SizedBox(height: 18),
+
+                          Container(
+                            padding: const EdgeInsets.all(13),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.red.withOpacity(0.20),
+                              ),
+                            ),
+                            child: Text(
+                              _errorMessage!,
+                              style: TextStyle(
+                                color: Colors.red.shade700,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
                         ],
-                      ),
+                      ],
                     ),
                   ),
                 ),
               ),
+
               const SizedBox(height: 20),
+
               SizedBox(
-                height: 56,
+                height: 54,
                 child: ElevatedButton(
                   onPressed: _isSubmitting ? null : _handleSubmit,
                   style: ElevatedButton.styleFrom(
+                    elevation: 0,
                     backgroundColor: const Color(0xFF2C5F7D),
+                    disabledBackgroundColor: const Color(
+                      0xFF2C5F7D,
+                    ).withOpacity(0.55),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                   ),
                   child: _isSubmitting
                       ? const SizedBox(
-                          width: 20,
-                          height: 20,
+                          width: 22,
+                          height: 22,
                           child: CircularProgressIndicator(
                             color: Colors.white,
-                            strokeWidth: 2,
+                            strokeWidth: 2.4,
                           ),
                         )
                       : const Text(
-                          'Submit & Continue',
+                          'SUBMIT APPLICATION',
                           style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
                           ),
                         ),
                 ),
@@ -244,23 +373,59 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Column(
+  Widget _buildInfoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FBFD),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE3EDF2)),
+      ),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: const TextStyle(color: Color(0xFF6A7B83), fontSize: 13),
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F1F5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: const Color(0xFF2C5F7D), size: 20),
           ),
-          const SizedBox(height: 4),
-          Text(
-            value.isEmpty ? 'Not provided' : value,
-            style: const TextStyle(
-              color: Color(0xFF1F3F53),
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
+
+          const SizedBox(width: 14),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Color(0xFF7A8A94),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+
+                const SizedBox(height: 6),
+
+                Text(
+                  value.isEmpty ? 'Not provided' : value,
+                  style: const TextStyle(
+                    color: Color(0xFF173B4F),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

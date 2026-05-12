@@ -16,37 +16,28 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   bool _loading = false;
   bool _obscurePassword = true;
   String? _message;
+  bool _isError = false;
+
   late AnimationController _fadeController;
-  late AnimationController _scaleController;
   late Animation<double> _fadeAnimation;
-  late Animation<double> _scaleAnimation;
 
   @override
   void initState() {
     super.initState();
     _fadeController = AnimationController(
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 1200),
       vsync: this,
     );
-    _scaleController = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-    _fadeAnimation = Tween<double>(
-      begin: 0,
-      end: 1,
-    ).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeIn));
-    _scaleAnimation = Tween<double>(begin: 0.8, end: 1).animate(
-      CurvedAnimation(parent: _scaleController, curve: Curves.easeOutCubic),
+    _fadeAnimation = CurvedAnimation(
+      parent: _fadeController,
+      curve: Curves.easeOut,
     );
     _fadeController.forward();
-    _scaleController.forward();
   }
 
   @override
   void dispose() {
     _fadeController.dispose();
-    _scaleController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -64,12 +55,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         password: _passwordController.text.trim(),
       );
 
-      if (res.user == null || res.session == null) {
-        setState(() {
-          _message = 'Sign-in failed.';
-        });
-        return;
-      }
+      if (res.user == null) throw const AuthException('User not found');
 
       final profile = await Supabase.instance.client
           .from('profiles')
@@ -77,23 +63,15 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           .eq('id', res.user!.id)
           .maybeSingle();
 
-      final role = profile?['role'];
-      if (role != 'admin') {
+      if (profile?['role'] != 'admin') {
         await Supabase.instance.client.auth.signOut();
         setState(() {
-          _message =
-              'Incorrect password or email. Please try again.';
-               TextStyle(color: Colors.red);
+          _isError = true;
+          _message = 'Access denied. Administrator privileges required.';
         });
         return;
       }
 
-      setState(() {
-        _message = 'Signed in successfully as ${res.user!.email ?? 'unknown'}';
-         TextStyle(color: Colors.green);
-      });
-
-      // Navigate to dashboard
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const DashboardPage()),
@@ -101,312 +79,170 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       }
     } on AuthException catch (e) {
       setState(() {
+        _isError = true;
         _message = e.message;
       });
     } catch (e) {
       setState(() {
-        _message = 'An unexpected error occurred: $e';
-         TextStyle(color: Colors.red);
+        _isError = true;
+        _message = 'An unexpected error occurred.';
       });
     } finally {
-      setState(() {
-        _loading = false;
-      });
-    }
-  }
-
-  Future<void> _testConnection() async {
-    setState(() {
-      _loading = true;
-      _message = null;
-       TextStyle(color: Colors.red);
-    });
-
-    try {
-      final userRes = await Supabase.instance.client.auth.getUser();
-      setState(() {
-        _message = 'Connected. Current user: ${userRes.user?.email ?? 'none'}';
-         TextStyle(color: Colors.green);
-      });
-    } on AuthException catch (e) {
-      setState(() {
-        _message =
-            'Connected, but no active session. Try signing in first. (${e.message})';
-         TextStyle(color: Colors.yellow);
-      });
-    } catch (e) {
-      setState(() {
-        _message = 'Connection test failed: $e';
-         TextStyle(color: Colors.red);
-      });
-    } finally {
-      setState(() {
-        _loading = false;
-      });
+      setState(() => _loading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    const primaryColor = Color(0xFF1F5E7D);
+    const accentColor = Color(0xFF4A9FB5);
+
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          image: DecorationImage(
-            image: const AssetImage('assets/images/gradient_background.png'),
-            fit: BoxFit.cover,
-            colorFilter: ColorFilter.mode(
-              const Color(0xFF1F5E7D),
-              BlendMode.screen,
+      body: Stack(
+        children: [
+          // Background Image with Darker Overlay for Professionalism
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/gradient_background.png',
+              fit: BoxFit.cover,
             ),
           ),
-        ),
-        child: Center(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: ScaleTransition(
-              scale: _scaleAnimation,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
+          Positioned.fill(
+            child: Container(color: Colors.black.withOpacity(0.3)),
+          ),
+
+          Center(
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: SingleChildScrollView(
+                child: Container(
+                  width: 500,
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
                   child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Logo and Title
-                      Center(
-                        child: Column(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: LinearGradient(
-                                  colors: [
-                                    Colors.white.withOpacity(0.3),
-                                    Colors.white.withOpacity(0.1),
-                                  ],
-                                ),
-                              ),
-                              child: Image.asset(
-                                'assets/images/CureNurture_CircleLogo.png',
-                                width: 80,
-                                height: 80,
-                              ),
+                      // Circular Logo
+                      Container(
+                        height: 100,
+                        width: 100,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 20,
+                              offset: const Offset(0, 10),
                             ),
-                            const SizedBox(height: 16),
-                            const SizedBox(height: 32),
                           ],
                         ),
+                        child: ClipOval(
+                          child: Image.asset(
+                            'assets/images/CureNurture_CircleLogo.png',
+                          ),
+                        ),
                       ),
-                      // Login Card
+                      const SizedBox(height: 24),
+                      const Text(
+                        'CENTER PORTAL',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Please sign in to continue',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.7),
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 40),
+
+                      // Glassmorphism Card
                       ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
+                        borderRadius: BorderRadius.circular(15),
                         child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                           child: Container(
-                            padding: const EdgeInsets.all(24),
+                            padding: const EdgeInsets.all(40),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.15,), // glass effect
-                              borderRadius: BorderRadius.circular(24),
+                              color: Colors.white.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(15),
                               border: Border.all(
                                 color: Colors.white.withOpacity(0.2),
+                                width: 1.5,
                               ),
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                // Email Input
-                                TextField(
+                                _buildTextField(
                                   controller: _emailController,
-                                  keyboardType: TextInputType.emailAddress,
-                                  style: const TextStyle(fontSize: 16),
-                                  decoration: InputDecoration(
-                                    hintText: 'Email',
-                                    hintStyle: TextStyle(
-                                      color: Colors.grey[400],
-                                    ),
-                                    prefixIcon: Icon(
-                                      Icons.email,
-                                      color: const Color(0xFF1F5E7D),
-                                      size: 20,
-                                    ),
-                                    filled: true,
-                                    fillColor: Colors.white.withOpacity(0.2),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(
-                                        color: Colors.grey[300]!,
-                                      ),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(
-                                        color: Colors.grey[300]!,
-                                      ),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: const BorderSide(
-                                        color: Color(0xFF4A9FB5),
-                                        width: 2,
-                                      ),
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 14,
-                                    ),
-                                  ),
+                                  hint: 'Email Address',
+                                  icon: Icons.alternate_email,
+                                  primaryColor: accentColor,
                                 ),
-                                const SizedBox(height: 16),
-                                // Password Input
-                                TextField(
+                                const SizedBox(height: 20),
+                                _buildTextField(
                                   controller: _passwordController,
-                                  obscureText: _obscurePassword,
-                                  style: const TextStyle(fontSize: 16),
-                                  decoration: InputDecoration(
-                                    hintText: 'Password',
-                                    hintStyle: TextStyle(
-                                      color: Colors.grey[400],
-                                    ),
-                                    prefixIcon: Icon(
-                                      Icons.lock,
-                                      color: const Color(0xFF1F5E7D),
-                                      size: 20,
-                                    ),
-
-                                    suffixIcon: IconButton(
-                                      icon: Icon(
-                                        _obscurePassword
-                                            ? Icons.visibility_off
-                                            : Icons.visibility,
-                                        color: Color(0xFF1F5E7D),
-                                      ),
-                                      color: _obscurePassword
-                                          ? Colors.grey
-                                          : const Color(0xFF4A9FB5),
-                                      onPressed: () {
-                                        setState(() {
-                                          _obscurePassword = !_obscurePassword;
-                                          print(
-                                            _obscurePassword,
-                                          ); // 👈 check console
-                                        });
-                                      },
-                                    ),
-
-                                    filled: true,
-                                    fillColor: Colors.white.withOpacity(0.2),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(
-                                        color: Colors.grey[300]!,
-                                      ),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(
-                                        color: Colors.grey[300]!,
-                                      ),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: const BorderSide(
-                                        color: Color(0xFF4A9FB5),
-                                        width: 2,
-                                      ),
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 14,
-                                    ),
+                                  hint: 'Password',
+                                  icon: Icons.lock_outline,
+                                  isPassword: true,
+                                  obscure: _obscurePassword,
+                                  primaryColor: accentColor,
+                                  onSuffixTap: () => setState(
+                                    () => _obscurePassword = !_obscurePassword,
                                   ),
                                 ),
-                                const SizedBox(height: 24),
-                                // Login Button
+                                const SizedBox(height: 32),
+
+                                // Enhanced Login Button
                                 ElevatedButton(
                                   onPressed: _loading ? null : _signIn,
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF1F5E7D),
+                                    backgroundColor: primaryColor,
+                                    foregroundColor: Colors.white,
                                     padding: const EdgeInsets.symmetric(
-                                      vertical: 16,
+                                      vertical: 20,
                                     ),
                                     shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(15),
                                     ),
-                                    elevation: 5,
+                                    elevation: 0,
                                   ),
                                   child: _loading
                                       ? const SizedBox(
-                                          height: 24,
-                                          width: 24,
+                                          height: 20,
+                                          width: 20,
                                           child: CircularProgressIndicator(
-                                            strokeWidth: 2.5,
-                                            valueColor:
-                                                AlwaysStoppedAnimation<Color>(
-                                                  Colors.white,
-                                                ),
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation(
+                                              Colors.white,
+                                            ),
                                           ),
                                         )
                                       : const Text(
-                                          'Login',
+                                          'SIGN IN',
                                           style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            letterSpacing: 1.2,
                                           ),
                                         ),
                                 ),
-                                const SizedBox(height: 12),
-                                // Test Connection Button
-                                TextButton(
-                                  onPressed: _loading ? null : _testConnection,
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: const Color(0xFF4A9FB5),
-                                  ),
-                                  child: const Text(
-                                    'Test Supabase Connection',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.black,
-                                    ),
-                                  ),
-                                ),
-                                // Error/Success Message
+
                                 if (_message != null) ...[
-                                  const SizedBox(height: 16),
-                                  Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          _message!.toLowerCase().contains(
-                                            'error',
-                                          )
-                                          ? Colors.red.withOpacity(0.1)
-                                          : Colors.green.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color:
-                                            _message!.toLowerCase().contains(
-                                              'error',
-                                            )
-                                            ? Colors.white
-                                            : Colors.white,
-                                        width: 1,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      _message!,
-                                      style: TextStyle(
-                                        color:
-                                            _message!.toLowerCase().contains(
-                                              'error',
-                                            )
-                                            ? Colors.white70
-                                            : Colors.white70,
-                                        fontSize: 13,
-                                      ),
-                                      textAlign: TextAlign.center,
+                                  const SizedBox(height: 20),
+                                  Text(
+                                    _message!,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: _isError
+                                          ? Colors.redAccent[100]
+                                          : Colors.greenAccent[100],
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
                                 ],
@@ -415,12 +251,64 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                           ),
                         ),
                       ),
+                      const SizedBox(height: 40),
+                      Text(
+                        '© 2026 CureNurture',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.5),
+                          fontSize: 12,
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+    bool isPassword = false,
+    bool obscure = false,
+    VoidCallback? onSuffixTap,
+    required Color primaryColor,
+  }) {
+    return TextField(
+      controller: controller,
+      obscureText: obscure,
+      style: const TextStyle(color: Colors.white, fontSize: 15),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+        prefixIcon: Icon(icon, color: Colors.white70, size: 20),
+        suffixIcon: isPassword
+            ? IconButton(
+                icon: Icon(
+                  obscure
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  color: Colors.white70,
+                  size: 20,
+                ),
+                onPressed: onSuffixTap,
+              )
+            : null,
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.05),
+        contentPadding: const EdgeInsets.symmetric(vertical: 20),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: primaryColor, width: 2),
         ),
       ),
     );

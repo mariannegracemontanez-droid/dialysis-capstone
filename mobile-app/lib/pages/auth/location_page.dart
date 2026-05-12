@@ -318,7 +318,7 @@ class _LocationPageState extends State<LocationPage> {
   Widget _buildClinicDetailsCard(Map<String, dynamic> clinic) {
     final requirements = clinic['requirements'];
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       elevation: 4,
       shadowColor: Colors.black.withOpacity(0.08),
       child: Padding(
@@ -334,7 +334,7 @@ class _LocationPageState extends State<LocationPage> {
                   width: 48,
                   decoration: BoxDecoration(
                     color: const Color(0xFF2C5F7D),
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                   child: const Icon(
                     Icons.local_hospital,
@@ -437,119 +437,283 @@ class _LocationPageState extends State<LocationPage> {
   }
 
   @override
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F9FB),
+      backgroundColor: const Color(0xFFF3F7FA),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
                 children: [
                   IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(
-                      Icons.arrow_back,
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 20,
                       color: Color(0xFF2C5F7D),
                     ),
-                    onPressed: () => Navigator.of(context).pop(),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
                   const Text(
                     'Choose Location',
                     style: TextStyle(
-                      color: Color(0xFF2C5F7D),
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF173B4F),
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+
+              const SizedBox(height: 8),
+
               const Text(
-                'Select your preferred dialysis center in Valenzuela and review the requirements before continuing.',
-                style: TextStyle(color: Color(0xFF5B6D7D), fontSize: 14),
+                'Select your preferred dialysis center and review the clinic requirements before continuing.',
+                style: TextStyle(
+                  color: Color(0xFF6B7C86),
+                  fontSize: 14,
+                  height: 1.4,
+                ),
               ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: Card(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24),
+
+              const SizedBox(height: 22),
+
+              Row(
+                children: [
+                  const Text(
+                    'Step 2 of 5',
+                    style: TextStyle(
+                      color: Color(0xFF2C5F7D),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                  elevation: 4,
-                  shadowColor: Colors.black.withOpacity(0.08),
+                  const Spacer(),
+                  Text(
+                    '40%',
+                    style: TextStyle(
+                      color: Colors.black.withOpacity(0.45),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 10),
+
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: const LinearProgressIndicator(
+                  value: 0.4,
+                  minHeight: 8,
+                  color: Color(0xFF2C5F7D),
+                  backgroundColor: Color(0xFFDDEAF0),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: const Color(0xFFE1EAF0)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
                   child: Column(
                     children: [
                       Expanded(
+                        flex: 5,
                         child: ClipRRect(
                           borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(24),
+                            top: Radius.circular(18),
                           ),
-                          child: FlutterMap(
-                            mapController: _mapController,
-                            options: MapOptions(
-                              initialCenter: _valenzuelaCenter,
-                              initialZoom: 13,
-                            ),
+                          child: Stack(
                             children: [
-                              TileLayer(
-                                urlTemplate:
-                                    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                subdomains: const ['a', 'b', 'c'],
-                                userAgentPackageName:
-                                    'com.example.dialysis_patient_app',
+                              FlutterMap(
+                                mapController: _mapController,
+                                options: MapOptions(
+                                  initialCenter: _valenzuelaCenter,
+                                  initialZoom: 13,
+                                ),
+                                children: [
+                                  TileLayer(
+                                    urlTemplate:
+                                        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                    subdomains: const ['a', 'b', 'c'],
+                                    userAgentPackageName:
+                                        'com.example.dialysis_patient_app',
+                                  ),
+                                  if (_clinics.isNotEmpty)
+                                    MarkerLayer(
+                                      markers: _buildMarkers(_clinics),
+                                    ),
+                                ],
                               ),
-                              if (_clinics.isNotEmpty)
-                                MarkerLayer(markers: _buildMarkers(_clinics)),
+
+                              Positioned(
+                                top: 14,
+                                left: 14,
+                                right: 14,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.92),
+                                    borderRadius: BorderRadius.circular(14),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.08),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 6),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.location_on_outlined,
+                                        color: Color(0xFF2C5F7D),
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          _selectedClinic == null
+                                              ? 'Tap a clinic marker to view details'
+                                              : 'Clinic selected',
+                                          style: const TextStyle(
+                                            color: Color(0xFF173B4F),
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ),
                       ),
-                      Flexible(
+
+                      Expanded(
+                        flex: 4,
                         child: Padding(
-                          padding: const EdgeInsets.all(18),
+                          padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
                           child: SingleChildScrollView(
+                            physics: const BouncingScrollPhysics(),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 if (_isLoading)
-                                  const Center(
-                                    child: CircularProgressIndicator(),
+                                  const Padding(
+                                    padding: EdgeInsets.only(top: 30),
+                                    child: Center(
+                                      child: CircularProgressIndicator(
+                                        color: Color(0xFF2C5F7D),
+                                      ),
+                                    ),
                                   )
                                 else if (_errorMessage != null)
-                                  Text(
-                                    _errorMessage!,
-                                    style: const TextStyle(color: Colors.red),
+                                  Container(
+                                    padding: const EdgeInsets.all(13),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withOpacity(0.08),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Colors.red.withOpacity(0.20),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      _errorMessage!,
+                                      style: TextStyle(
+                                        color: Colors.red.shade700,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                                   )
                                 else ...[
-                                  if (_selectedClinic != null) ...[
+                                  if (_selectedClinic == null)
+                                    Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: const Color.fromARGB(255, 88, 164, 202),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: const Color(0xFFE3EDF2),
+                                        ),
+                                      ),
+                                      child: const Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Icon(
+                                            Icons.info_outline_rounded,
+                                            color: Color(0xFF2C5F7D),
+                                            size: 20,
+                                          ),
+                                          SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              'Please choose a clinic from the map to continue.',
+                                              style: TextStyle(
+                                                color: Color(0xFF5B6D7D),
+                                                fontSize: 13,
+                                                height: 1.4,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  else
                                     _buildClinicDetailsCard(_selectedClinic!),
-                                    const SizedBox(height: 16),
-                                  ],
+
+                                  const SizedBox(height: 18),
+
                                   SizedBox(
-                                    height: 52,
+                                    height: 54,
                                     child: ElevatedButton(
                                       onPressed: _isLoading
                                           ? null
                                           : _handleNext,
                                       style: ElevatedButton.styleFrom(
+                                        elevation: 0,
                                         backgroundColor: const Color(
                                           0xFF2C5F7D,
                                         ),
+                                        disabledBackgroundColor: const Color(
+                                          0xFF2C5F7D,
+                                        ).withOpacity(0.50),
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(
-                                            18,
+                                            14,
                                           ),
                                         ),
                                       ),
                                       child: const Text(
-                                        'Next',
+                                        'NEXT',
                                         style: TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.8,
                                         ),
                                       ),
                                     ),

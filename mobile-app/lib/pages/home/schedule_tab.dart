@@ -415,208 +415,321 @@ class _AppointmentPageState extends State<AppointmentPage> {
     final hasSchedule = _scheduledDays.isNotEmpty;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF3F7FA),
       body: SafeArea(
         child: Column(
           children: [
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 26),
               decoration: const BoxDecoration(
-                color: Color(0xFF2C5F7D),
+                color: Color(0xFF225E72),
                 borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(24),
-                  bottomRight: Radius.circular(24),
+                  bottomLeft: Radius.circular(22),
+                  bottomRight: Radius.circular(22),
                 ),
               ),
-              child: const Text(
-                'My Schedule',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'My Schedule',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'View your assigned dialysis schedule and appointment history.',
+                    style: TextStyle(
+                      color: Color(0xFFD9EDF3),
+                      fontSize: 14,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
               ),
             ),
+
             Expanded(
               child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 16,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF0F7F8),
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Your Assigned Schedule',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF2C5F7D),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              hasSchedule
-                                  ? 'Set by your healthcare provider'
-                                  : 'No schedule assigned yet',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Color(0xFF5B6D7D),
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            if (hasSchedule)
-                              Row(
-                                children: [
-                                  const Icon(
-                                    Icons.calendar_today,
-                                    color: Color(0xFF2C5F7D),
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      _formatDays(),
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                          ],
-                        ),
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0xFFE1EAF0)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 18,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 20),
-                      Row(
+                      child: Row(
                         children: [
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: () {
-                                setState(() {
-                                  _showHistory = false;
-                                });
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _showHistory
-                                    ? Colors.white
-                                    : const Color(0xFF2C5F7D),
-                                side: BorderSide(
-                                  color: _showHistory
-                                      ? const Color(0xFF2C5F7D)
-                                      : Colors.transparent,
-                                ),
-                                foregroundColor: _showHistory
-                                    ? const Color(0xFF2C5F7D)
-                                    : Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                              ),
-                              child: const Text('Calendar View'),
+                          Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8F1F5),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(
+                              Icons.event_available_outlined,
+                              color: Color(0xFF225E72),
+                              size: 26,
                             ),
                           ),
-                          const SizedBox(width: 12),
+
+                          const SizedBox(width: 14),
+
                           Expanded(
-                            child: OutlinedButton(
-                              onPressed: () {
-                                setState(() {
-                                  _showHistory = true;
-                                });
-                              },
-                              style: OutlinedButton.styleFrom(
-                                backgroundColor: _showHistory
-                                    ? const Color(0xFFEAF6F8)
-                                    : Colors.white,
-                                side: const BorderSide(
-                                  color: Color(0xFF2C5F7D),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Assigned Schedule',
+                                  style: TextStyle(
+                                    color: Color(0xFF173B4F),
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w800,
+                                  ),
                                 ),
-                                foregroundColor: const Color(0xFF2C5F7D),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+
+                                const SizedBox(height: 5),
+
+                                Text(
+                                  hasSchedule
+                                      ? _formatDays()
+                                      : 'No schedule assigned yet',
+                                  style: const TextStyle(
+                                    color: Color(0xFF5B6D7D),
+                                    fontSize: 13,
+                                    height: 1.4,
+                                  ),
                                 ),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                              ),
-                              child: const Text('History'),
+                              ],
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 20),
-                      if (_isLoading)
-                        const Center(child: CircularProgressIndicator())
-                      else if (_errorMessage != null)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Text(
-                            _errorMessage!,
-                            style: const TextStyle(color: Colors.red),
-                          ),
-                        )
-                      else if (_showHistory)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF0F7F8),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            'Your appointment history will appear here once this feature is available.',
-                            style: TextStyle(color: Color(0xFF5B6D7D)),
-                          ),
-                        )
-                      else
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF0F7F8),
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Scheduled Days',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF1F2937),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F1F5),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _showHistory = false;
+                                });
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 13,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: !_showHistory
+                                      ? Colors.white
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  'Calendar',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: !_showHistory
+                                        ? const Color(0xFF225E72)
+                                        : const Color(0xFF7A8A94),
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 14),
-                              _buildScheduleCalendar(),
-                              const SizedBox(height: 18),
-                              Container(
-                                height: 1,
-                                color: const Color(0xFFDDE6EA),
+                            ),
+                          ),
+
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _showHistory = true;
+                                });
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 13,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _showHistory
+                                      ? Colors.white
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  'History',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: _showHistory
+                                        ? const Color(0xFF225E72)
+                                        : const Color(0xFF7A8A94),
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13,
+                                  ),
+                                ),
                               ),
-                              const SizedBox(height: 14),
-                              Row(
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    if (_isLoading)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 40),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: Color(0xFF225E72),
+                          ),
+                        ),
+                      )
+                    else if (_errorMessage != null)
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Colors.red.withOpacity(0.20),
+                          ),
+                        ),
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(
+                            color: Colors.red.shade700,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      )
+                    else if (_showHistory)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: const Color(0xFFE1EAF0)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 18,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.history_rounded,
+                              color: Color(0xFF225E72),
+                              size: 22,
+                            ),
+                            SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Your appointment history will appear here once this feature is available.',
+                                style: TextStyle(
+                                  color: Color(0xFF5B6D7D),
+                                  fontSize: 13,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: const Color(0xFFE1EAF0)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 18,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              'Scheduled Days',
+                              style: TextStyle(
+                                color: Color(0xFF173B4F),
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+
+                            const SizedBox(height: 6),
+
+                            const Text(
+                              'Highlighted dates show your dialysis schedule.',
+                              style: TextStyle(
+                                color: Color(0xFF7A8A94),
+                                fontSize: 13,
+                              ),
+                            ),
+
+                            const SizedBox(height: 18),
+
+                            _buildScheduleCalendar(),
+
+                            const SizedBox(height: 18),
+
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF4F8FA),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(0xFFE3EDF2),
+                                ),
+                              ),
+                              child: Row(
                                 children: [
                                   Container(
                                     width: 14,
                                     height: 14,
                                     decoration: const BoxDecoration(
-                                      color: Color(0xFF5145F6),
+                                      color: Color(0xFF225E72),
                                       shape: BoxShape.circle,
                                     ),
                                   ),
@@ -624,21 +737,22 @@ class _AppointmentPageState extends State<AppointmentPage> {
                                   Expanded(
                                     child: Text(
                                       hasSchedule
-                                          ? 'Scheduled dialysis days (${_scheduledDays.map((day) => day.substring(0, 3)).join('/')})'
-                                          : 'Scheduled dialysis days',
+                                          ? 'Scheduled dialysis days: ${_scheduledDays.map((day) => day.substring(0, 3)).join(', ')}'
+                                          : 'Scheduled dialysis days will appear once assigned.',
                                       style: const TextStyle(
-                                        fontSize: 12,
                                         color: Color(0xFF5B6D7D),
+                                        fontSize: 12,
+                                        height: 1.4,
                                       ),
                                     ),
                                   ),
                                 ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
               ),
             ),

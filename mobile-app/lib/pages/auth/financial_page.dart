@@ -60,187 +60,243 @@ class _FinancialPageState extends State<FinancialPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F9FB),
+      backgroundColor: const Color(0xFFF3F7FA),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
                 children: [
                   IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(
-                      Icons.arrow_back,
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 20,
                       color: Color(0xFF2C5F7D),
                     ),
-                    onPressed: () => Navigator.of(context).pop(),
                   ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'About Your Financial',
-                    style: TextStyle(
-                      color: Color(0xFF2C5F7D),
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+
+                  const SizedBox(width: 4),
+
+                  const Expanded(
+                    child: Text(
+                      'Financial Information',
+                      style: TextStyle(
+                        color: Color(0xFF173B4F),
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              LinearProgressIndicator(
-                value: 0.92,
-                color: const Color(0xFF2C5F7D),
-                backgroundColor: const Color(0xFFE7F0F3),
-                minHeight: 8,
+
+              const SizedBox(height: 8),
+
+              const Text(
+                'Help us recommend clinics that match your financial preferences and healthcare support.',
+                style: TextStyle(
+                  color: Color(0xFF6B7C86),
+                  fontSize: 14,
+                  height: 1.4,
+                ),
               ),
+
+              const SizedBox(height: 22),
+
+              Row(
+                children: [
+                  const Text(
+                    'Final Step',
+                    style: TextStyle(
+                      color: Color(0xFF2C5F7D),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '100%',
+                    style: TextStyle(
+                      color: const Color.fromARGB(255, 24, 138, 28).withOpacity(0.45),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 10),
+
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: const LinearProgressIndicator(
+                  value: 1,
+                  minHeight: 8,
+                  color: Color.fromARGB(255, 56, 224, 58),
+                  backgroundColor: Color(0xFFDDEAF0),
+                ),
+              ),
+
               const SizedBox(height: 24),
+
               Expanded(
                 child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Card(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        elevation: 4,
-                        shadowColor: Colors.black.withOpacity(0.08),
-                        child: Padding(
-                          padding: const EdgeInsets.all(22),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const Text(
-                                'About Your Financial',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
+                      _buildSectionContainer(
+                        title: 'Insurance Coverage',
+                        subtitle: 'Select all that apply.',
+                        child: Column(
+                          children: _insuranceOptions.map((option) {
+                            final selected = _selectedInsurance.contains(
+                              option,
+                            );
+
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: GestureDetector(
+                                onTap: () => _toggleInsurance(option),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 180),
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? const Color(0xFF2C5F7D)
+                                        : const Color(0xFFF4F8FA),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: selected
+                                          ? const Color(0xFF2C5F7D)
+                                          : const Color(0xFFE3EDF2),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        selected
+                                            ? Icons.check_circle
+                                            : Icons.radio_button_unchecked,
+                                        color: selected
+                                            ? Colors.white
+                                            : const Color(0xFF7A8A94),
+                                      ),
+
+                                      const SizedBox(width: 12),
+
+                                      Expanded(
+                                        child: Text(
+                                          option,
+                                          style: TextStyle(
+                                            color: selected
+                                                ? Colors.white
+                                                : const Color(0xFF173B4F),
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 14),
-                              const Text(
-                                '(Select all that apply)',
-                                style: TextStyle(
-                                  color: Color(0xFF65768F),
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              ..._insuranceOptions.map((option) {
-                                final selected = _selectedInsurance.contains(
-                                  option,
-                                );
-                                return CheckboxListTile(
-                                  title: Text(option),
-                                  value: selected,
-                                  activeColor: const Color(0xFF2C5F7D),
-                                  onChanged: (_) => _toggleInsurance(option),
-                                );
-                              }),
-                            ],
-                          ),
+                            );
+                          }).toList(),
                         ),
                       ),
+
                       const SizedBox(height: 20),
-                      Card(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        elevation: 4,
-                        shadowColor: Colors.black.withOpacity(0.08),
-                        child: Padding(
-                          padding: const EdgeInsets.all(22),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const Text(
-                                'Budget Range',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
+
+                      _buildSectionContainer(
+                        title: 'Budget Range',
+                        subtitle: 'Choose your preferred healthcare budget.',
+                        child: Column(
+                          children: _budgetOptions.map((option) {
+                            final selected = _selectedBudget == option;
+
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    _selectedBudget = option;
+                                  });
+                                },
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 180),
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? const Color(0xFF2C5F7D)
+                                        : const Color(0xFFF4F8FA),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: selected
+                                          ? const Color(0xFF2C5F7D)
+                                          : const Color(0xFFE3EDF2),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        selected
+                                            ? Icons.radio_button_checked
+                                            : Icons.radio_button_off_outlined,
+                                        color: selected
+                                            ? Colors.white
+                                            : const Color(0xFF7A8A94),
+                                      ),
+
+                                      const SizedBox(width: 12),
+
+                                      Expanded(
+                                        child: Text(
+                                          option,
+                                          style: TextStyle(
+                                            color: selected
+                                                ? Colors.white
+                                                : const Color(0xFF173B4F),
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 14),
-                              ..._budgetOptions.map((option) {
-                                return RadioListTile<String>(
-                                  title: Text(option),
-                                  value: option,
-                                  groupValue: _selectedBudget,
-                                  activeColor: const Color(0xFF2C5F7D),
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      setState(() {
-                                        _selectedBudget = value;
-                                      });
-                                    }
-                                  },
-                                );
-                              }),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Card(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        elevation: 4,
-                        shadowColor: Colors.black.withOpacity(0.08),
-                        child: Padding(
-                          padding: const EdgeInsets.all(22),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const Text(
-                                'Preferred Clinic Type',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                              ..._clinicOptions.map((option) {
-                                return RadioListTile<String>(
-                                  title: Text(option),
-                                  value: option,
-                                  groupValue: _selectedClinicType,
-                                  activeColor: const Color(0xFF2C5F7D),
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      setState(() {
-                                        _selectedClinicType = value;
-                                      });
-                                    }
-                                  },
-                                );
-                              }),
-                            ],
-                          ),
+                            );
+                          }).toList(),
                         ),
                       ),
                     ],
                   ),
                 ),
               ),
+
               const SizedBox(height: 20),
+
               SizedBox(
-                height: 56,
+                height: 54,
                 child: ElevatedButton(
                   onPressed: _handleNext,
                   style: ElevatedButton.styleFrom(
+                    elevation: 0,
                     backgroundColor: const Color(0xFF2C5F7D),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                   ),
                   child: const Text(
-                    'Next',
+                    'CONTINUE',
                     style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
                     ),
                   ),
                 ),
@@ -248,6 +304,53 @@ class _FinancialPageState extends State<FinancialPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSectionContainer({
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE1EAF0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFF173B4F),
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+
+          const SizedBox(height: 6),
+
+          Text(
+            subtitle,
+            style: const TextStyle(color: Color(0xFF7A8A94), fontSize: 13),
+          ),
+
+          const SizedBox(height: 20),
+
+          child,
+        ],
       ),
     );
   }

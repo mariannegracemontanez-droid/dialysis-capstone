@@ -119,177 +119,341 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 32,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Image.asset(
+              'lib/asset/Image/image 4.png',
+              fit: BoxFit.cover,
+            ),
+          ),
+
+          Positioned.fill(
+            child: Container(color: Colors.black.withOpacity(0.30)),
+          ),
+
+          SafeArea(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight:
+                      MediaQuery.of(context).size.height -
+                      MediaQuery.of(context).padding.top -
+                      MediaQuery.of(context).padding.bottom,
                 ),
-                decoration: const BoxDecoration(
-                  color: Color(0xFF2C5F7D),
-                  borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(32),
-                    bottomRight: Radius.circular(32),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 32,
                   ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Forgot Password',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _otpSent
-                          ? 'Enter the OTP sent to your email.'
-                          : 'Enter your registered email to receive an OTP.',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  children: [
-                    if (!_otpSent) ...[
-                      TextField(
-                        controller: _emailController,
-                        enabled: !_otpSent,
-                        decoration: InputDecoration(
-                          labelText: 'Email Address',
-                          prefixIcon: const Icon(Icons.email),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
+                  child: Column(
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: IconButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(
+                            Icons.arrow_back_ios_new_rounded,
+                            color: Colors.white,
+                            size: 20,
                           ),
                         ),
-                        keyboardType: TextInputType.emailAddress,
                       ),
-                    ] else ...[
+
+                      const SizedBox(height: 36),
+
                       Container(
-                        padding: const EdgeInsets.all(14),
+                        width: 94,
+                        height: 94,
+                        padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF0F7F8),
-                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.white.withOpacity(0.95),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Image.asset(
+                          'lib/asset/Image/CureNurture_CircleLogo.png',
+                        ),
+                      ),
+
+                      const SizedBox(height: 28),
+
+                      const Text(
+                        'Forgot Password',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      Text(
+                        _otpSent
+                            ? 'Enter the OTP sent to your email.'
+                            : 'Enter your registered email to receive an OTP.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.72),
+                          fontSize: 15,
+                          height: 1.4,
+                        ),
+                      ),
+
+                      const SizedBox(height: 42),
+
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.fromLTRB(26, 38, 26, 28),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF26333D).withOpacity(0.88),
+                          borderRadius: BorderRadius.circular(18),
                           border: Border.all(
-                            color: const Color(0xFF2C9B9E),
-                            width: 1,
+                            color: Colors.white.withOpacity(0.18),
+                            width: 1.1,
                           ),
                         ),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            const Icon(Icons.email, color: Color(0xFF2C9B9E)),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                _emailController.text,
+                            if (!_otpSent) ...[
+                              TextField(
+                                controller: _emailController,
+                                enabled: !_otpSent,
+                                keyboardType: TextInputType.emailAddress,
                                 style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                ),
+                                decoration: InputDecoration(
+                                  hintText: 'Email Address',
+                                  hintStyle: TextStyle(
+                                    color: Colors.white.withOpacity(0.55),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  prefixIcon: Icon(
+                                    Icons.alternate_email,
+                                    color: Colors.white.withOpacity(0.65),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.white.withOpacity(0.05),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    vertical: 22,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide(
+                                      color: Colors.white.withOpacity(0.10),
+                                    ),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide(
+                                      color: Colors.white.withOpacity(0.10),
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide(
+                                      color: Colors.white.withOpacity(0.28),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ] else ...[
+                              Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.05),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.12),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.email_outlined,
+                                      color: Colors.white.withOpacity(0.65),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        _emailController.text,
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(0.82),
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              const SizedBox(height: 24),
+
+                              TextField(
+                                controller: _otpController,
+                                keyboardType: TextInputType.number,
+                                maxLength: 6,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  letterSpacing: 2,
+                                ),
+                                decoration: InputDecoration(
+                                  counterStyle: TextStyle(
+                                    color: Colors.white.withOpacity(0.45),
+                                  ),
+                                  hintText: '000000',
+                                  hintStyle: TextStyle(
+                                    color: Colors.white.withOpacity(0.55),
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 2,
+                                  ),
+                                  prefixIcon: Icon(
+                                    Icons.verified_user_outlined,
+                                    color: Colors.white.withOpacity(0.65),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.white.withOpacity(0.05),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    vertical: 22,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide(
+                                      color: Colors.white.withOpacity(0.10),
+                                    ),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide(
+                                      color: Colors.white.withOpacity(0.10),
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide(
+                                      color: Colors.white.withOpacity(0.28),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+
+                            if (_errorMessage != null) ...[
+                              const SizedBox(height: 18),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withOpacity(0.10),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: Colors.red.withOpacity(0.25),
+                                  ),
+                                ),
+                                child: Text(
+                                  _errorMessage!,
+                                  style: const TextStyle(
+                                    color: Color(0xFFFFC1C1),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
+
+                            if (_successMessage != null) ...[
+                              const SizedBox(height: 18),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withOpacity(0.10),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: Colors.green.withOpacity(0.25),
+                                  ),
+                                ),
+                                child: Text(
+                                  _successMessage!,
+                                  style: const TextStyle(
+                                    color: Color(0xFFC9F7D8),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
+
+                            const SizedBox(height: 34),
+
+                            SizedBox(
+                              height: 54,
+                              child: ElevatedButton(
+                                onPressed: _isLoading
+                                    ? null
+                                    : (_otpSent ? _verifyOTP : _sendOTP),
+                                style: ElevatedButton.styleFrom(
+                                  elevation: 0,
+                                  backgroundColor: const Color(0xFF2B7897),
+                                  disabledBackgroundColor: const Color(
+                                    0xFF2B7897,
+                                  ).withOpacity(0.55),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                child: _isLoading
+                                    ? const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2.4,
+                                        ),
+                                      )
+                                    : Text(
+                                        _otpSent ? 'VERIFY OTP' : 'SEND OTP',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.8,
+                                        ),
+                                      ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 24),
+
+                            TextButton(
+                              onPressed: () {
+                                Navigator.of(
+                                  context,
+                                ).pushReplacementNamed('/login');
+                              },
+                              child: Text(
+                                'Back to Login',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.82),
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 20),
-                      TextField(
-                        controller: _otpController,
-                        decoration: InputDecoration(
-                          labelText: 'Enter OTP',
-                          hintText: '000000',
-                          prefixIcon: const Icon(Icons.security),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        keyboardType: TextInputType.number,
-                        maxLength: 6,
-                      ),
                     ],
-                    const SizedBox(height: 20),
-                    if (_errorMessage != null)
-                      Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.red.shade100,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          _errorMessage!,
-                          style: TextStyle(color: Colors.red.shade700),
-                        ),
-                      ),
-                    if (_successMessage != null)
-                      Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.green.shade100,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          _successMessage!,
-                          style: TextStyle(color: Colors.green.shade700),
-                        ),
-                      ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: ElevatedButton(
-                        onPressed: _isLoading
-                            ? null
-                            : (_otpSent ? _verifyOTP : _sendOTP),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2C9B9E),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        child: _isLoading
-                            ? const CircularProgressIndicator(
-                                color: Colors.white,
-                              )
-                            : Text(_otpSent ? 'Verify OTP' : 'Send OTP'),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.of(context).pushReplacementNamed('/login');
-                      },
-                      child: const Text(
-                        'Back to Login',
-                        style: TextStyle(
-                          color: Color(0xFF2C5F7D),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

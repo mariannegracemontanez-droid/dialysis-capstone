@@ -22,10 +22,8 @@ class NotificationService {
           .eq('recipient_id', userId)
           .order('created_at', ascending: false);
 
-      if (response is List) {
-        return List<Map<String, dynamic>>.from(response);
-      }
-    } catch (e) {
+      return List<Map<String, dynamic>>.from(response);
+        } catch (e) {
       debugPrint('Get notifications error: $e');
     }
 
