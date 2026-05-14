@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/signup_data.dart';
+import '../../services/auth/auth_service.dart';
 
 class ClinicInfoArguments {
   final SignupData signupData;
@@ -32,15 +33,28 @@ class _ClinicInfoPageState extends State<ClinicInfoPage> {
   ];
   final List<String> _selectedConditions = [];
   String? _errorMessage;
+  bool _isSubmitting = false;
 
   List<String> get _clinicRequirements {
     final requirements = widget.arguments.clinic['requirements'];
+
     if (requirements is List) {
-      return requirements.cast<String>();
+      final items = requirements
+          .map((item) => item?.toString().trim() ?? '')
+          .where((item) => item.isNotEmpty)
+          .toList();
+
+      return items.isEmpty ? ['Bring valid ID and referral documents'] : items;
     }
-    if (requirements != null && requirements.toString().isNotEmpty) {
-      return [requirements.toString()];
+
+    if (requirements is String && requirements.trim().isNotEmpty) {
+      return requirements
+          .split(',')
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
     }
+
     return ['Bring valid ID and referral documents'];
   }
 
@@ -96,7 +110,7 @@ class _ClinicInfoPageState extends State<ClinicInfoPage> {
     });
   }
 
-  void _handleNext() {
+  Future<void> _handleNext() async {
     if (_dateOfBirthController.text.trim().isEmpty ||
         _homeAddressController.text.trim().isEmpty ||
         _bloodTypeController.text.trim().isEmpty ||
@@ -121,7 +135,55 @@ class _ClinicInfoPageState extends State<ClinicInfoPage> {
       clinicRequirements: _clinicRequirements,
     );
 
-    Navigator.of(context).pushNamed('/medical-documents', arguments: updated);
+    if (updated.profileId.isEmpty) {
+      setState(() {
+        _errorMessage =
+            'Unable to create application without a valid patient account.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final patientId = await AuthService().createPatientRecord(
+        profileId: updated.profileId,
+        clinicId: updated.clinicId,
+        fullName: updated.fullName,
+        email: updated.email,
+        phone: updated.phone,
+        dateOfBirth: updated.dateOfBirth,
+        homeAddress: updated.homeAddress,
+        bloodType: updated.bloodType,
+        emergencyContactName: updated.emergencyContactName,
+        emergencyContactNumber: updated.emergencyContactNumber,
+        ckdLevel: updated.ckdLevel,
+        conditions: updated.conditions,
+        insuranceOptions: updated.insuranceOptions,
+        budgetRange: updated.budgetRange,
+        preferredClinicType: updated.preferredClinicType,
+        locationSummary: updated.locationSummary,
+      );
+
+      final patientReady = updated.copyWith(patientId: patientId);
+
+      if (mounted) {
+        Navigator.of(
+          context,
+        ).pushNamed('/medical-documents', arguments: patientReady);
+      }
+    } catch (error) {
+      setState(() {
+        _errorMessage = error.toString();
+      });
+    } finally {
+      setState(() {
+        _isSubmitting = false;
+      });
+    }
   }
 
   Future<void> _pickBirthDate() async {
@@ -577,23 +639,35 @@ class _ClinicInfoPageState extends State<ClinicInfoPage> {
                     SizedBox(
                       height: 54,
                       child: ElevatedButton(
-                        onPressed: _handleNext,
+                        onPressed: _isSubmitting ? null : _handleNext,
                         style: ElevatedButton.styleFrom(
                           elevation: 0,
                           backgroundColor: const Color(0xFF2C5F7D),
+                          disabledBackgroundColor: const Color(
+                            0xFF2C5F7D,
+                          ).withOpacity(0.55),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                           ),
                         ),
-                        child: const Text(
-                          'Continue To Documents',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
+                        child: _isSubmitting
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2.4,
+                                ),
+                              )
+                            : const Text(
+                                'Continue To Documents',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
                       ),
                     ),
                   ],

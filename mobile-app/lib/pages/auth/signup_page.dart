@@ -103,7 +103,7 @@ class _SignupPageState extends State<SignupPage> {
         email: _emailController.text.trim(),
         phone: _phoneController.text.trim(),
         password: password,
-        patientId: createdUser.id,
+        profileId: createdUser.id,
       );
 
       if (mounted) {

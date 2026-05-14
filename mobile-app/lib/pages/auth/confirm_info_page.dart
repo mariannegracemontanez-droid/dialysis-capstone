@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/signup_data.dart';
 import '../../services/auth/auth_service.dart';
 import '../../services/medical_document_service.dart';
+import '../../services/patient_service.dart';
 
 class ConfirmInfoPage extends StatefulWidget {
   final SignupData signupData;
@@ -23,35 +24,66 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
     });
 
     try {
-      final patientId = widget.signupData.patientId;
-      if (patientId.isEmpty) {
+      final profileId = widget.signupData.profileId;
+      if (profileId.isEmpty) {
         throw Exception(
-          'Internal error: missing user ID for patient creation.',
+          'Internal error: missing profile ID for patient application.',
         );
       }
 
-      await AuthService().createPatientRecord(
-        userId: patientId,
-        clinicId: widget.signupData.clinicId,
-        fullName: widget.signupData.fullName,
-        email: widget.signupData.email,
-        phone: widget.signupData.phone,
-        dateOfBirth: widget.signupData.dateOfBirth,
-        homeAddress: widget.signupData.homeAddress,
-        bloodType: widget.signupData.bloodType,
-        emergencyContactName: widget.signupData.emergencyContactName,
-        emergencyContactNumber: widget.signupData.emergencyContactNumber,
-        ckdLevel: widget.signupData.ckdLevel,
-        conditions: widget.signupData.conditions,
-        insuranceOptions: widget.signupData.insuranceOptions,
-        budgetRange: widget.signupData.budgetRange,
-        preferredClinicType: widget.signupData.preferredClinicType,
-        locationSummary: widget.signupData.locationSummary,
-      );
+      var patientId = widget.signupData.patientId;
+      if (patientId.isEmpty) {
+        patientId = await AuthService().createPatientRecord(
+          profileId: profileId,
+          clinicId: widget.signupData.clinicId,
+          fullName: widget.signupData.fullName,
+          email: widget.signupData.email,
+          phone: widget.signupData.phone,
+          dateOfBirth: widget.signupData.dateOfBirth,
+          homeAddress: widget.signupData.homeAddress,
+          bloodType: widget.signupData.bloodType,
+          emergencyContactName: widget.signupData.emergencyContactName,
+          emergencyContactNumber: widget.signupData.emergencyContactNumber,
+          ckdLevel: widget.signupData.ckdLevel,
+          conditions: widget.signupData.conditions,
+          insuranceOptions: widget.signupData.insuranceOptions,
+          budgetRange: widget.signupData.budgetRange,
+          preferredClinicType: widget.signupData.preferredClinicType,
+          locationSummary: widget.signupData.locationSummary,
+        );
+      } else {
+        await PatientService().updatePatientApplication(
+          patientId: patientId,
+          updates: {
+            'full_name': widget.signupData.fullName,
+            'email': widget.signupData.email,
+            'phone': widget.signupData.phone,
+            'date_of_birth': widget.signupData.dateOfBirth,
+            'home_address': widget.signupData.homeAddress,
+            'blood_type': widget.signupData.bloodType,
+            'emergency_contact_name': widget.signupData.emergencyContactName,
+            'emergency_contact_number':
+                widget.signupData.emergencyContactNumber,
+            'dialysis_stage': widget.signupData.ckdLevel,
+            'existing_condition': widget.signupData.conditions.isNotEmpty
+                ? widget.signupData.conditions.firstWhere(
+                    (condition) => condition != 'None',
+                    orElse: () => 'None',
+                  )
+                : 'None',
+            'insurance': widget.signupData.insuranceOptions.isNotEmpty
+                ? widget.signupData.insuranceOptions.join(', ')
+                : 'None',
+            'budget': widget.signupData.budgetRange,
+            'preferred_clinic': widget.signupData.preferredClinicType,
+            'user_location': widget.signupData.locationSummary,
+          },
+        );
+      }
 
       if (widget.signupData.documentUrls.isNotEmpty) {
         await MedicalDocumentService().saveDocumentUrls(
-          userId: patientId,
+          patientId: patientId,
           clinicId: widget.signupData.clinicId,
           documentUrls: widget.signupData.documentUrls,
         );

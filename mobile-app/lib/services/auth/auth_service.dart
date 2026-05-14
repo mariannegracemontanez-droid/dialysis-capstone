@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/user_model.dart';
 import '../../config/supabase_config.dart';
 import '../login_history_service.dart';
+import '../patient_service.dart';
 
 class AuthService {
   final SupabaseClient _supabase = SupabaseConfig.client;
@@ -68,8 +69,8 @@ class AuthService {
     }
   }
 
-  Future<void> createPatientRecord({
-    required String userId,
+  Future<String> createPatientRecord({
+    required String profileId,
     required Object clinicId,
     required String fullName,
     required String email,
@@ -87,60 +88,24 @@ class AuthService {
     required String locationSummary,
   }) async {
     try {
-      final trimmedDob = dateOfBirth.trim();
-      String? formattedDob;
-      if (trimmedDob.isNotEmpty) {
-        final parsedDob = DateTime.tryParse(trimmedDob);
-        if (parsedDob != null) {
-          formattedDob = parsedDob.toIso8601String().split('T').first;
-        }
-      }
-
-      final selectedCondition =
-          conditions.contains('None') || conditions.isEmpty
-          ? 'None'
-          : conditions.firstWhere(
-              (condition) => condition != 'None',
-              orElse: () => 'None',
-            );
-
-      final insuranceText = insuranceOptions.isNotEmpty
-          ? insuranceOptions.join(', ')
-          : 'None';
-
-      final patientData = <String, Object?>{
-        'id': userId,
-        'profile_id': userId,
-        'clinic_id': clinicId,
-        'status': 'pending',
-        'full_name': fullName,
-        'email': email,
-        'phone': phone,
-        'home_address': homeAddress,
-        'blood_type': bloodType,
-        'emergency_contact_name': emergencyContactName,
-        'emergency_contact_number': emergencyContactNumber,
-        'dialysis_stage': ckdLevel,
-        'existing_condition': selectedCondition,
-        'budget': budgetRange,
-        'insurance': insuranceText,
-        'financial_support': insuranceText,
-        'preferred_clinic': preferredClinicType,
-        'user_location': locationSummary,
-        'created_at': DateTime.now().toIso8601String(),
-      };
-
-      if (formattedDob != null) {
-        patientData['date_of_birth'] = formattedDob;
-      }
-
-      await _supabase
-          .from('patients')
-          .upsert(patientData, onConflict: 'profile_id');
-      await _supabase
-          .from('profiles')
-          .update({'clinic_id': clinicId, 'status': 'pending'})
-          .eq('id', userId);
+      return await PatientService().createPatientApplication(
+        profileId: profileId,
+        clinicId: clinicId,
+        fullName: fullName,
+        email: email,
+        phone: phone,
+        dateOfBirth: dateOfBirth,
+        homeAddress: homeAddress,
+        bloodType: bloodType,
+        emergencyContactName: emergencyContactName,
+        emergencyContactNumber: emergencyContactNumber,
+        ckdLevel: ckdLevel,
+        conditions: conditions,
+        insuranceOptions: insuranceOptions,
+        budgetRange: budgetRange,
+        preferredClinicType: preferredClinicType,
+        locationSummary: locationSummary,
+      );
     } catch (e) {
       throw Exception('Failed to create patient record: $e');
     }
@@ -166,45 +131,6 @@ class AuthService {
           .select()
           .eq('id', response.user!.id)
           .single();
-
-      final patientData = await _supabase
-          .from('patients')
-          .select('status, clinic_id')
-          .eq('profile_id', response.user!.id)
-          .maybeSingle();
-
-      final status =
-          patientData?['status']?.toString().toLowerCase().trim() ?? '';
-
-      if (status != 'active') {
-        final clinicId =
-            patientData?['clinic_id']?.toString() ??
-            profileData['clinic_id']?.toString();
-
-        String clinicName = 'clinic';
-
-        if (clinicId != null && clinicId.isNotEmpty) {
-          final clinicResponse = await _supabase
-              .from('clinics')
-              .select('name')
-              .eq('id', clinicId)
-              .maybeSingle();
-
-          if (clinicResponse != null && clinicResponse['name'] != null) {
-            clinicName = clinicResponse['name'].toString();
-          }
-        }
-
-        if (status == 'pending') {
-          throw Exception(
-            'You still need approval from the $clinicName admin before you can log in to your account.',
-          );
-        }
-
-        throw Exception(
-          'Your account is not active. Please contact the $clinicName admin for approval.',
-        );
-      }
 
       final user = UserModel.fromJson(profileData);
 

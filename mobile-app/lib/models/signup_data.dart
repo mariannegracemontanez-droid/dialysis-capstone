@@ -9,6 +9,7 @@ class SignupData {
   final String bloodType;
   final String emergencyContactName;
   final String emergencyContactNumber;
+  final String profileId;
   final String patientId;
   final String clinicId;
   final String clinicName;
@@ -38,6 +39,7 @@ class SignupData {
     this.bloodType = '',
     this.emergencyContactName = '',
     this.emergencyContactNumber = '',
+    this.profileId = '',
     this.patientId = '',
     this.clinicId = '',
     this.clinicName = '',
@@ -58,6 +60,7 @@ class SignupData {
   });
 
   SignupData copyWith({
+    String? profileId,
     String? fullName,
     String? email,
     String? phone,
@@ -98,6 +101,7 @@ class SignupData {
       emergencyContactName: emergencyContactName ?? this.emergencyContactName,
       emergencyContactNumber:
           emergencyContactNumber ?? this.emergencyContactNumber,
+      profileId: profileId ?? this.profileId,
       patientId: patientId ?? this.patientId,
       clinicId: clinicId ?? this.clinicId,
       clinicName: clinicName ?? this.clinicName,

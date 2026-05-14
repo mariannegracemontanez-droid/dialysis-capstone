@@ -1,10 +1,28 @@
 import 'package:flutter/material.dart';
 
 class SignupCompletePage extends StatelessWidget {
-  const SignupCompletePage({super.key});
+  final bool isAdditionalClinicFlow;
 
-@override
+  const SignupCompletePage({super.key, this.isAdditionalClinicFlow = false});
+
+  void _handleContinue(BuildContext context) {
+    if (isAdditionalClinicFlow) {
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil('/main_navigation', (route) => false);
+    } else {
+      Navigator.of(context).pushReplacementNamed('/login_page');
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final buttonText = isAdditionalClinicFlow ? 'BACK TO HOME' : 'GO TO LOGIN';
+
+    final infoText = isAdditionalClinicFlow
+        ? 'You may now return to your waiting approval page.'
+        : 'You may now return to the login page.';
+
     return Scaffold(
       backgroundColor: const Color(0xFFF3F7FA),
       body: SafeArea(
@@ -121,10 +139,15 @@ class SignupCompletePage extends StatelessWidget {
                         const SizedBox(height: 14),
 
                         _buildStepCard(
-                          icon: Icons.login_rounded,
-                          title: 'Log In After Approval',
-                          description:
-                              'Once approved, you may log in and start using the app normally.',
+                          icon: isAdditionalClinicFlow
+                              ? Icons.home_rounded
+                              : Icons.login_rounded,
+                          title: isAdditionalClinicFlow
+                              ? 'Return to Waiting Page'
+                              : 'Log In and Check for Approval',
+                          description: isAdditionalClinicFlow
+                              ? 'You can return to your home page and monitor your pending clinic applications.'
+                              : 'Once approved, you may start using the app normally.',
                         ),
 
                         const SizedBox(height: 24),
@@ -136,19 +159,19 @@ class SignupCompletePage extends StatelessWidget {
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(color: const Color(0xFFE3EDF2)),
                           ),
-                          child: const Row(
+                          child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.info_outline_rounded,
                                 color: Color(0xFF2C5F7D),
                                 size: 20,
                               ),
-                              SizedBox(width: 10),
+                              const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  'You may now return to the login page while waiting for approval.',
-                                  style: TextStyle(
+                                  infoText,
+                                  style: const TextStyle(
                                     color: Color(0xFF5B6D7D),
                                     fontSize: 13,
                                     height: 1.4,
@@ -169,9 +192,7 @@ class SignupCompletePage extends StatelessWidget {
               SizedBox(
                 height: 54,
                 child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).pushReplacementNamed('/login_page');
-                  },
+                  onPressed: () => _handleContinue(context),
                   style: ElevatedButton.styleFrom(
                     elevation: 0,
                     backgroundColor: const Color(0xFF2C5F7D),
@@ -179,9 +200,9 @@ class SignupCompletePage extends StatelessWidget {
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  child: const Text(
-                    'GO TO LOGIN',
-                    style: TextStyle(
+                  child: Text(
+                    buttonText,
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
@@ -197,7 +218,7 @@ class SignupCompletePage extends StatelessWidget {
     );
   }
 
-Widget _buildStepCard({
+  Widget _buildStepCard({
     required IconData icon,
     required String title,
     required String description,
@@ -221,9 +242,7 @@ Widget _buildStepCard({
             ),
             child: Icon(icon, color: const Color(0xFF2C5F7D), size: 22),
           ),
-
           const SizedBox(width: 14),
-
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -236,9 +255,7 @@ Widget _buildStepCard({
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-
                 const SizedBox(height: 6),
-
                 Text(
                   description,
                   style: const TextStyle(
@@ -254,5 +271,4 @@ Widget _buildStepCard({
       ),
     );
   }
-
 }

@@ -15,11 +15,7 @@ class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _authService = AuthService();
-  final SupabaseClient _supabase = Supabase.instance.client;
 
-  RealtimeChannel? _approvalChannel;
-
-  bool _approvalNotified = false;
   bool _isLoading = false;
   String? _errorMessage;
   bool _isPasswordVisible = false;
@@ -31,24 +27,9 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   void dispose() {
-    if (_approvalChannel != null) {
-      _supabase.removeChannel(_approvalChannel!);
-    }
-
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
-  }
-
-  void _showSnackBar(String message) {
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: const Color(0xFF3D3740),
-      ),
-    );
   }
 
   void _handleLogin() async {
@@ -95,12 +76,6 @@ class _LoginPageState extends State<LoginPage> {
           _errorMessage = errorText;
         });
       }
-
-      if (errorText.toLowerCase().contains('pending') ||
-          errorText.toLowerCase().contains('not approved') ||
-          errorText.toLowerCase().contains('approval')) {
-        _startApprovalRealtimeListener();
-      }
     } finally {
       if (mounted) {
         setState(() {
@@ -108,50 +83,6 @@ class _LoginPageState extends State<LoginPage> {
         });
       }
     }
-  }
-
-  void _startApprovalRealtimeListener() {
-    final userId = _supabase.auth.currentUser?.id;
-
-    if (userId == null) {
-      debugPrint(
-        'No current user session. Approval realtime listener not started.',
-      );
-      return;
-    }
-
-    if (_approvalChannel != null) {
-      _supabase.removeChannel(_approvalChannel!);
-      _approvalChannel = null;
-    }
-
-    _approvalChannel = _supabase.channel('patient-approval-$userId');
-
-    _approvalChannel!
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'public',
-          table: 'patients',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'profile_id',
-            value: userId,
-          ),
-          callback: (payload) {
-            final status =
-                payload.newRecord['status']?.toString().toLowerCase().trim() ??
-                '';
-
-            if (status == 'active' && !_approvalNotified) {
-              _approvalNotified = true;
-
-              _showSnackBar(
-                'Your account has been approved. You may now log in.',
-              );
-            }
-          },
-        )
-        .subscribe();
   }
 
   @override

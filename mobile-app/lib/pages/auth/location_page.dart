@@ -22,20 +22,23 @@ class _LocationPageState extends State<LocationPage> {
   String? _errorMessage;
   List<Map<String, dynamic>> _clinics = [];
   Map<String, dynamic>? _selectedClinic;
+  Set<String> _appliedClinicIds = {};
 
   @override
   void initState() {
     super.initState();
-    _loadClinics();
+    _loadClinicsAndApplications();
   }
 
-  Future<void> _loadClinics() async {
+  Future<void> _loadClinicsAndApplications() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
+      final user = Supabase.instance.client.auth.currentUser;
+
       final data = await Supabase.instance.client.from('clinics').select();
 
       final clinics = (data as List).cast<Map<String, dynamic>>().where((
@@ -45,12 +48,25 @@ class _LocationPageState extends State<LocationPage> {
         final region = clinic['region']?.toString().toLowerCase() ?? '';
         return city.contains('valenzuela') || region.contains('ncr');
       }).toList();
-      for (final clinic in clinics) {
-        print('Clinic data: $clinic');
+
+      Set<String> appliedClinicIds = {};
+
+      if (user != null) {
+        final applications = await Supabase.instance.client
+            .from('patients')
+            .select('clinic_id')
+            .eq('profile_id', user.id)
+            .inFilter('status', ['pending', 'approved', 'active', 'no_sched']);
+
+        appliedClinicIds = (applications as List)
+            .map((row) => row['clinic_id']?.toString())
+            .whereType<String>()
+            .toSet();
       }
 
       setState(() {
         _clinics = clinics;
+        _appliedClinicIds = appliedClinicIds;
         _isLoading = false;
       });
     } catch (error) {
@@ -63,9 +79,11 @@ class _LocationPageState extends State<LocationPage> {
 
   List<Marker> _buildMarkers(List<Map<String, dynamic>> clinics) {
     final markers = <Marker>[];
+
     for (final clinic in clinics) {
       final latitude = clinic['latitude'];
       final longitude = clinic['longitude'];
+
       if (latitude == null || longitude == null) continue;
 
       final point = LatLng(
@@ -77,18 +95,33 @@ class _LocationPageState extends State<LocationPage> {
             : double.tryParse(longitude.toString()) ?? 0,
       );
 
+      final isAlreadyApplied = _appliedClinicIds.contains(
+        clinic['id'].toString(),
+      );
+
       markers.add(
         Marker(
           width: 48,
           height: 48,
           point: point,
           child: GestureDetector(
-            onTap: () => _showClinicPopup(clinic),
+            onTap: isAlreadyApplied
+                ? () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'You already have an application for this clinic.',
+                        ),
+                      ),
+                    );
+                  }
+                : () => _showClinicPopup(clinic),
             child: Icon(
               Icons.local_hospital,
-              color:
-                  _selectedClinic != null &&
-                      _selectedClinic!['id'] == clinic['id']
+              color: isAlreadyApplied
+                  ? Colors.grey
+                  : _selectedClinic != null &&
+                        _selectedClinic!['id'] == clinic['id']
                   ? Colors.green
                   : Colors.red,
               size: 32,
@@ -97,6 +130,7 @@ class _LocationPageState extends State<LocationPage> {
         ),
       );
     }
+
     return markers;
   }
 
@@ -263,9 +297,9 @@ class _LocationPageState extends State<LocationPage> {
   }
 
   void _handleNext() {
-    if (_selectedClinic == null) {
+    if (_appliedClinicIds.contains(_selectedClinic!['id'].toString())) {
       setState(() {
-        _errorMessage = 'Please choose a clinic before continuing.';
+        _errorMessage = 'You already have an application for this clinic.';
       });
       return;
     }
@@ -653,7 +687,12 @@ class _LocationPageState extends State<LocationPage> {
                                     Container(
                                       padding: const EdgeInsets.all(16),
                                       decoration: BoxDecoration(
-                                        color: const Color.fromARGB(255, 88, 164, 202),
+                                        color: const Color.fromARGB(
+                                          255,
+                                          88,
+                                          164,
+                                          202,
+                                        ),
                                         borderRadius: BorderRadius.circular(14),
                                         border: Border.all(
                                           color: const Color(0xFFE3EDF2),

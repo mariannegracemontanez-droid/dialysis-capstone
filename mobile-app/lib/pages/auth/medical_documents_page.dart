@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/signup_data.dart';
+import '../../services/auth/auth_service.dart';
 import '../../services/file_upload_service.dart';
 
 class MedicalDocumentsPage extends StatefulWidget {
@@ -15,9 +15,11 @@ class MedicalDocumentsPage extends StatefulWidget {
 
 class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
   final FileUploadService _fileUploadService = FileUploadService();
+  late SignupData _signupData;
   final Map<String, String> _documentUrls = {};
   final Map<String, bool> _isUploading = {};
   String? _uploadError;
+  bool _isInitializing = false;
 
   static const Map<String, String> _requirementKeyMap = {
     'referral letter / endorsement letter / discharge summary':
@@ -100,7 +102,7 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
   }
 
   List<Map<String, String>> get _selectedClinicRequirements {
-    return widget.signupData.clinicRequirements.map((label) {
+    return _signupData.clinicRequirements.map((label) {
       final normalizedLabel = _normalizeRequirementLabel(label);
       final key =
           _requirementKeyMap[normalizedLabel] ??
@@ -114,7 +116,51 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
   @override
   void initState() {
     super.initState();
-    _documentUrls.addAll(widget.signupData.documentUrls);
+    _signupData = widget.signupData;
+    _documentUrls.addAll(_signupData.documentUrls);
+    _ensurePatientApplication();
+  }
+
+  Future<void> _ensurePatientApplication() async {
+    if (_signupData.patientId.isNotEmpty) return;
+    if (_signupData.profileId.isEmpty) return;
+
+    setState(() {
+      _isInitializing = true;
+      _uploadError = null;
+    });
+
+    try {
+      final patientId = await AuthService().createPatientRecord(
+        profileId: _signupData.profileId,
+        clinicId: _signupData.clinicId,
+        fullName: _signupData.fullName,
+        email: _signupData.email,
+        phone: _signupData.phone,
+        dateOfBirth: _signupData.dateOfBirth,
+        homeAddress: _signupData.homeAddress,
+        bloodType: _signupData.bloodType,
+        emergencyContactName: _signupData.emergencyContactName,
+        emergencyContactNumber: _signupData.emergencyContactNumber,
+        ckdLevel: _signupData.ckdLevel,
+        conditions: _signupData.conditions,
+        insuranceOptions: _signupData.insuranceOptions,
+        budgetRange: _signupData.budgetRange,
+        preferredClinicType: _signupData.preferredClinicType,
+        locationSummary: _signupData.locationSummary,
+      );
+      setState(() {
+        _signupData = _signupData.copyWith(patientId: patientId);
+      });
+    } catch (e) {
+      setState(() {
+        _uploadError = e.toString();
+      });
+    } finally {
+      setState(() {
+        _isInitializing = false;
+      });
+    }
   }
 
   @override
@@ -141,18 +187,16 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
         return;
       }
 
-      final patientId = widget.signupData.patientId.isNotEmpty
-          ? widget.signupData.patientId
-          : Supabase.instance.client.auth.currentUser?.id;
+      final patientId = _signupData.patientId;
 
-      if (patientId == null || patientId.isEmpty) {
-        throw Exception('Unable to resolve patient ID for upload.');
+      if (patientId.isEmpty) {
+        throw Exception('Unable to resolve patient application ID for upload.');
       }
 
       final url = await _fileUploadService.uploadMedicalDocumentImage(
         imageFile: file,
         patientId: patientId,
-        clinicId: widget.signupData.clinicId,
+        clinicId: _signupData.clinicId,
       );
 
       setState(() {
@@ -189,8 +233,9 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
       return;
     }
 
-    final updated = widget.signupData.copyWith(
+    final updated = _signupData.copyWith(
       documentUrls: Map.from(_documentUrls),
+      patientId: _signupData.patientId,
     );
     Navigator.of(context).pushNamed('/financial', arguments: updated);
   }
@@ -282,6 +327,35 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
               ),
 
               const SizedBox(height: 24),
+
+              if (_isInitializing)
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF4F8FA),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFE3EDF2)),
+                  ),
+                  child: Row(
+                    children: const [
+                      CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: Color(0xFF2C5F7D),
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Preparing your patient application. Please wait...',
+                          style: TextStyle(
+                            color: Color(0xFF173B4F),
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
 
               Expanded(
                 child: Container(
@@ -434,10 +508,13 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
               SizedBox(
                 height: 54,
                 child: ElevatedButton(
-                  onPressed: _handleNext,
+                  onPressed: _isInitializing ? null : _handleNext,
                   style: ElevatedButton.styleFrom(
                     elevation: 0,
                     backgroundColor: const Color(0xFF2C5F7D),
+                    disabledBackgroundColor: const Color(
+                      0xFF2C5F7D,
+                    ).withOpacity(0.55),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),

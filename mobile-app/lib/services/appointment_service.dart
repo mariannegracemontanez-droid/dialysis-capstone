@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
+import 'patient_service.dart';
 
 class AppointmentService {
   final SupabaseClient _supabase = SupabaseConfig.client;
@@ -13,13 +14,7 @@ class AppointmentService {
 
     print('AUTH USER ID: ${user.id}');
 
-    final patient = await _supabase
-        .from('patients')
-        .select('id, clinic_id')
-        .eq('profile_id', user.id)
-        .maybeSingle();
-
-    print('PATIENT ROW: $patient');
+    final patient = await PatientService().getActivePatientRow(user.id);
 
     if (patient == null) {
       return null;

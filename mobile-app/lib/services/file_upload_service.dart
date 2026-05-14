@@ -1,6 +1,7 @@
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
+import 'package:flutter/foundation.dart';
 
 class FileUploadService {
   final SupabaseClient _supabase = SupabaseConfig.client;
@@ -115,17 +116,33 @@ class FileUploadService {
     required String clinicId,
   }) async {
     try {
+      if (patientId.isEmpty) {
+        throw Exception('Upload failed: missing patient application ID.');
+      }
+
       await _ensureAuthenticated();
 
       const bucketName = 'medical_docs';
+
       final originalName = imageFile.name.isNotEmpty
           ? imageFile.name
           : imageFile.path.split('/').last;
+
+      final extension = originalName.contains('.')
+          ? originalName.split('.').last.toLowerCase()
+          : 'jpg';
+
       final fileName =
           '${DateTime.now().millisecondsSinceEpoch}_${_sanitizeFileName(originalName)}';
-      final userId = _supabase.auth.currentUser!.id;
-      final objectPath = '$userId/$fileName';
+
+      final objectPath = '$patientId/$fileName';
       final fileBytes = await imageFile.readAsBytes();
+
+      if (kDebugMode) {
+        debugPrint('Uploading to bucket: $bucketName');
+        debugPrint('Object path: $objectPath');
+        debugPrint('File size: ${fileBytes.length} bytes');
+      }
 
       await _supabase.storage
           .from(bucketName)
@@ -134,12 +151,8 @@ class FileUploadService {
             fileBytes,
             fileOptions: FileOptions(
               cacheControl: '3600',
-              upsert: true,
-              contentType: 'image/jpeg',
-              metadata: {
-                'patient_id': patientId.isNotEmpty ? patientId : userId,
-                'clinic_id': clinicId,
-              },
+              upsert: false,
+              contentType: extension == 'png' ? 'image/png' : 'image/jpeg',
             ),
           );
 
@@ -147,8 +160,11 @@ class FileUploadService {
           .from(bucketName)
           .getPublicUrl(objectPath);
 
+      debugPrint('Upload successful: $publicUrl');
+
       return publicUrl;
     } catch (e) {
+      debugPrint('Failed to upload medical document image: $e');
       throw Exception('Failed to upload medical document image: $e');
     }
   }

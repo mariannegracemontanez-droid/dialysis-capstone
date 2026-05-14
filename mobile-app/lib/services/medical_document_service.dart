@@ -19,14 +19,14 @@ class MedicalDocumentService {
   ];
 
   Future<void> saveDocumentUrls({
-    required String userId,
+    required String patientId,
     required Object? clinicId,
     required Map<String, String> documentUrls,
   }) async {
     if (documentUrls.isEmpty) return;
 
     final row = <String, dynamic>{
-      'patient_id': userId,
+      'patient_id': patientId,
       'clinic_id': clinicId,
       'uploaded_at': DateTime.now().toIso8601String(),
     };

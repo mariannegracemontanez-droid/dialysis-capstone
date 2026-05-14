@@ -1,24 +1,14 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
+import 'patient_service.dart';
 import '../services/notification_service.dart';
 
 class HealthMonitoringService {
   final SupabaseClient _supabase = SupabaseConfig.client;
 
   Future<String?> getCurrentPatientId() async {
-    final user = _supabase.auth.currentUser;
-    if (user == null) {
-      throw Exception('No logged in user found.');
-    }
-
-    final patient = await _supabase
-        .from('patients')
-        .select('id')
-        .eq('profile_id', user.id)
-        .maybeSingle();
-
-    return patient == null ? null : patient['id'] as String?;
+    return PatientService().getCurrentActivePatientId();
   }
 
   Future<int> getTodayWaterTotal() async {
