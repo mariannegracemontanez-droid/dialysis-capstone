@@ -3,7 +3,7 @@ class CenterModel {
   final String name;
   final String address;
   final String city;
-  final List<String> requirements; // ✅ FIXED
+  final String requirements; // ✅ FIXED
   final double? latitude;
   final double? longitude;
   final int machines;
@@ -50,10 +50,7 @@ class CenterModel {
       name: json['name']?.toString() ?? 'Unknown Center',
       address: json['address']?.toString() ?? 'Unspecified address',
       city: json['city']?.toString() ?? '',
-      requirements: (json['requirements'] as List<dynamic>?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          [], // ✅ FIXED
+     requirements: json['requirements']?.toString() ?? '',
       latitude: json['latitude'] != null
           ? double.tryParse(json['latitude'].toString())
           : null,

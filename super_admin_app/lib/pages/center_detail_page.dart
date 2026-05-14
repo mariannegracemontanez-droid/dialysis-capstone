@@ -76,7 +76,7 @@ class CenterDetailPage extends StatelessWidget {
                   Text("Total Patients: ${center.totalPatients ?? '--'}"),
                   Text("Shifts: ${center.shifts ?? '--'}"),
                   Text(
-                  "Requirements: ${center.requirements.join(', ')}",
+                  "Requirements: ${center.requirements}",
                 ),
 
                   const SizedBox(height: 24),
@@ -89,7 +89,7 @@ class CenterDetailPage extends StatelessWidget {
                       name: center.name,
                       address: center.address ?? '',
                       city: center.city ?? '',
-                      requirements: List<String>.from(center.requirements ?? []), // ✅ SAFE
+                      requirements: center.requirements, // ✅ SAFE
                       latitude: center.latitude ?? 0.0,
                       longitude: center.longitude ?? 0.0,
                       slotAvailable: center.availableSlots,

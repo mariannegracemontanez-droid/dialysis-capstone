@@ -323,7 +323,7 @@ class _DashboardPageState extends State<DashboardPage> {
                             name: nameController.text.trim(),
                             address: addressController.text.trim(),
                             city: 'Unknown',
-                            requirements: ['N/A'],
+                           requirements: 'N/A',
                             latitude: 0.0,
                             longitude: 0.0,
                             slotAvailable: int.tryParse(slotsController.text.trim()) ?? 0,

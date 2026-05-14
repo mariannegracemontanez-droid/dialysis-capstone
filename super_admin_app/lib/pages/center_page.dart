@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../models/center_model.dart';
 import '../services/dashboard_service.dart';
 import '../config/supabase_config.dart';
@@ -8,7 +12,6 @@ class ClinicsPage extends StatefulWidget {
   final VoidCallback? onUpdated;
 
   const ClinicsPage({super.key, this.onUpdated});
-
   @override
   State<ClinicsPage> createState() => _ClinicsPageState();
 }
@@ -56,8 +59,8 @@ Future<void> _showClinicDialog([CenterModel? clinic]) async {
   final nameController = TextEditingController(text: clinic?.name ?? '');
   final addressController = TextEditingController(text: clinic?.address ?? '');
   final cityController = TextEditingController(text: clinic?.city ?? '');
-  final requirementsController = TextEditingController(
-    text: clinic != null ? clinic.requirements.join(', ') : '',
+ final requirementsController = TextEditingController(
+  text: clinic != null ? clinic.requirements : '',
   );
   final machinesController = TextEditingController(
     text: clinic?.machines.toString() ?? '0',
@@ -73,6 +76,44 @@ Future<void> _showClinicDialog([CenterModel? clinic]) async {
   );
 
   bool isSaving = false;
+  double? selectedLatitude = clinic?.latitude;
+  double? selectedLongitude = clinic?.longitude;
+
+  final mapController = MapController();
+
+  Future<void> searchLocation() async {
+  final query =
+      '${addressController.text} ${cityController.text}';
+
+  if (query.trim().isEmpty) return;
+
+  final url =
+      'https://nominatim.openstreetmap.org/search?q=$query&format=json&limit=1';
+
+  final response = await http.get(
+    Uri.parse(url),
+    headers: {
+      'User-Agent': 'Flutter App',
+    },
+  );
+
+  if (response.statusCode == 200) {
+    final data = jsonDecode(response.body);
+
+    if (data.isNotEmpty) {
+      final lat = double.parse(data[0]['lat']);
+      final lon = double.parse(data[0]['lon']);
+
+     selectedLatitude = lat;
+    selectedLongitude = lon;  
+
+      mapController.move(
+        LatLng(lat, lon),
+        16,
+      );
+    }
+  }
+}
 
   await showDialog(
     context: context,
@@ -91,7 +132,88 @@ Future<void> _showClinicDialog([CenterModel? clinic]) async {
                     children: [
                   _buildTextField(controller: nameController, label: 'Center Name'),
                   _buildTextField(controller: addressController, label: 'Address'),
-                  _buildTextField(controller: cityController, label: 'City'),
+                  Row(
+  children: [
+    Expanded(
+      child: _buildTextField(
+        controller: cityController,
+        label: 'City',
+      ),
+    ),
+
+    const SizedBox(width: 10),
+
+    ElevatedButton(
+      onPressed: searchLocation,
+      child: const Text('Find'),
+    ),
+  ],
+),
+                  const SizedBox(height: 16),
+
+Container(
+  height: 300,
+  decoration: BoxDecoration(
+    borderRadius: BorderRadius.circular(16),
+    border: Border.all(color: Colors.grey.shade300),
+  ),
+  child: ClipRRect(
+    borderRadius: BorderRadius.circular(16),
+    child: FlutterMap(
+      mapController: mapController,
+      options: MapOptions(
+        initialCenter: LatLng(
+          selectedLatitude ?? 14.5995,
+          selectedLongitude ?? 120.9842,
+        ),
+        initialZoom: 13,
+
+        onTap: (tapPosition, point) {
+          setDialogState(() {
+            selectedLatitude = point.latitude;
+            selectedLongitude = point.longitude;
+          });
+        },
+      ),
+
+      children: [
+        TileLayer(
+          urlTemplate:
+              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.example.app',
+        ),
+
+        if (selectedLatitude != null &&
+            selectedLongitude != null)
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: LatLng(
+                  selectedLatitude!,
+                  selectedLongitude!,
+                ),
+                width: 40,
+                height: 40,
+                child: const Icon(
+                  Icons.location_pin,
+                  color: Colors.red,
+                  size: 40,
+                ),
+              ),
+            ],
+          ),
+      ],
+    ),
+  ),
+),
+
+const SizedBox(height: 10),
+
+Text(
+  selectedLatitude != null
+      ? 'Lat: ${selectedLatitude!.toStringAsFixed(6)} | Lng: ${selectedLongitude!.toStringAsFixed(6)}'
+      : 'Tap on the map to select location',
+),
                   _buildTextField(controller: requirementsController, label: 'Requirements'),
 
                   _buildTextField(
@@ -130,6 +252,15 @@ Future<void> _showClinicDialog([CenterModel? clinic]) async {
                         setDialogState(() {
                           isSaving = true;
                         });
+                        if (selectedLatitude == null ||
+                          selectedLongitude == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Please select a location on the map'),
+                          ),
+                        );
+                        return;
+                      }
 
                         try {
                           if (clinic == null) {
@@ -137,9 +268,9 @@ Future<void> _showClinicDialog([CenterModel? clinic]) async {
                               name: nameController.text.trim(),
                               address: addressController.text.trim(),
                               city: cityController.text.trim(),
-                              requirements: requirementsController.text.split(',').map((e) => e.trim()).toList(),
-                              latitude: 0.0,
-                              longitude: 0.0,
+                              requirements: requirementsController.text.trim(),
+                              latitude: selectedLatitude!,
+                              longitude: selectedLongitude!,
                               slotAvailable:
                                   int.tryParse(slotsController.text.trim()) ?? 0,
                               machines:
@@ -157,12 +288,9 @@ Future<void> _showClinicDialog([CenterModel? clinic]) async {
                               name: nameController.text.trim(),
                               address: addressController.text.trim(),
                               city: cityController.text.trim(),
-                              requirements: requirementsController.text
-                              .split(',')
-                              .map((e) => e.trim())
-                              .toList(),
-                              latitude: 0.0,
-                              longitude: 0.0,
+                              requirements: requirementsController.text.trim(),
+                              latitude: selectedLatitude!,
+                              longitude: selectedLongitude!,
                               slotAvailable:
                                   int.tryParse(slotsController.text.trim()) ?? 0,
                               machines:
@@ -321,6 +449,7 @@ Future<void> _showClinicDialog([CenterModel? clinic]) async {
                 ),
                 FilledButton.icon(
                   onPressed: () => _showClinicDialog(),
+                  
                   icon: const Icon(Icons.add),
                   label: const Text('New Center'),
                   style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0F719F), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
