@@ -30,7 +30,7 @@ class _FinancialPageState extends State<FinancialPage> {
 
   final Set<String> _selectedInsurance = {};
   String _selectedBudget = 'Low-cost / Government-supported';
-  String _selectedClinicType = 'Public Hospital';
+  final String _selectedClinicType = 'Public Hospital';
 
   void _toggleInsurance(String option) {
     setState(() {

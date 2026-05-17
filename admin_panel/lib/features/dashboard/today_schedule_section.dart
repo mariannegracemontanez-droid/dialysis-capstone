@@ -1,6 +1,7 @@
 import 'package:admin_panel/services/schedule_service.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:async';
 
 class TodayScheduleSection extends StatefulWidget {
   final String clinicId;
@@ -32,10 +33,17 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
   late String selectedDay;
   bool isLoading = false;
 
+  bool _isSameDate(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
   List<dynamic> amPatients = [];
   List<dynamic> pmPatients = [];
 
   Map<String, String> shiftTimes = {'AM': 'Time not set', 'PM': 'Time not set'};
+
+  Timer? _dateWatcher;
+  DateTime _currentWeekStart = DateTime.now();
 
   static const Color primary = Color(0xFF245C78);
   static const Color border = Color(0xFFE1E8EF);
@@ -48,8 +56,34 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
   @override
   void initState() {
     super.initState();
+
+    _currentWeekStart = getStartOfWeek();
     selectedDay = _getToday();
+
     loadSelectedDaySchedule();
+
+    _dateWatcher = Timer.periodic(const Duration(minutes: 1), (_) {
+      final latestWeekStart = getStartOfWeek();
+      final latestToday = _getToday();
+
+      final weekChanged = !_isSameDate(_currentWeekStart, latestWeekStart);
+      final dayChanged = selectedDay != latestToday;
+
+      if (weekChanged || dayChanged) {
+        setState(() {
+          _currentWeekStart = latestWeekStart;
+          selectedDay = latestToday;
+        });
+
+        loadSelectedDaySchedule();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _dateWatcher?.cancel();
+    super.dispose();
   }
 
   @override
@@ -213,22 +247,22 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
   Future<void> loadShiftTimes() async {
     try {
       final response = await _supabase
-          .from('dialysis_slots')
-          .select('*')
+          .from('dialysis_schedules')
+          .select('shift, start_time, end_time')
           .eq('clinic_id', widget.clinicId);
-
-      final slots = List<Map<String, dynamic>>.from(
-        (response as List).map(
-          (item) => Map<String, dynamic>.from(item as Map),
-        ),
-      );
 
       final nextShiftTimes = {'AM': 'Time not set', 'PM': 'Time not set'};
 
-      for (final slot in slots) {
-        final shift = _detectShift(slot);
+      for (final slot in response) {
+        final shift = slot['shift']?.toString().toUpperCase();
+
         if (shift == 'AM' || shift == 'PM') {
-          nextShiftTimes[shift] = _buildTimeRange(slot);
+          final startTime = _formatTimeValue(slot['start_time']);
+          final endTime = _formatTimeValue(slot['end_time']);
+
+          if (startTime.isNotEmpty && endTime.isNotEmpty) {
+            nextShiftTimes[shift!] = '$startTime - $endTime';
+          }
         }
       }
 

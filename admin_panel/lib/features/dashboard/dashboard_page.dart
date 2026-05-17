@@ -25,6 +25,7 @@ class DashboardPage extends ConsumerStatefulWidget {
 RealtimeChannel? _patientsChannel;
 RealtimeChannel? _weeklySchedulesChannel;
 RealtimeChannel? _fundDistributionsChannel;
+RealtimeChannel? _purchaseLogsChannel;
 
 class _DashboardPageState extends ConsumerState<DashboardPage>
     with TickerProviderStateMixin {
@@ -45,6 +46,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
 
   Map<String, dynamic>? latestDonation;
   num totalDonations = 0;
+  List<Map<String, dynamic>> purchaseLogs = [];
 
   static const Color primary = Color(0xFF245C78);
   static const Color primaryDark = Color(0xFF17435C);
@@ -103,6 +105,18 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
           },
         )
         .subscribe();
+
+    _purchaseLogsChannel = Supabase.instance.client
+        .channel('dashboard_purchase_logs_realtime')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'donation_purchase_logs',
+          callback: (payload) {
+            fetchDonationData();
+          },
+        )
+        .subscribe();
   }
 
   void _initAnimations() {
@@ -127,6 +141,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
 
     if (_fundDistributionsChannel != null) {
       Supabase.instance.client.removeChannel(_fundDistributionsChannel!);
+    }
+
+    if (_purchaseLogsChannel != null) {
+      Supabase.instance.client.removeChannel(_purchaseLogsChannel!);
     }
 
     super.dispose();
@@ -187,14 +205,40 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
       final latest = await _service.getLatestDonation(centerName);
       final total = await _service.getTotalDonations(centerName);
 
+      final logs = await Supabase.instance.client
+          .from('donation_purchase_logs')
+          .select()
+          .eq('clinic_name', centerName)
+          .order('created_at', ascending: false);
+
       if (!mounted) return;
 
       setState(() {
         latestDonation = latest;
         totalDonations = total;
+        purchaseLogs = List<Map<String, dynamic>>.from(logs);
       });
     } catch (e) {
       debugPrint('Error fetching donation data: $e');
+    }
+  }
+
+  Future<void> _addPurchaseLog({
+    required String itemName,
+    required num amount,
+  }) async {
+    try {
+      await Supabase.instance.client.from('donation_purchase_logs').insert({
+        'clinic_name': centerName,
+        'item_name': itemName,
+        'amount': amount,
+        'purchase_date': DateTime.now().toIso8601String(),
+      });
+
+      await fetchDonationData();
+      _showMessage('Purchase log added successfully');
+    } catch (e) {
+      _showMessage('Failed to add purchase log: $e', isError: true);
     }
   }
 
@@ -263,6 +307,271 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     );
   }
 
+  void _showAddPurchaseModal() {
+    final itemController = TextEditingController();
+    final amountController = TextEditingController();
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.45),
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 24,
+          ),
+          child: Container(
+            width: 430,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.12),
+                  blurRadius: 30,
+                  offset: const Offset(0, 16),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: purple.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Icon(
+                        Icons.receipt_long_rounded,
+                        color: purple,
+                        size: 26,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Add Purchase Log',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                              color: textDark,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Record clinic expenses and automatically update the remaining donation balance.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: textMuted,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 24),
+
+                const Text(
+                  'Purchase Item',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: textMuted,
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                TextField(
+                  controller: itemController,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: textDark,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Ex. Dialyzer supplies',
+                    prefixIcon: const Icon(
+                      Icons.inventory_2_outlined,
+                      color: textMuted,
+                    ),
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 18,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(color: border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(color: border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: purple, width: 1.5),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+
+                const Text(
+                  'Amount Spent',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: textMuted,
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                TextField(
+                  controller: amountController,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: textDark,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: '0.00',
+                    prefixIcon: Container(
+                      alignment: Alignment.center,
+                      width: 56,
+                      child: const Text(
+                        '₱',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: purple,
+                        ),
+                      ),
+                    ),
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 18,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(color: border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(color: border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: purple, width: 1.5),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 26),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: textMuted,
+                          side: BorderSide(color: border),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(width: 12),
+
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primary,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        onPressed: () async {
+                          final itemName = itemController.text.trim();
+                          final amount =
+                              num.tryParse(amountController.text.trim()) ?? 0;
+
+                          if (itemName.isEmpty || amount <= 0) {
+                            _showMessage(
+                              'Please enter a valid item and amount',
+                              isError: true,
+                            );
+                            return;
+                          }
+
+                          final currentSpent = purchaseLogs.fold<num>(
+                            0,
+                            (sum, item) =>
+                                sum + ((item['amount'] as num?) ?? 0),
+                          );
+
+                          final currentRemainingBalance =
+                              totalDonations - currentSpent;
+
+                          if (amount > currentRemainingBalance) {
+                            _showMessage(
+                              'Amount exceeds the remaining donation balance',
+                              isError: true,
+                            );
+                            return;
+                          }
+
+                          Navigator.pop(context);
+
+                          await _addPurchaseLog(
+                            itemName: itemName,
+                            amount: amount,
+                          );
+                        },
+                        icon: const Icon(Icons.save_rounded, size: 18),
+                        label: const Text(
+                          'Save Log',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _refreshDashboard() async {
     _loadData();
     await loadClinicData();
@@ -317,7 +626,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
       padding: const EdgeInsets.symmetric(horizontal: 18),
       child: Row(
         children: [
-          Container(
+          SizedBox(
             width: 48,
             height: 48,
             child: ClipRRect(
@@ -883,21 +1192,16 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     final latestDate = latestDonation?['distribution_date'];
     final remarks = latestDonation?['remarks']?.toString();
 
-    // UI placeholder only. Replace this later with clinic purchase logs from Supabase.
-    final purchaseLogs = <Map<String, dynamic>>[
-      {'item': 'Dialyzer supplies', 'date': 'Pending backend', 'amount': 0},
-      {'item': 'Medical consumables', 'date': 'Pending backend', 'amount': 0},
-      {'item': 'Clinic maintenance', 'date': 'Pending backend', 'amount': 0},
-    ];
-
     final totalSpent = purchaseLogs.fold<num>(
       0,
       (sum, item) => sum + ((item['amount'] as num?) ?? 0),
     );
-    final remainingBalance = totalDonations - totalSpent;
+
+    final rawRemainingBalance = totalDonations - totalSpent;
+    final remainingBalance = rawRemainingBalance < 0 ? 0 : rawRemainingBalance;
 
     return _sectionCard(
-      title: 'Fund Transparency',
+      title: 'Donation Funds',
       subtitle:
           'Track received support, clinic purchases, and remaining balance.',
       icon: Icons.account_balance_wallet_rounded,
@@ -956,47 +1260,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
               ],
             ),
           ),
+
           const SizedBox(height: 14),
           _infoTile('Latest Donation', _formatMoney(latestAmount)),
           _infoTile('Date Received', _formatDate(latestDate)),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Purchase Logs',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                    color: textDark,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: purple.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(50),
-                ),
-                child: const Text(
-                  'UI Preview',
-                  style: TextStyle(
-                    color: purple,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ...purchaseLogs.map(
-            (item) => _purchaseLogTile(
-              item['item'].toString(),
-              item['date'].toString(),
-              item['amount'] as num,
-            ),
-          ),
+
           const SizedBox(height: 10),
           const Text(
             'Remarks',
@@ -1018,7 +1286,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
             ),
             child: Text(
               remarks == null || remarks.trim().isEmpty
-                  ? 'No remarks available. Purchase records will appear here once backend logging is added.'
+                  ? 'No remarks available.'
                   : remarks,
               style: const TextStyle(
                 fontSize: 12,
@@ -1028,6 +1296,60 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
               ),
             ),
           ),
+
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Purchase Logs',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    color: textDark,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _showAddPurchaseModal,
+                icon: const Icon(Icons.add_rounded, size: 16),
+                label: const Text('Add'),
+                style: TextButton.styleFrom(
+                  backgroundColor: green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          if (purchaseLogs.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: border),
+              ),
+              child: const Text(
+                'No purchase logs yet.',
+                style: TextStyle(
+                  color: textMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          else
+            ...purchaseLogs.map(
+              (item) => _purchaseLogTile(
+                item['item_name']?.toString() ?? 'Unnamed purchase',
+                _formatDate(item['purchase_date']),
+                item['amount'] as num,
+              ),
+            ),
         ],
       ),
     );
@@ -1351,8 +1673,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
                 const Color(0xFFF4F7FA),
               ),
               dataRowColor: MaterialStateProperty.resolveWith<Color?>((states) {
-                if (states.contains(MaterialState.hovered))
+                if (states.contains(MaterialState.hovered)) {
                   return const Color(0xFFEAF5FA);
+                }
                 return null;
               }),
               border: TableBorder(
@@ -1662,8 +1985,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
                                     ),
                                   ];
 
-                                  if (constraints.maxWidth < 620)
+                                  if (constraints.maxWidth < 620) {
                                     return Column(children: details);
+                                  }
 
                                   return Wrap(
                                     spacing: 12,

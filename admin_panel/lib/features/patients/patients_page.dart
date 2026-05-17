@@ -442,7 +442,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                     ),
                   ),
                 );
-              }).toList(),
+              }),
             ],
           ),
         );
@@ -805,7 +805,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       padding: const EdgeInsets.symmetric(horizontal: 18),
       child: Row(
         children: [
-          Container(
+          SizedBox(
             width: 48,
             height: 48,
             child: ClipRRect(
