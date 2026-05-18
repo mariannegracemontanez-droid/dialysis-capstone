@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/signup_data.dart';
 import 'clinic_info_page.dart';
@@ -18,6 +19,8 @@ class _LocationPageState extends State<LocationPage> {
   final MapController _mapController = MapController();
   final LatLng _valenzuelaCenter = LatLng(14.7094, 120.9830);
 
+  LatLng? _userLocation;
+  bool _isGettingLocation = false;
   bool _isLoading = true;
   String? _errorMessage;
   List<Map<String, dynamic>> _clinics = [];
@@ -28,6 +31,7 @@ class _LocationPageState extends State<LocationPage> {
   void initState() {
     super.initState();
     _loadClinicsAndApplications();
+    _getUserLocation();
   }
 
   Future<void> _loadClinicsAndApplications() async {
@@ -73,6 +77,67 @@ class _LocationPageState extends State<LocationPage> {
       setState(() {
         _errorMessage = 'Unable to load clinics. Please try again later.';
         _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _getUserLocation() async {
+    setState(() {
+      _isGettingLocation = true;
+    });
+
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+
+      if (!serviceEnabled) {
+        setState(() {
+          _errorMessage = 'Please turn on your phone location/GPS.';
+          _isGettingLocation = false;
+        });
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied) {
+        setState(() {
+          _errorMessage =
+              'Location permission is required to show your location.';
+          _isGettingLocation = false;
+        });
+        return;
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        setState(() {
+          _errorMessage =
+              'Location permission is permanently denied. Please enable it in app settings.';
+          _isGettingLocation = false;
+        });
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+      final currentLocation = LatLng(position.latitude, position.longitude);
+
+      setState(() {
+        _userLocation = currentLocation;
+        _isGettingLocation = false;
+      });
+
+      _mapController.move(currentLocation, 15);
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Unable to get your current location.';
+        _isGettingLocation = false;
       });
     }
   }
@@ -130,8 +195,39 @@ class _LocationPageState extends State<LocationPage> {
         ),
       );
     }
-
+    if (_userLocation != null) {
+      markers.add(
+        Marker(
+          width: 52,
+          height: 52,
+          point: _userLocation!,
+          child: const Icon(Icons.my_location, color: Colors.blue, size: 36),
+        ),
+      );
+    }
     return markers;
+  }
+
+  String _getDistanceFromUser(Map<String, dynamic> clinic) {
+    if (_userLocation == null) return 'Distance unavailable';
+
+    final latitude = double.tryParse(clinic['latitude'].toString());
+    final longitude = double.tryParse(clinic['longitude'].toString());
+
+    if (latitude == null || longitude == null) {
+      return 'Distance unavailable';
+    }
+
+    final distanceInMeters = Geolocator.distanceBetween(
+      _userLocation!.latitude,
+      _userLocation!.longitude,
+      latitude,
+      longitude,
+    );
+
+    final distanceInKm = distanceInMeters / 1000;
+
+    return '${distanceInKm.toStringAsFixed(2)} km away';
   }
 
   void _showClinicPopup(Map<String, dynamic> clinic) {
@@ -228,10 +324,11 @@ class _LocationPageState extends State<LocationPage> {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              clinic['contact_number'].toString(),
+                              _getDistanceFromUser(clinic),
                               style: const TextStyle(
-                                fontSize: 14,
+                                fontSize: 13,
                                 fontWeight: FontWeight.w600,
+                                color: Color(0xFF2C5F7D),
                               ),
                             ),
                           ],
