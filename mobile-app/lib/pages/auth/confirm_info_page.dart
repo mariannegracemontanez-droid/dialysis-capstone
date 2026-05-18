@@ -90,9 +90,13 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
       }
 
       if (mounted) {
-        // Keep the Supabase session alive so the login page can start the realtime approval listener.
-        // ignore: use_build_context_synchronously
-        Navigator.of(context).pushReplacementNamed('/signup-complete_page');
+        final isAdditionalClinicFlow = widget.signupData.password.isEmpty;
+
+        Navigator.of(context).pushReplacementNamed(
+          isAdditionalClinicFlow
+              ? '/application_complete'
+              : '/signup-complete_page',
+        );
       }
     } catch (e) {
       setState(() {

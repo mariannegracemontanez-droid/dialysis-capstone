@@ -11,6 +11,7 @@ class UserModel {
   final DateTime? lastDialysisDate;
   final String role;
   final DateTime createdAt;
+  final String? profileImageUrl;
 
   UserModel({
     required this.id,
@@ -23,6 +24,7 @@ class UserModel {
     this.weight,
     this.height,
     this.lastDialysisDate,
+    this.profileImageUrl,
     required this.role,
     required this.createdAt,
   });
@@ -47,6 +49,7 @@ class UserModel {
           : null,
       role: json['role']?.toString().trim().toLowerCase() ?? 'patient',
       createdAt: DateTime.parse(json['created_at']),
+      profileImageUrl: json['profile_image_url'],
     );
   }
 

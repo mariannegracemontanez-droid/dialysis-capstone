@@ -182,19 +182,57 @@ class AuthService {
     final user = _supabase.auth.currentUser;
     if (user == null) return null;
 
-    final userData = await _supabase
+    final profileData = await _supabase
         .from('profiles')
         .select()
         .eq('id', user.id)
         .single();
 
-    final currentUser = UserModel.fromJson(userData);
+    final patientData = await getCurrentPatient();
+
+    final mergedData = <String, dynamic>{
+      ...profileData,
+      if (patientData != null) ...{
+        'full_name': patientData['full_name'] ?? profileData['full_name'],
+        'email': patientData['email'] ?? profileData['email'],
+        'phone': patientData['phone'] ?? profileData['phone'],
+        'user_location':
+            patientData['home_address'] ??
+            patientData['user_location'] ??
+            profileData['user_location'] ??
+            profileData['location'],
+        'blood_type': patientData['blood_type'],
+        'weight': patientData['weight'],
+        'height': patientData['height'],
+        'last_dialysis_date': patientData['last_dialysis_date'],
+        'profile_image_url':
+            patientData['profile_image_url'] ??
+            profileData['profile_image_url'],
+      },
+    };
+
+    final currentUser = UserModel.fromJson(mergedData);
+
     if (currentUser.role != 'patient') {
       await _supabase.auth.signOut();
       return null;
     }
 
     return currentUser;
+  }
+
+  Future<Map<String, dynamic>?> getCurrentPatient() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return null;
+
+    final patientData = await _supabase
+        .from('patients')
+        .select()
+        .eq('profile_id', user.id)
+        .eq('status', 'active')
+        .maybeSingle();
+
+    return patientData;
   }
 
   static String? validatePassword(String password) {

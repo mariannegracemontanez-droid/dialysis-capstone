@@ -69,11 +69,15 @@ class _LoginPageState extends State<LoginPage> {
         }
       });
     } catch (e) {
-      final errorText = e.toString();
-
       if (mounted) {
         setState(() {
-          _errorMessage = errorText;
+          final error = e.toString().toLowerCase();
+
+          if (error.contains('invalid login credentials')) {
+            _errorMessage = 'Incorrect email or password.';
+          } else {
+            _errorMessage = 'Something went wrong. Please try again.';
+          }
         });
       }
     } finally {

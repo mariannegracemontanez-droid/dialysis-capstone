@@ -15,10 +15,10 @@ import 'pages/auth/signup_complete_page.dart';
 import 'pages/auth/welcome_page.dart';
 import 'pages/home/home_page.dart';
 import 'pages/home/privacy_security_page.dart';
+import 'pages/auth/application_complete_page.dart';
 import 'config/supabase_config.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
-
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -85,6 +85,8 @@ class MyApp extends StatelessWidget {
         '/forgot-password': (context) => const ForgotPasswordPage(),
         '/change-password': (context) => const ChangePasswordPage(),
         '/home': (context) => const HomePage(),
+        '/main_navigation': (context) => const HomePage(),
+        '/application_complete': (context) => const ApplicationCompletePage(),
         '/privacy-security': (context) => const PrivacySecurityPage(),
       },
       onGenerateRoute: (settings) {

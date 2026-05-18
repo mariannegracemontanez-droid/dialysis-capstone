@@ -439,7 +439,11 @@ class _HomePageState extends State<HomePage> {
 
     final pages = <Widget>[
       _hasPatientAccess
-          ? HomeTab(user: _currentUser, onScheduleTap: () => _onNavTap(1))
+          ? HomeTab(
+              user: _currentUser,
+              onScheduleTap: () => _onNavTap(1),
+              onHealthMonitoringTap: () => _onNavTap(2),
+            )
           : _buildWaitingForApprovalTab(),
       const AppointmentPage(),
       const HealthMonitoringPage(),

@@ -44,7 +44,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
     try {
       await _profileService.updateContactInfo(
-        userId: widget.user!.id,
+        patientId: widget.user!.id,
         email: _emailController.text,
         fullName: _nameController.text,
         phone: _phoneController.text.isEmpty ? null : _phoneController.text,

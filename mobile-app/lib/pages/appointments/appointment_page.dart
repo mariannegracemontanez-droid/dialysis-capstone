@@ -1,6 +1,6 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../services/appointment_service.dart';
 import '../../services/notification_service.dart';
 
@@ -248,6 +248,25 @@ class _AppointmentPageState extends State<AppointmentPage> {
   String _formatDays() {
     if (_scheduledDays.isEmpty) return 'No schedule assigned yet';
     return _scheduledDays.join(', ');
+  }
+
+  List<DateTime> _getPastScheduleDates() {
+    if (_scheduledDays.isEmpty) return [];
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final pastDates = <DateTime>[];
+
+    for (int i = 1; i <= 30; i++) {
+      final date = today.subtract(Duration(days: i));
+      final dayName = _weekdayNames[date.weekday];
+
+      if (_scheduledDays.contains(dayName)) {
+        pastDates.add(date);
+      }
+    }
+
+    return pastDates;
   }
 
   String _monthName(int month) {
@@ -500,7 +519,9 @@ class _AppointmentPageState extends State<AppointmentPage> {
                           ],
                         ),
                       ),
+
                       const SizedBox(height: 20),
+
                       Row(
                         children: [
                           Expanded(
@@ -532,7 +553,9 @@ class _AppointmentPageState extends State<AppointmentPage> {
                               child: const Text('Calendar View'),
                             ),
                           ),
+
                           const SizedBox(width: 12),
+
                           Expanded(
                             child: OutlinedButton(
                               onPressed: () {
@@ -560,7 +583,9 @@ class _AppointmentPageState extends State<AppointmentPage> {
                           ),
                         ],
                       ),
+
                       const SizedBox(height: 20),
+
                       if (_isLoading)
                         const Center(child: CircularProgressIndicator())
                       else if (_errorMessage != null)
@@ -572,17 +597,89 @@ class _AppointmentPageState extends State<AppointmentPage> {
                           ),
                         )
                       else if (_showHistory)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF0F7F8),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            'Your appointment history will appear here once this feature is available.',
-                            style: TextStyle(color: Color(0xFF5B6D7D)),
-                          ),
+                        Builder(
+                          builder: (context) {
+                            final historyDates = _getPastScheduleDates();
+
+                            if (historyDates.isEmpty) {
+                              return Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF0F7F8),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Text(
+                                  'No completed dialysis sessions yet.',
+                                  style: TextStyle(color: Color(0xFF5B6D7D)),
+                                ),
+                              );
+                            }
+
+                            return Column(
+                              children: historyDates.map((date) {
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF0F7F8),
+                                    borderRadius: BorderRadius.circular(18),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 42,
+                                        height: 42,
+                                        decoration: BoxDecoration(
+                                          color: const Color(
+                                            0xFF2C5F7D,
+                                          ).withOpacity(0.12),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.check_circle_outline,
+                                          color: Color(0xFF2C5F7D),
+                                        ),
+                                      ),
+
+                                      const SizedBox(width: 12),
+
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              DateFormat(
+                                                'EEEE, MMMM d, yyyy',
+                                              ).format(date),
+                                              style: const TextStyle(
+                                                color: Color(0xFF173B4F),
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+
+                                            const SizedBox(height: 4),
+
+                                            const Text(
+                                              'Dialysis session completed',
+                                              style: TextStyle(
+                                                color: Color(0xFF5B6D7D),
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                            );
+                          },
                         )
                       else
                         Container(
@@ -602,14 +699,20 @@ class _AppointmentPageState extends State<AppointmentPage> {
                                   color: Color(0xFF1F2937),
                                 ),
                               ),
+
                               const SizedBox(height: 14),
+
                               _buildScheduleCalendar(),
+
                               const SizedBox(height: 18),
+
                               Container(
                                 height: 1,
                                 color: const Color(0xFFDDE6EA),
                               ),
+
                               const SizedBox(height: 14),
+
                               Row(
                                 children: [
                                   Container(
@@ -620,7 +723,9 @@ class _AppointmentPageState extends State<AppointmentPage> {
                                       shape: BoxShape.circle,
                                     ),
                                   ),
+
                                   const SizedBox(width: 10),
+
                                   Expanded(
                                     child: Text(
                                       hasSchedule

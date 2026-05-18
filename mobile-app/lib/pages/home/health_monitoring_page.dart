@@ -103,7 +103,24 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
     }
   }
 
-  double get _progressValue => min(_todayTotalMl / _dailyGoalMl, 1.0);
+  double get _progressValue {
+    if (_todayTotalMl <= 0) return 0;
+
+    final progress = _todayTotalMl / _dailyGoalMl;
+
+    if (progress > 1.0) {
+      return 1.0;
+    }
+
+    return progress;
+  }
+
+  bool get _isWaterExceeded => _todayTotalMl > _dailyGoalMl;
+
+  Color get _waterStatusColor =>
+      _isWaterExceeded ? const Color(0xFFE53935) : const Color(0xFF16B9E2);
+
+  int get _waterPercent => ((_todayTotalMl / _dailyGoalMl) * 100).round();
 
   String get _todayDateLabel =>
       DateFormat('MMMM d, yyyy').format(DateTime.now());
@@ -525,6 +542,7 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
                     ),
                     const SizedBox(width: 16),
                     const Text(
+                      
                       'Water Intake',
                       style: TextStyle(
                         fontSize: 16,
@@ -556,21 +574,36 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
                         child: LinearProgressIndicator(
                           value: _progressValue,
                           minHeight: 12,
-                          color: const Color.fromARGB(255, 22, 185, 226),
                           backgroundColor: const Color(0xFFE8F7F7),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            _waterStatusColor,
+                          ),
                         ),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Text(
-                      '${(_progressValue * 100).clamp(0, 100).round()}%',
-                      style: const TextStyle(
+                      '$_waterPercent%',
+                      style: TextStyle(
                         fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
+                        color: _waterStatusColor,
                       ),
                     ),
                   ],
                 ),
+
+                if (_isWaterExceeded) ...[
+                  const SizedBox(height: 10),
+                  const Text(
+                    'You have exceeded your recommended water intake for today.',
+                    style: TextStyle(
+                      color: Color(0xFFE53935),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 Row(
                   children: [

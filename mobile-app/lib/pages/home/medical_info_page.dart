@@ -97,7 +97,7 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
       }
 
       await _profileService.updateMedicalInfo(
-        userId: widget.user!.id,
+        patientId: widget.user!.id,
         bloodType: _bloodTypeController.text.isEmpty
             ? null
             : _bloodTypeController.text,
@@ -250,7 +250,7 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () => Navigator.of(context).pop(true),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2C9B9E),
                     shape: RoundedRectangleBorder(
