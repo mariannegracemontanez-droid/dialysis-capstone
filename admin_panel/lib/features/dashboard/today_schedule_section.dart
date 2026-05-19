@@ -247,7 +247,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
   Future<void> loadShiftTimes() async {
     try {
       final response = await _supabase
-          .from('dialysis_schedules')
+          .from('daily_schedules')
           .select('shift, start_time, end_time')
           .eq('clinic_id', widget.clinicId);
 

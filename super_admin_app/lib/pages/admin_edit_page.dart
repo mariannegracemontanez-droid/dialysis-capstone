@@ -26,7 +26,7 @@ class _AdminEditPageState extends State<AdminEditPage> {
 
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
-  bool _changePassword = false; // 🔥 NEW
+  bool _changePassword = false; 
 
   List<Map<String, dynamic>> _clinics = [];
   Set<String> _clinicsWithAdmin = {};

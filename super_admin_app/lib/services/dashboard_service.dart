@@ -43,16 +43,13 @@ class DashboardService {
     return {
       'patients': (patients as List).length,
       'appointments': (appointments as List).length,
-      'centers': (centers as List).length, // ✅
+      'centers': (centers as List).length,
       'donations': totalDonations.toInt(),
     };
   }
 
   Future<List<CenterModel>> fetchCenters() async {
     final response = await _supabase.from('clinics').select();
-
-    // 👉 Debug print para makita mo ang raw data
-    print('Clinics response: $response');
 
     final list = response as List<dynamic>;
     return list
@@ -75,26 +72,21 @@ class DashboardService {
   }
 
   Future<List<DonationSummary>> fetchDonationSummary() async {
-    final response = await _supabase
-        .from('donations')
-        .select('center_name, clinic_name, amount');
+    final response = await _supabase.from('donations').select('amount');
+
     final list = response as List<dynamic>;
-    final totals = <String, double>{};
+    double totalAmount = 0;
+
     for (final item in list) {
       final record = item as Map<String, dynamic>;
-      final centerName =
-          record['center_name']?.toString() ??
-          record['clinic_name']?.toString() ??
-          'Unknown Center';
-      final amount = double.tryParse(record['amount']?.toString() ?? '') ?? 0.0;
-      totals[centerName] = (totals[centerName] ?? 0) + amount;
+      final amount =
+          double.tryParse(record['amount']?.toString() ?? '0') ?? 0.0;
+      totalAmount += amount;
     }
-    return totals.entries
-        .map(
-          (entry) =>
-              DonationSummary(centerName: entry.key, totalAmount: entry.value),
-        )
-        .toList();
+
+    return [
+      DonationSummary(centerName: 'Total Donations', totalAmount: totalAmount),
+    ];
   }
 
   Future<void> createCenter({

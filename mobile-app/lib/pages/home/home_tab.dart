@@ -977,17 +977,53 @@ class _HomeTabState extends State<HomeTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Health Tips',
-          style: TextStyle(
-            color: Color(0xFF173B4F),
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-          ),
+        Row(
+          children: [
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Health Tips',
+                    style: TextStyle(
+                      color: Color(0xFF173B4F),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Simple care reminders for your daily routine',
+                    style: TextStyle(
+                      color: Color(0xFF7A8A94),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF4F7),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFD4E7EE)),
+              ),
+              child: Text(
+                '${_currentTipIndex + 1}/${_healthTips.length}',
+                style: const TextStyle(
+                  color: Color(0xFF225E72),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         SizedBox(
-          height: 150,
+          height: 176,
           child: PageView.builder(
             controller: _tipsController,
             itemCount: _healthTips.length,
@@ -999,53 +1035,125 @@ class _HomeTabState extends State<HomeTab> {
             itemBuilder: (context, index) {
               final tip = _healthTips[index];
 
-              return Container(
-                margin: const EdgeInsets.only(right: 4),
+              final List<Color> cardColors = [
+                const Color(0xFF225E72),
+                const Color(0xFF2F8F72),
+                const Color(0xFF1D7FA3),
+                const Color(0xFF476A8A),
+              ];
+
+              final Color cardColor = cardColors[index % cardColors.length];
+
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                margin: const EdgeInsets.only(right: 6),
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF225E72),
-                  borderRadius: BorderRadius.circular(18),
+                  color: cardColor,
+                  borderRadius: BorderRadius.circular(22),
+                  boxShadow: [
+                    BoxShadow(
+                      color: cardColor.withOpacity(0.22),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
-                child: Row(
+                child: Stack(
                   children: [
-                    Container(
-                      height: 58,
-                      width: 58,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.14),
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Icon(
-                        tip['icon'] as IconData,
-                        color: Colors.white,
-                        size: 30,
+                    Positioned(
+                      right: -18,
+                      top: -20,
+                      child: Container(
+                        height: 92,
+                        width: 92,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.08),
+                          shape: BoxShape.circle,
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            tip['title'].toString(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            tip['message'].toString(),
-                            style: const TextStyle(
-                              color: Color(0xFFD9EDF3),
-                              fontSize: 13,
-                              height: 1.4,
-                            ),
-                          ),
-                        ],
+                    Positioned(
+                      right: 18,
+                      bottom: -32,
+                      child: Container(
+                        height: 88,
+                        width: 88,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.06),
+                          shape: BoxShape.circle,
+                        ),
                       ),
+                    ),
+                    Row(
+                      children: [
+                        Container(
+                          height: 62,
+                          width: 62,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.16),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.18),
+                            ),
+                          ),
+                          child: Icon(
+                            tip['icon'] as IconData,
+                            color: Colors.white,
+                            size: 31,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 9,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.14),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Text(
+                                  'Daily Care Tip',
+                                  style: TextStyle(
+                                    color: Color(0xFFEAF7FA),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                tip['title'].toString(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 7),
+                              Text(
+                                tip['message'].toString(),
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFFE4F3F7),
+                                  fontSize: 13,
+                                  height: 1.42,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -1053,7 +1161,7 @@ class _HomeTabState extends State<HomeTab> {
             },
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(
@@ -1062,11 +1170,11 @@ class _HomeTabState extends State<HomeTab> {
               duration: const Duration(milliseconds: 250),
               margin: const EdgeInsets.symmetric(horizontal: 3),
               height: 7,
-              width: _currentTipIndex == index ? 20 : 7,
+              width: _currentTipIndex == index ? 24 : 7,
               decoration: BoxDecoration(
                 color: _currentTipIndex == index
                     ? const Color(0xFF225E72)
-                    : const Color(0xFFC7D6DE),
+                    : const Color(0xFFD5E2E8),
                 borderRadius: BorderRadius.circular(20),
               ),
             ),
