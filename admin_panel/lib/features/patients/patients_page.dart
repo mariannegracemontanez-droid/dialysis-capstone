@@ -1622,6 +1622,33 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                     ),
                                   ),
                                 ),
+                                const SizedBox(height: 10),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                      _showDeletePatientConfirmation(patient);
+                                    },
+                                    icon: const Icon(
+                                      Icons.person_remove_rounded,
+                                      size: 17,
+                                    ),
+                                    label: const Text('Delete Patient'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: const Color(0xFFDC2626),
+                                      side: const BorderSide(
+                                        color: Color(0xFFFCA5A5),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -4336,72 +4363,646 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     }
   }
 
-  Future<void> _declinePatient(Patient patient) async {
-    try {
-      await _service.declinePatient(patient.id);
-      _refreshData();
-      _showMessage('Patient declined');
-    } catch (e) {
-      _showMessage('Error: $e', isError: true);
-    }
-  }
-
   Future<void> _confirmPendingDecision({
     required Patient patient,
     required bool isAccept,
   }) async {
-    final actionText = isAccept ? 'accept' : 'decline';
-    final title = isAccept ? 'Accept Patient?' : 'Decline Patient?';
+    if (isAccept) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (confirmContext) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A)),
+                SizedBox(width: 10),
+                Text('Accept Patient?'),
+              ],
+            ),
+            content: Text(
+              'Please make sure you have carefully reviewed ${patient.name}’s patient details and medical requirements before you accept this request.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(confirmContext).pop(false),
+                child: const Text('Review Again'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(confirmContext).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF16A34A),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Accept'),
+              ),
+            ],
+          );
+        },
+      );
 
-    final confirm = await showDialog<bool>(
+      if (confirm != true) return;
+
+      try {
+        await _service.acceptPatient(patient.id);
+        if (!mounted) return;
+        Navigator.of(context, rootNavigator: true).pop();
+        _refreshData();
+        _showMessage('Patient accepted, awaiting schedule');
+      } catch (e) {
+        _showMessage('Error: $e', isError: true);
+      }
+      return;
+    }
+
+    await _showDeclinePatientConfirmation(patient);
+  }
+
+  Future<void> _showDeclinePatientConfirmation(Patient patient) async {
+    final reasonController = TextEditingController();
+    bool isSaving = false;
+    String? errorText;
+
+    final declined = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (confirmContext) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          title: Text(title),
-          content: Text(
-            'Please make sure you have carefully reviewed ${patient.name}’s patient details and medical requirements before you $actionText this request.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(confirmContext).pop(false),
-              child: const Text('Review Again'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(confirmContext).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: isAccept
-                    ? Colors.green.shade600
-                    : Colors.red.shade600,
-                foregroundColor: Colors.white,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.all(24),
+              child: Container(
+                width: 560,
+                padding: const EdgeInsets.all(26),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.18),
+                      blurRadius: 28,
+                      offset: const Offset(0, 14),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF2F2),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(
+                            Icons.person_off_rounded,
+                            color: Color(0xFFDC2626),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Decline Patient Request',
+                                style: TextStyle(
+                                  color: Color(0xFF1E293B),
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                patient.name,
+                                style: const TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Reason for declining',
+                      style: TextStyle(
+                        color: Color(0xFF334155),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: reasonController,
+                      maxLines: 4,
+                      decoration: InputDecoration(
+                        hintText:
+                            'Example: Submitted documents are incomplete or requirements were not verified.',
+                        hintStyle: const TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontWeight: FontWeight.w500,
+                        ),
+                        errorText: errorText,
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFE2E8F0),
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFE2E8F0),
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF2A5F7E),
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(13),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF7ED),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFFED7AA)),
+                      ),
+                      child: const Text(
+                        'This reason will be saved in the patient record and can be shown in the mobile app.',
+                        style: TextStyle(
+                          color: Color(0xFF9A3412),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: isSaving
+                                ? null
+                                : () => Navigator.of(dialogContext).pop(false),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Text('Review Again'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: isSaving
+                                ? null
+                                : () async {
+                                    final reason = reasonController.text.trim();
+
+                                    if (reason.isEmpty) {
+                                      setModalState(() {
+                                        errorText =
+                                            'Decline reason is required.';
+                                      });
+                                      return;
+                                    }
+
+                                    try {
+                                      setModalState(() {
+                                        isSaving = true;
+                                        errorText = null;
+                                      });
+
+                                      final clinicId = await _service
+                                          .getCurrentClinicId();
+
+                                      if (clinicId == null) {
+                                        throw Exception(
+                                          'No clinic assigned to this admin account.',
+                                        );
+                                      }
+
+                                      await Supabase.instance.client
+                                          .from('patients')
+                                          .update({
+                                            'status': 'declined',
+                                            'decline_reason': reason,
+                                          })
+                                          .eq('id', patient.id)
+                                          .eq('clinic_id', clinicId);
+
+                                      if (!mounted) return;
+                                      Navigator.of(dialogContext).pop(true);
+                                    } catch (e) {
+                                      setModalState(() {
+                                        isSaving = false;
+                                        errorText = 'Unable to save reason.';
+                                      });
+                                      _showMessage('Error: $e', isError: true);
+                                    }
+                                  },
+                            icon: isSaving
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.close_rounded, size: 17),
+                            label: Text(isSaving ? 'Saving...' : 'Decline'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFDC2626),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              child: Text(isAccept ? 'Accept' : 'Decline'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
 
-    if (confirm != true) return;
+    reasonController.dispose();
 
-    try {
-      if (isAccept) {
-        await _service.acceptPatient(patient.id);
-        _showMessage('Patient accepted, awaiting schedule');
-      } else {
-        await _service.declinePatient(patient.id);
-        _showMessage('Patient declined');
-      }
-
+    if (declined == true) {
       if (!mounted) return;
-
       Navigator.of(context, rootNavigator: true).pop();
       _refreshData();
-    } catch (e) {
-      _showMessage('Error: $e', isError: true);
+      _showMessage('Patient declined and reason was saved.');
+    }
+  }
+
+  Future<void> _showDeletePatientConfirmation(Patient patient) async {
+    final notesController = TextEditingController();
+    String? selectedReason;
+    String? reasonError;
+    String? notesError;
+    bool isSaving = false;
+
+    const deletionReasons = [
+      'Transferred to another dialysis center',
+      'Change of treatment modality (e.g., switched to home dialysis or transplant)',
+      'Kidney transplant completed',
+      'Physician recommended transfer to another facility/hospital',
+      'Patient accepted to another center',
+      'Deceased',
+      'Others',
+    ];
+
+    final deleted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.all(24),
+              child: Container(
+                width: 640,
+                constraints: const BoxConstraints(maxHeight: 760),
+                padding: const EdgeInsets.all(26),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.18),
+                      blurRadius: 28,
+                      offset: const Offset(0, 14),
+                    ),
+                  ],
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF2F2),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(
+                              Icons.person_remove_rounded,
+                              color: Color(0xFFDC2626),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Delete Patient Record',
+                                  style: TextStyle(
+                                    color: Color(0xFF1E293B),
+                                    fontSize: 21,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  patient.name,
+                                  style: const TextStyle(
+                                    color: Color(0xFF64748B),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(13),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFFECACA)),
+                        ),
+                        child: const Text(
+                          'This will remove the patient from the active list by changing the status to deleted. The reason and deletion time will remain saved for records and review.',
+                          style: TextStyle(
+                            color: Color(0xFF991B1B),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      const Text(
+                        'Reason category',
+                        style: TextStyle(
+                          color: Color(0xFF334155),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: deletionReasons.map((reason) {
+                          final isSelected = selectedReason == reason;
+                          return ChoiceChip(
+                            label: Text(reason),
+                            selected: isSelected,
+                            onSelected: isSaving
+                                ? null
+                                : (_) {
+                                    setModalState(() {
+                                      selectedReason = reason;
+                                      reasonError = null;
+                                    });
+                                  },
+                            selectedColor: const Color(0xFFEAF3F7),
+                            backgroundColor: const Color(0xFFF8FAFC),
+                            side: BorderSide(
+                              color: isSelected
+                                  ? const Color(0xFF2A5F7E)
+                                  : const Color(0xFFE2E8F0),
+                            ),
+                            labelStyle: TextStyle(
+                              color: isSelected
+                                  ? const Color(0xFF2A5F7E)
+                                  : const Color(0xFF334155),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      if (reasonError != null) ...[
+                        const SizedBox(height: 7),
+                        Text(
+                          reasonError!,
+                          style: const TextStyle(
+                            color: Color(0xFFDC2626),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      const Text(
+                        'Detailed reason',
+                        style: TextStyle(
+                          color: Color(0xFF334155),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: notesController,
+                        maxLines: 4,
+                        decoration: InputDecoration(
+                          hintText:
+                              'Add details or supporting notes for this patient removal.',
+                          hintStyle: const TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontWeight: FontWeight.w500,
+                          ),
+                          errorText: notesError,
+                          filled: true,
+                          fillColor: const Color(0xFFF8FAFC),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF2A5F7E),
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: isSaving
+                                  ? null
+                                  : () =>
+                                        Navigator.of(dialogContext).pop(false),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text('Cancel'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: isSaving
+                                  ? null
+                                  : () async {
+                                      final category = selectedReason;
+                                      final notes = notesController.text.trim();
+
+                                      if (category == null) {
+                                        setModalState(() {
+                                          reasonError =
+                                              'Please select a reason category.';
+                                        });
+                                        return;
+                                      }
+
+                                      if (notes.isEmpty) {
+                                        setModalState(() {
+                                          notesError =
+                                              'Detailed reason is required.';
+                                        });
+                                        return;
+                                      }
+
+                                      final finalReason = category == 'Others'
+                                          ? notes
+                                          : '$category - $notes';
+
+                                      try {
+                                        setModalState(() {
+                                          isSaving = true;
+                                          reasonError = null;
+                                          notesError = null;
+                                        });
+
+                                        final clinicId = await _service
+                                            .getCurrentClinicId();
+
+                                        if (clinicId == null) {
+                                          throw Exception(
+                                            'No clinic assigned to this admin account.',
+                                          );
+                                        }
+
+                                        await Supabase.instance.client
+                                            .from('patients')
+                                            .update({
+                                              'status': 'deleted',
+                                              'delete_reason': finalReason,
+                                              'deleted_at': DateTime.now()
+                                                  .toIso8601String(),
+                                            })
+                                            .eq('id', patient.id)
+                                            .eq('clinic_id', clinicId);
+
+                                        if (!mounted) return;
+                                        Navigator.of(dialogContext).pop(true);
+                                      } catch (e) {
+                                        setModalState(() {
+                                          isSaving = false;
+                                          notesError = 'Unable to save reason.';
+                                        });
+                                        _showMessage(
+                                          'Error: $e',
+                                          isError: true,
+                                        );
+                                      }
+                                    },
+                              icon: isSaving
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.delete_forever_rounded,
+                                      size: 17,
+                                    ),
+                              label: Text(isSaving ? 'Saving...' : 'Delete'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFDC2626),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    notesController.dispose();
+
+    if (deleted == true) {
+      if (!mounted) return;
+      _refreshData();
+      _showMessage('Patient deleted and reason was saved.');
     }
   }
 }

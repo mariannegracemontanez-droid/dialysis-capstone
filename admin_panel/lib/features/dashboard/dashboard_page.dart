@@ -403,6 +403,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
                   ),
                   decoration: InputDecoration(
                     hintText: 'Ex. Dialyzer supplies',
+                    hintStyle: const TextStyle(
+                      color: Color(0xFFAAB7C5),
+                      fontWeight: FontWeight.w600,
+                    ),
                     prefixIcon: const Icon(
                       Icons.inventory_2_outlined,
                       color: textMuted,
@@ -1200,157 +1204,175 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     final rawRemainingBalance = totalDonations - totalSpent;
     final remainingBalance = rawRemainingBalance < 0 ? 0 : rawRemainingBalance;
 
-    return _sectionCard(
-      title: 'Donation Funds',
-      subtitle:
-          'Track received support, clinic purchases, and remaining balance.',
-      icon: Icons.account_balance_wallet_rounded,
-      accentColor: purple,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8F5FC),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFEBDDFA)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Remaining Balance',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: textMuted,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _formatMoney(remainingBalance),
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w900,
-                    color: textDark,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _miniFundMetric(
-                        'Received',
-                        _formatMoney(totalDonations),
-                        green,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _miniFundMetric(
-                        'Spent',
-                        _formatMoney(totalSpent),
-                        orange,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 14),
-          _infoTile('Latest Donation', _formatMoney(latestAmount)),
-          _infoTile('Date Received', _formatDate(latestDate)),
-
-          const SizedBox(height: 10),
-          const Text(
-            'Remarks',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              color: textDark,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            width: double.infinity,
-            constraints: const BoxConstraints(minHeight: 68),
-            padding: const EdgeInsets.all(13),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: border),
-            ),
-            child: Text(
-              remarks == null || remarks.trim().isEmpty
-                  ? 'No remarks available.'
-                  : remarks,
-              style: const TextStyle(
-                fontSize: 12,
-                height: 1.4,
-                color: Color(0xFF4A5568),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Purchase Logs',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                    color: textDark,
-                  ),
-                ),
-              ),
-              TextButton.icon(
-                onPressed: _showAddPurchaseModal,
-                icon: const Icon(Icons.add_rounded, size: 16),
-                label: const Text('Add'),
-                style: TextButton.styleFrom(
-                  backgroundColor: green,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-
-          if (purchaseLogs.isEmpty)
+    return SizedBox(
+      height: 810,
+      child: _sectionCard(
+        title: 'Donation Funds',
+        subtitle:
+            'Track received support, clinic purchases, and remaining balance.',
+        icon: Icons.account_balance_wallet_rounded,
+        accentColor: purple,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8F5FC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFEBDDFA)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Remaining Balance',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: textMuted,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _formatMoney(remainingBalance),
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                      color: textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _miniFundMetric(
+                          'Received',
+                          _formatMoney(totalDonations),
+                          green,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _miniFundMetric(
+                          'Spent',
+                          _formatMoney(totalSpent),
+                          orange,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 14),
+            _infoTile('Latest Donation', _formatMoney(latestAmount)),
+            _infoTile('Date Received', _formatDate(latestDate)),
+
+            const SizedBox(height: 10),
+            const Text(
+              'Remarks',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: textDark,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              constraints: const BoxConstraints(minHeight: 68),
+              padding: const EdgeInsets.all(13),
               decoration: BoxDecoration(
                 color: const Color(0xFFF8FAFC),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: border),
               ),
-              child: const Text(
-                'No purchase logs yet.',
-                style: TextStyle(
-                  color: textMuted,
+              child: Text(
+                remarks == null || remarks.trim().isEmpty
+                    ? 'No remarks available.'
+                    : remarks,
+                style: const TextStyle(
                   fontSize: 12,
-                  fontWeight: FontWeight.w600,
+                  height: 1.4,
+                  color: Color(0xFF4A5568),
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-            )
-          else
-            ...purchaseLogs.map(
-              (item) => _purchaseLogTile(
-                item['item_name']?.toString() ?? 'Unnamed purchase',
-                _formatDate(item['purchase_date']),
-                item['amount'] as num,
-              ),
             ),
-        ],
+
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Purchase Logs',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      color: textDark,
+                    ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _showAddPurchaseModal,
+                  icon: const Icon(Icons.add_rounded, size: 16),
+                  label: const Text('Add'),
+                  style: TextButton.styleFrom(
+                    backgroundColor: green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            SizedBox(
+              height: 252,
+              child: purchaseLogs.isEmpty
+                  ? Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: border),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'No purchase logs yet.',
+                          style: TextStyle(
+                            color: textMuted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    )
+                  : Scrollbar(
+                      child: ListView.builder(
+                        padding: EdgeInsets.zero,
+                        physics: purchaseLogs.length > 4
+                            ? const BouncingScrollPhysics()
+                            : const NeverScrollableScrollPhysics(),
+                        itemCount: purchaseLogs.length,
+                        itemBuilder: (context, index) {
+                          final item = purchaseLogs[index];
+
+                          return _purchaseLogTile(
+                            item['item_name']?.toString() ?? 'Unnamed purchase',
+                            _formatDate(item['purchase_date']),
+                            (item['amount'] as num?) ?? 0,
+                          );
+                        },
+                      ),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1490,8 +1512,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
 
   Widget _buildOperationsPanel() {
     return _sectionCard(
-      title: 'Center Checklist',
-      subtitle: 'Daily admin priorities.',
+      title: 'Center Notes',
+      subtitle: 'Daily Head Nurse priorities.',
       icon: Icons.fact_check_rounded,
       accentColor: const Color(0xFF0EA5E9),
       child: FutureBuilder<List<Patient>>(

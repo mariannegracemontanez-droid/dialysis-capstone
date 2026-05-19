@@ -51,7 +51,7 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
     final created = await showGeneralDialog<bool>(
       context: context,
       barrierDismissible: true,
-      barrierLabel: 'Create Admin Account',
+      barrierLabel: 'Create Head Nurse Account',
       barrierColor: Colors.black.withAlpha(70),
       transitionDuration: const Duration(milliseconds: 260),
       pageBuilder: (context, animation, secondaryAnimation) {
@@ -84,7 +84,7 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
     final updated = await showGeneralDialog<bool>(
       context: context,
       barrierDismissible: true,
-      barrierLabel: 'Edit Admin Account',
+      barrierLabel: 'Edit Head Nurse Account',
       barrierColor: Colors.black.withAlpha(70),
       transitionDuration: const Duration(milliseconds: 260),
       pageBuilder: (context, animation, secondaryAnimation) {
@@ -116,7 +116,7 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('Delete admin account'),
+        title: const Text('Delete head nurse account'),
         content: Text(
           'Delete ${admin['full_name'] ?? admin['email']} permanently?',
         ),
@@ -150,7 +150,9 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
       await _refresh();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Admin account deleted successfully.')),
+        const SnackBar(
+          content: Text('Head nurse account deleted successfully.'),
+        ),
       );
     } catch (error) {
       if (!mounted) return;
@@ -419,7 +421,7 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                         border: Border.all(color: Colors.white.withAlpha(45)),
                       ),
                       child: const Text(
-                        'Admin Access Control',
+                        'Head Nurse Access Control',
                         style: TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w800,
@@ -440,7 +442,7 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      'Manage clinic admin accounts, update account details, and review admin activity history.',
+                      'Manage clinic head nurse accounts, update account details, and review head nurse activity history.',
                       style: TextStyle(
                         color: Colors.white.withAlpha(220),
                         fontSize: 15,
@@ -552,10 +554,10 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                       : Icons.admin_panel_settings_outlined,
                   title: _showLogs
                       ? 'No audit logs found'
-                      : 'No admin accounts',
+                      : 'No head nurse accounts',
                   message: _showLogs
-                      ? 'Admin activity history will appear here.'
-                      : 'Create an admin account to assign access to a clinic.',
+                      ? 'Head nurse activity history will appear here.'
+                      : 'Create head nurse account to assign access to a clinic.',
                 )
               else if (_showLogs)
                 Column(children: items.map(_buildLogsCard).toList())
@@ -566,6 +568,32 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
         ),
       ],
     );
+  }
+
+  DateTime _parseCreatedAt(Map<String, dynamic> item) {
+    final rawDate = item['created_at'] ?? item['createdAt'];
+
+    if (rawDate == null) {
+      return DateTime.fromMillisecondsSinceEpoch(0);
+    }
+
+    return DateTime.tryParse(rawDate.toString()) ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  List<Map<String, dynamic>> _sortAccountsByRecentCreated(
+    List<Map<String, dynamic>> items,
+  ) {
+    final sortedItems = List<Map<String, dynamic>>.from(items);
+
+    sortedItems.sort((a, b) {
+      final dateA = _parseCreatedAt(a);
+      final dateB = _parseCreatedAt(b);
+
+      return dateB.compareTo(dateA);
+    });
+
+    return sortedItems;
   }
 
   @override
@@ -596,7 +624,11 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
               }
 
               final items = snapshot.data ?? [];
-              return _buildContent(items);
+              final sortedItems = _showLogs
+                  ? items
+                  : _sortAccountsByRecentCreated(items);
+
+              return _buildContent(sortedItems);
             },
           ),
         ),
@@ -661,7 +693,11 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
   }
 
   Future<void> _loadClinics() async {
-    final data = await SupabaseConfig.client.from('clinics').select();
+    final data = await SupabaseConfig.client
+        .from('clinics')
+        .select()
+        .or('status.is.null,status.neq.closed')
+        .order('name', ascending: true);
 
     if (!mounted) return;
 
@@ -674,12 +710,18 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
     final data = await SupabaseConfig.client
         .from('profiles')
         .select('clinic_id')
-        .eq('role', 'admin');
+        .eq('role', 'admin')
+        .eq('status', 'active')
+        .eq('is_active', true)
+        .not('clinic_id', 'is', null);
 
     if (!mounted) return;
 
     setState(() {
-      _clinicsWithAdmin = data.map((e) => e['clinic_id'].toString()).toSet();
+      _clinicsWithAdmin = data
+          .map((e) => e['clinic_id']?.toString())
+          .whereType<String>()
+          .toSet();
     });
   }
 
@@ -808,7 +850,7 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Edit Admin Account',
+                                  'Edit Head Nurse Account',
                                   style: TextStyle(
                                     color: _dark,
                                     fontSize: 22,
@@ -933,7 +975,7 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                             ),
                           ),
                           subtitle: const Text(
-                            'Enable this only if the admin needs a new password.',
+                            'Enable this only if the head nurse needs a new password.',
                             style: TextStyle(color: _muted, fontSize: 12),
                           ),
                           value: _changePassword,
@@ -1097,7 +1139,11 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
   }
 
   Future<void> _loadClinics() async {
-    final data = await SupabaseConfig.client.from('clinics').select();
+    final data = await SupabaseConfig.client
+        .from('clinics')
+        .select()
+        .or('status.is.null,status.neq.closed')
+        .order('name', ascending: true);
 
     if (!mounted) return;
 
@@ -1110,12 +1156,18 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
     final data = await SupabaseConfig.client
         .from('profiles')
         .select('clinic_id')
-        .eq('role', 'admin');
+        .eq('role', 'admin')
+        .eq('status', 'active')
+        .eq('is_active', true)
+        .not('clinic_id', 'is', null);
 
     if (!mounted) return;
 
     setState(() {
-      _clinicsWithAdmin = data.map((e) => e['clinic_id'].toString()).toSet();
+      _clinicsWithAdmin = data
+          .map((e) => e['clinic_id']?.toString())
+          .whereType<String>()
+          .toSet();
     });
   }
 
@@ -1274,7 +1326,7 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Create Admin Account',
+                                  'Create Head Nurse Account',
                                   style: TextStyle(
                                     color: _dark,
                                     fontSize: 22,
@@ -1283,7 +1335,7 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                                 ),
                                 SizedBox(height: 4),
                                 Text(
-                                  'Assign a clinic admin and create login access.',
+                                  'Assign clinic\'s head nurse and create login access.',
                                   style: TextStyle(color: _muted, fontSize: 13),
                                 ),
                               ],
@@ -1318,7 +1370,7 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                             SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                'Only clinics without an existing admin can be selected.',
+                                'Only clinics without an existing head nurse account can be selected.',
                                 style: TextStyle(
                                   color: _muted,
                                   fontSize: 13,
@@ -1360,11 +1412,11 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                           final hasAdmin = _clinicsWithAdmin.contains(clinicId);
 
                           return DropdownMenuItem<String>(
-                            value: hasAdmin ? null : clinicId,
+                            value: clinicId,
                             enabled: !hasAdmin,
                             child: Text(
                               '${clinic['name'] ?? 'Unnamed clinic'}'
-                              '${hasAdmin ? ' (Has Admin)' : ''}',
+                              '${hasAdmin ? ' (Has Head Nurse Account)' : ''}',
                             ),
                           );
                         }).toList(),
@@ -1383,7 +1435,7 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                         decoration: _inputDecoration(
                           label: 'Full Name',
                           icon: Icons.person_outline_rounded,
-                          hint: 'Enter admin full name',
+                          hint: 'Enter head nurse full name',
                         ),
                         validator: (value) =>
                             _requiredValidator(value, 'Enter full name'),
@@ -1396,7 +1448,7 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                         decoration: _inputDecoration(
                           label: 'Email Address',
                           icon: Icons.email_outlined,
-                          hint: 'Enter admin email',
+                          hint: 'Enter head nurse email',
                         ),
                         validator: (value) {
                           final email = value?.trim() ?? '';

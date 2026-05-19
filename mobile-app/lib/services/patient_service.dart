@@ -44,10 +44,10 @@ class PatientService {
   ) async {
     final response = await _supabase
         .from('patients')
-        .select('id, clinic_id, status, created_at')
+        .select('id, clinic_id, status, decline_reason, created_at')
         .eq('profile_id', profileId)
         .not('clinic_id', 'is', null)
-        .eq('status', 'pending')
+        .inFilter('status', ['pending', 'declined'])
         .order('created_at', ascending: false);
 
     final rows = List<Map<String, dynamic>>.from(response as List<dynamic>);

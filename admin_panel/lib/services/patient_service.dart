@@ -1,4 +1,3 @@
-// import 'package:admin_panel/features/dashboard/dashboard_page.dart' show supabase;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/patient.dart';
 import 'supabase_config.dart';
@@ -21,7 +20,6 @@ class PatientService {
 
   Future<List<Patient>> getPatientsByStatus(String status) async {
     final clinicId = await getCurrentClinicId();
-
     if (clinicId == null) return [];
 
     final response = await client
@@ -36,7 +34,7 @@ class PatientService {
         .toList();
   }
 
-Future<Map<String, dynamic>?> getCurrentAdminInfo() async {
+  Future<Map<String, dynamic>?> getCurrentAdminInfo() async {
     final user = client.auth.currentUser;
     if (user == null) return null;
 
@@ -54,34 +52,36 @@ Future<Map<String, dynamic>?> getCurrentAdminInfo() async {
     };
   }
 
-Future<void> updatePatientInfo({
-  required String patientId,
-  required String email,
-  required String phone,
-  required String homeAddress,
-  required String emergencyContactName,
-  required String emergencyContactNumber,
-}) async {
-  final clinicId = await getCurrentClinicId();
+  Future<void> updatePatientInfo({
+    required String patientId,
+    required String email,
+    required String phone,
+    required String homeAddress,
+    required String emergencyContactName,
+    required String emergencyContactNumber,
+  }) async {
+    final clinicId = await getCurrentClinicId();
 
-  if (clinicId == null) {
-    throw Exception('No clinic assigned to this admin account.');
+    if (clinicId == null) {
+      throw Exception('No clinic assigned to this admin account.');
+    }
+
+    await client
+        .from('patients')
+        .update({
+          'email': email,
+          'phone': phone,
+          'home_address': homeAddress,
+          'emergency_contact_name': emergencyContactName,
+          'emergency_contact_number': emergencyContactNumber,
+        })
+        .eq('id', patientId)
+        .eq('clinic_id', clinicId);
   }
 
-  await client
-      .from('patients')
-      .update({
-        'email': email,
-        'phone': phone,
-        'home_address': homeAddress,
-        'emergency_contact_name': emergencyContactName,
-        'emergency_contact_number': emergencyContactNumber,
-      })
-      .eq('id', patientId)
-      .eq('clinic_id', clinicId);
-}
-
-  Future<List<Map<String, dynamic>>> getPatientMedicalDocs(String patientId) async {
+  Future<List<Map<String, dynamic>>> getPatientMedicalDocs(
+    String patientId,
+  ) async {
     final files = await client.storage
         .from('medical_docs')
         .list(path: patientId);
@@ -103,12 +103,11 @@ Future<void> updatePatientInfo({
       });
     }
 
-  return docs;
-}
+    return docs;
+  }
 
   Future<List<Patient>> getAllPatients() async {
     final clinicId = await getCurrentClinicId();
-
     if (clinicId == null) return [];
 
     final response = await client
@@ -144,11 +143,47 @@ Future<void> updatePatientInfo({
     await updatePatientStatus(patientId, 'declined');
   }
 
+  Future<void> declinePatientWithReason({
+    required String patientId,
+    required String reason,
+  }) async {
+    final clinicId = await getCurrentClinicId();
+
+    if (clinicId == null) {
+      throw Exception('No clinic assigned to this admin account.');
+    }
+
+    await client
+        .from('patients')
+        .update({'status': 'declined', 'decline_reason': reason})
+        .eq('id', patientId)
+        .eq('clinic_id', clinicId);
+  }
+
+  Future<void> deletePatientWithReason({
+    required String patientId,
+    required String reason,
+  }) async {
+    final clinicId = await getCurrentClinicId();
+
+    if (clinicId == null) {
+      throw Exception('No clinic assigned to this admin account.');
+    }
+
+    await client
+        .from('patients')
+        .update({'status': 'deleted', 'delete_reason': reason})
+        .eq('id', patientId)
+        .eq('clinic_id', clinicId);
+  }
+
   Future<void> activatePatient(String patientId) async {
     await updatePatientStatus(patientId, 'active');
   }
 
-  Future<List<Map<String, dynamic>>> getPatientSchedule(String patientId) async {
+  Future<List<Map<String, dynamic>>> getPatientSchedule(
+    String patientId,
+  ) async {
     try {
       final response = await client
           .from('weekly_schedules')
@@ -156,18 +191,13 @@ Future<void> updatePatientInfo({
           .eq('patient_id', patientId)
           .maybeSingle();
 
-      if (response == null) {
-        return [];
-      }
+      if (response == null) return [];
 
       return [
-        {
-          'scheduled_days': response['scheduled_days'] ?? [],
-        }
+        {'scheduled_days': response['scheduled_days'] ?? []},
       ];
     } catch (e) {
       throw Exception('Failed to load patient schedule: $e');
     }
   }
-
 }

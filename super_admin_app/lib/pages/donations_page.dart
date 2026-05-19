@@ -1,10 +1,9 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/donation_record.dart';
-import '../models/donation_summary.dart';
 import '../models/fund_distribution.dart';
 import 'package:super_admin_app/services/donation_service.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:fl_chart/fl_chart.dart';
 
 int pendingCount = 0;
 int verifiedCount = 0;
@@ -22,12 +21,14 @@ class _DonationsPageState extends State<DonationsPage> {
 
   bool _isLoading = true;
   List<DonationRecord> _donations = [];
-  List<DonationSummary> _summary = [];
   List<FundDistribution> _fundDistributions = [];
   List<Map<String, dynamic>> _centers = [];
+
+  double _totalVerifiedDonations = 0;
+  double _totalDistributedFunds = 0;
   double _availableFunds = 0;
 
-  Map<String, double> centerTotals = {};
+  final Map<String, double> centerTotals = {};
 
   static const Color _primary = Color(0xFF0F719F);
   static const Color _dark = Color(0xFF0F3A55);
@@ -36,6 +37,12 @@ class _DonationsPageState extends State<DonationsPage> {
   static const Color _success = Color(0xFF2E7D32);
   static const Color _danger = Color(0xFFDE4D4D);
   static const Color _warning = Color(0xFFFB8B3C);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDonations();
+  }
 
   String _formatCompactCurrency(double amount) {
     if (amount >= 1000000) {
@@ -49,20 +56,13 @@ class _DonationsPageState extends State<DonationsPage> {
     return '₱${amount.toStringAsFixed(0)}';
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _loadDonations();
-  }
-
   Future<void> _loadDonations() async {
-    setState(() {
-      _isLoading = true;
-    });
+    if (mounted) {
+      setState(() => _isLoading = true);
+    }
 
     try {
       final donations = await _service.fetchDonations();
-      final summary = await _service.fetchDonationSummary();
       final distributions = await _service.fetchFundDistributions();
       final centers = await _service.fetchCenters();
       final totalDonations = await _service.fetchTotalDonations();
@@ -71,33 +71,34 @@ class _DonationsPageState extends State<DonationsPage> {
       if (!mounted) return;
 
       setState(() {
-        _availableFunds = totalDonations - totalDistributed;
         _donations = donations;
+        _fundDistributions = distributions;
+        _centers = centers;
+
+        _totalVerifiedDonations = totalDonations;
+        _totalDistributedFunds = totalDistributed;
+        _availableFunds = (totalDonations - totalDistributed)
+            .clamp(0, double.infinity)
+            .toDouble();
+
         pendingCount = donations.where((d) => d.status == 'pending').length;
         verifiedCount = donations.where((d) => d.status == 'verified').length;
         rejectedCount = donations.where((d) => d.status == 'rejected').length;
-        _summary = summary;
-        _fundDistributions = distributions;
-        centerTotals.clear();
 
+        centerTotals.clear();
         for (final item in distributions) {
           centerTotals[item.centerName] =
               (centerTotals[item.centerName] ?? 0.0) + item.amount.toDouble();
         }
-
-        _centers = centers;
       });
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load donations: $error')),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load donations: $error')),
+      );
     } finally {
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
       }
     }
   }
@@ -164,7 +165,7 @@ class _DonationsPageState extends State<DonationsPage> {
                                   ),
                                   SizedBox(height: 4),
                                   Text(
-                                    'Allocate available funds to a dialysis center.',
+                                    'Allocate verified donation funds to a dialysis center.',
                                     style: TextStyle(
                                       fontSize: 13,
                                       color: _muted,
@@ -193,7 +194,7 @@ class _DonationsPageState extends State<DonationsPage> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Available Funds: ₱${_availableFunds.toStringAsFixed(0)}',
+                                  'Available Funds: ${_formatCompactCurrency(_availableFunds)}',
                                   style: const TextStyle(
                                     color: _dark,
                                     fontWeight: FontWeight.w800,
@@ -205,11 +206,13 @@ class _DonationsPageState extends State<DonationsPage> {
                         ),
                         const SizedBox(height: 18),
                         DropdownButtonFormField<Map<String, dynamic>>(
-                          initialValue: selectedCenter,
+                          value: selectedCenter,
                           items: _centers.map((center) {
                             return DropdownMenuItem<Map<String, dynamic>>(
                               value: center,
-                              child: Text(center['name']),
+                              child: Text(
+                                center['name']?.toString() ?? 'Unnamed Center',
+                              ),
                             );
                           }).toList(),
                           decoration: _inputDecoration(
@@ -217,9 +220,7 @@ class _DonationsPageState extends State<DonationsPage> {
                             Icons.local_hospital_outlined,
                           ),
                           onChanged: (value) {
-                            setDialogState(() {
-                              selectedCenter = value;
-                            });
+                            setDialogState(() => selectedCenter = value);
                           },
                           validator: (value) =>
                               value == null ? 'Select a center' : null,
@@ -252,41 +253,14 @@ class _DonationsPageState extends State<DonationsPage> {
                               onPressed: isSaving
                                   ? null
                                   : () async {
-                                      if (!formKey.currentState!.validate()) {
+                                      if (!formKey.currentState!.validate())
                                         return;
-                                      }
 
-                                      final amountText = amountController.text
-                                          .trim();
+                                      final amount = double.tryParse(
+                                        amountController.text.trim(),
+                                      );
 
-                                      if (amountText.isEmpty) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Enter amount'),
-                                          ),
-                                        );
-                                        return;
-                                      }
-
-                                      double amount;
-                                      try {
-                                        amount = double.parse(amountText);
-                                      } catch (_) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Invalid amount format',
-                                            ),
-                                          ),
-                                        );
-                                        return;
-                                      }
-
-                                      if (amount <= 0) {
+                                      if (amount == null || amount <= 0) {
                                         ScaffoldMessenger.of(
                                           context,
                                         ).showSnackBar(
@@ -294,17 +268,6 @@ class _DonationsPageState extends State<DonationsPage> {
                                             content: Text(
                                               'Enter a valid amount',
                                             ),
-                                          ),
-                                        );
-                                        return;
-                                      }
-
-                                      if (selectedCenter == null) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Select a center'),
                                           ),
                                         );
                                         return;
@@ -323,19 +286,20 @@ class _DonationsPageState extends State<DonationsPage> {
                                         return;
                                       }
 
-                                      setDialogState(() {
-                                        isSaving = true;
-                                      });
+                                      setDialogState(() => isSaving = true);
 
                                       try {
                                         await _service.createFundDistribution(
-                                          clinicId: selectedCenter!['id'],
-                                          centerName: selectedCenter!['name'],
+                                          clinicId: selectedCenter!['id']
+                                              .toString(),
+                                          centerName: selectedCenter!['name']
+                                              .toString(),
                                           amount: amount,
                                           remarks: remarksController.text
                                               .trim(),
                                         );
 
+                                        if (!context.mounted) return;
                                         Navigator.pop(context);
                                         await _loadDonations();
 
@@ -359,9 +323,7 @@ class _DonationsPageState extends State<DonationsPage> {
                                           ),
                                         );
                                       } finally {
-                                        setDialogState(() {
-                                          isSaving = false;
-                                        });
+                                        setDialogState(() => isSaving = false);
                                       }
                                     },
                               icon: isSaving
@@ -436,14 +398,9 @@ class _DonationsPageState extends State<DonationsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final totalDonations = _summary.fold<double>(
-      0,
-      (sum, item) => sum + item.totalAmount,
-    );
-
     final totalRecords = _donations.length;
+    final verifiedRecords = verifiedCount;
     final distributionCount = _fundDistributions.length;
-    final totalDistributed = totalDonations - _availableFunds;
     final hasPieData = pendingCount + verifiedCount + rejectedCount > 0;
 
     final double maxY = centerTotals.isNotEmpty
@@ -482,8 +439,10 @@ class _DonationsPageState extends State<DonationsPage> {
                         child: _InfoCard(
                           icon: Icons.volunteer_activism_outlined,
                           label: 'Total Donations',
-                          value: _formatCompactCurrency(totalDonations),
-                          subtitle: '$totalRecords records collected',
+                          value: _formatCompactCurrency(
+                            _totalVerifiedDonations,
+                          ),
+                          subtitle: '$verifiedRecords verified donation(s)',
                           color: _primary,
                         ),
                       ),
@@ -493,7 +452,7 @@ class _DonationsPageState extends State<DonationsPage> {
                           icon: Icons.account_balance_outlined,
                           label: 'Available Funds',
                           value: _formatCompactCurrency(_availableFunds),
-                          subtitle: 'Ready for distribution',
+                          subtitle: 'Verified funds minus distributed amount',
                           color: _success,
                         ),
                       ),
@@ -502,7 +461,7 @@ class _DonationsPageState extends State<DonationsPage> {
                         child: _InfoCard(
                           icon: Icons.send_time_extension_outlined,
                           label: 'Distributed',
-                          value: _formatCompactCurrency(totalDistributed),
+                          value: _formatCompactCurrency(_totalDistributedFunds),
                           subtitle: '$distributionCount distribution logs',
                           color: _warning,
                         ),
@@ -513,7 +472,7 @@ class _DonationsPageState extends State<DonationsPage> {
                           icon: Icons.pending_actions_outlined,
                           label: 'Pending Review',
                           value: pendingCount.toString(),
-                          subtitle: 'Need admin action',
+                          subtitle: '$totalRecords total donation record(s)',
                           color: _danger,
                         ),
                       ),
@@ -531,7 +490,7 @@ class _DonationsPageState extends State<DonationsPage> {
                         child: _SectionCard(
                           title: 'Donation Status Overview',
                           subtitle:
-                              'Monitor pending, approved, and rejected donation submissions.',
+                              'Monitor pending, verified, and rejected donation submissions.',
                           icon: Icons.donut_large_rounded,
                           child: SizedBox(
                             height: 330,
@@ -564,8 +523,8 @@ class _DonationsPageState extends State<DonationsPage> {
                                                 value: verifiedCount.toDouble(),
                                                 title: verifiedCount == 0
                                                     ? ''
-                                                    : 'Approved',
-                                                color: _primary,
+                                                    : 'Verified',
+                                                color: _success,
                                                 radius: 76,
                                                 titleStyle: const TextStyle(
                                                   color: Colors.white,
@@ -602,8 +561,8 @@ class _DonationsPageState extends State<DonationsPage> {
                                             value: pendingCount.toString(),
                                           ),
                                           _LegendChip(
-                                            label: 'Approved',
-                                            color: _primary,
+                                            label: 'Verified',
+                                            color: _success,
                                             value: verifiedCount.toString(),
                                           ),
                                           _LegendChip(
@@ -691,7 +650,6 @@ class _DonationsPageState extends State<DonationsPage> {
                                             getTitlesWidget: (value, meta) {
                                               final keys = centerTotals.keys
                                                   .toList();
-
                                               if (value.toInt() >=
                                                   keys.length) {
                                                 return const SizedBox();
@@ -857,7 +815,7 @@ class _DonationsPageState extends State<DonationsPage> {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      'Allocate donations to centers, review submissions, and keep every transaction transparent.',
+                      'Allocate verified donations to centers and keep every distribution transparent.',
                       style: TextStyle(
                         fontSize: 15,
                         color: Colors.white.withAlpha(215),
@@ -893,9 +851,7 @@ class _DonationsPageState extends State<DonationsPage> {
   }
 
   Widget _buildDonationRecords() {
-    if (_isLoading) {
-      return const _LoadingBlock();
-    }
+    if (_isLoading) return const _LoadingBlock();
 
     if (_donations.isEmpty) {
       return const _EmptyState(
@@ -933,7 +889,7 @@ class _DonationsPageState extends State<DonationsPage> {
                 children: [
                   Expanded(
                     child: _DonationGroup(
-                      title: 'Approved Donations',
+                      title: 'Verified Donations',
                       count: approved.length,
                       color: _success,
                       donations: approved,
@@ -960,7 +916,7 @@ class _DonationsPageState extends State<DonationsPage> {
               Column(
                 children: [
                   _DonationGroup(
-                    title: 'Approved Donations',
+                    title: 'Verified Donations',
                     count: approved.length,
                     color: _success,
                     donations: approved,
@@ -987,9 +943,7 @@ class _DonationsPageState extends State<DonationsPage> {
   }
 
   Widget _buildAuditLog() {
-    if (_isLoading) {
-      return const _LoadingBlock();
-    }
+    if (_isLoading) return const _LoadingBlock();
 
     if (_fundDistributions.isEmpty) {
       return const _EmptyState(
@@ -999,90 +953,80 @@ class _DonationsPageState extends State<DonationsPage> {
       );
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return SizedBox(
-          width: double.infinity,
-          child: Table(
-            columnWidths: const {
-              0: FlexColumnWidth(1.1),
-              1: FlexColumnWidth(2.2),
-              2: FlexColumnWidth(1.2),
-              3: FlexColumnWidth(3.0),
-              4: FlexColumnWidth(1.2),
-            },
-            border: const TableBorder(
-              horizontalInside: BorderSide(color: Color(0xFFD8DEE6), width: 1),
-            ),
+    return SizedBox(
+      width: double.infinity,
+      child: Table(
+        columnWidths: const {
+          0: FlexColumnWidth(1.1),
+          1: FlexColumnWidth(2.2),
+          2: FlexColumnWidth(1.2),
+          3: FlexColumnWidth(3.0),
+          4: FlexColumnWidth(1.2),
+        },
+        border: const TableBorder(
+          horizontalInside: BorderSide(color: Color(0xFFD8DEE6), width: 1),
+        ),
+        children: [
+          const TableRow(
+            decoration: BoxDecoration(color: Color(0xFFF4F9FC)),
             children: [
-              TableRow(
-                decoration: const BoxDecoration(
-                  color: Color(0xFFF4F9FC),
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(18),
-                    topRight: Radius.circular(18),
-                  ),
+              _AuditHeaderCell('Date'),
+              _AuditHeaderCell('Center'),
+              _AuditHeaderCell('Amount'),
+              _AuditHeaderCell('Remarks'),
+              _AuditHeaderCell('Status'),
+            ],
+          ),
+          ..._fundDistributions.map((entry) {
+            return TableRow(
+              children: [
+                _AuditBodyCell(
+                  '${entry.createdAt.year}-${entry.createdAt.month.toString().padLeft(2, '0')}-${entry.createdAt.day.toString().padLeft(2, '0')}',
                 ),
-                children: const [
-                  _AuditHeaderCell('Date'),
-                  _AuditHeaderCell('Center'),
-                  _AuditHeaderCell('Amount'),
-                  _AuditHeaderCell('Remarks'),
-                  _AuditHeaderCell('Status'),
-                ],
-              ),
-              ..._fundDistributions.map((entry) {
-                return TableRow(
-                  children: [
-                    _AuditBodyCell(
-                      '${entry.createdAt.year}-${entry.createdAt.month.toString().padLeft(2, '0')}-${entry.createdAt.day.toString().padLeft(2, '0')}',
-                    ),
-                    _AuditBodyCell(entry.centerName, isBold: true),
-                    _AuditBodyCell(
-                      '₱${entry.amount.toStringAsFixed(0)}',
-                      isBold: true,
-                      color: _primary,
-                    ),
-                    _AuditBodyCell(
-                      entry.remarks.isEmpty ? 'No remarks' : entry.remarks,
-                      maxLines: 2,
-                    ),
-                    Padding(
+                _AuditBodyCell(entry.centerName, isBold: true),
+                _AuditBodyCell(
+                  '₱${entry.amount.toStringAsFixed(0)}',
+                  isBold: true,
+                  color: _primary,
+                ),
+                _AuditBodyCell(
+                  entry.remarks.isEmpty ? 'No remarks' : entry.remarks,
+                  maxLines: 2,
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 14,
+                        horizontal: 10,
+                        vertical: 7,
                       ),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 7,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _primary.withAlpha(22),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            entry.status,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: _primary,
-                              fontSize: 12,
-                            ),
-                          ),
+                      decoration: BoxDecoration(
+                        color: _primary.withAlpha(22),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        entry.status,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: _primary,
+                          fontSize: 12,
                         ),
                       ),
                     ),
-                  ],
-                );
-              }),
-            ],
-          ),
-        );
-      },
+                  ),
+                ),
+              ],
+            );
+          }),
+        ],
+      ),
     );
   }
 
@@ -1261,10 +1205,9 @@ class _DonationGroup extends StatelessWidget {
                   ? const BouncingScrollPhysics()
                   : const NeverScrollableScrollPhysics(),
               itemCount: donations.length,
-              separatorBuilder: (_, _) => const SizedBox(height: gap),
+              separatorBuilder: (_, __) => const SizedBox(height: gap),
               itemBuilder: (context, index) {
                 final donation = donations[index];
-
                 return SizedBox(
                   height: isScrollable ? cardHeight : null,
                   child: _DonationRow(
@@ -1353,7 +1296,7 @@ class _SectionCard extends StatelessWidget {
                   ],
                 ),
               ),
-              ?trailing,
+              if (trailing != null) trailing!,
             ],
           ),
           const SizedBox(height: 24),

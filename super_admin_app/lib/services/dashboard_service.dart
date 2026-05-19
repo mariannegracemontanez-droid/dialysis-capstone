@@ -5,6 +5,8 @@ import '../models/donation_summary.dart';
 import '../models/notification_item.dart';
 
 class DashboardService {
+  final SupabaseClient _supabase = SupabaseConfig.client;
+
   String computeStatus(int availableSlots) {
     if (availableSlots == 0) return 'full';
     if (availableSlots <= 2) return 'busy';
@@ -19,39 +21,58 @@ class DashboardService {
         .toList();
   }
 
-  final SupabaseClient _supabase = SupabaseConfig.client;
+  bool _isVerifiedDonation(Map<String, dynamic> record) {
+    final status = record['status']?.toString().toLowerCase().trim() ?? '';
+    return status == 'verified';
+  }
+
+  int _parseDonationAmount(Map<String, dynamic> record) {
+    final amount = double.tryParse(record['amount']?.toString() ?? '0') ?? 0.0;
+    return amount.toInt();
+  }
+
+  Future<int> fetchVerifiedDonationTotal() async {
+    final response = await _supabase.from('donations').select('amount, status');
+
+    final donations = response as List<dynamic>;
+
+    int totalDonations = 0;
+
+    for (final item in donations) {
+      final record = item as Map<String, dynamic>;
+
+      if (!_isVerifiedDonation(record)) continue;
+
+      totalDonations += _parseDonationAmount(record);
+    }
+
+    return totalDonations;
+  }
 
   Future<Map<String, int>> fetchOverviewStats() async {
     final patients = await _supabase.from('patients').select('id');
     final appointments = await _supabase.from('appointments').select('id');
     final centers = await _supabase.from('clinics').select('id');
 
-    print('Centers response: $centers');
-    // <-- dito mo ilalagay
-    final donations = await _supabase.from('donations').select('amount');
-
-    final totalDonations = (donations as List<dynamic>)
-        .map(
-          (item) =>
-              double.tryParse(
-                (item as Map<String, dynamic>)['amount']?.toString() ?? '0',
-              ) ??
-              0,
-        )
-        .fold<double>(0, (value, element) => value + element);
+    final totalDonations = await fetchVerifiedDonationTotal();
 
     return {
       'patients': (patients as List).length,
       'appointments': (appointments as List).length,
       'centers': (centers as List).length,
-      'donations': totalDonations.toInt(),
+      'donations': totalDonations,
     };
   }
 
   Future<List<CenterModel>> fetchCenters() async {
-    final response = await _supabase.from('clinics').select();
+    final response = await _supabase
+        .from('clinics')
+        .select()
+        .or('status.is.null,status.neq.closed')
+        .order('created_at', ascending: false);
 
     final list = response as List<dynamic>;
+
     return list
         .map(
           (postgres) => CenterModel.fromJson(postgres as Map<String, dynamic>),
@@ -65,27 +86,22 @@ class DashboardService {
         .select()
         .order('created_at', ascending: false)
         .limit(6);
+
     final list = response as List<dynamic>;
+
     return list
         .map((item) => NotificationItem.fromJson(item as Map<String, dynamic>))
         .toList();
   }
 
   Future<List<DonationSummary>> fetchDonationSummary() async {
-    final response = await _supabase.from('donations').select('amount');
-
-    final list = response as List<dynamic>;
-    double totalAmount = 0;
-
-    for (final item in list) {
-      final record = item as Map<String, dynamic>;
-      final amount =
-          double.tryParse(record['amount']?.toString() ?? '0') ?? 0.0;
-      totalAmount += amount;
-    }
+    final totalDonations = await fetchVerifiedDonationTotal();
 
     return [
-      DonationSummary(centerName: 'Total Donations', totalAmount: totalAmount),
+      DonationSummary(
+        centerName: 'Total Verified Donations',
+        totalAmount: totalDonations.toDouble(),
+      ),
     ];
   }
 
@@ -103,14 +119,15 @@ class DashboardService {
     required String contactNumber,
   }) async {
     final status = computeStatus(slotAvailable);
+
     await _supabase.from('clinics').insert({
       'name': name,
       'address': address,
       'city': city,
-      'requirements': _parseRequirements(requirements), // ✅ ARRAY FIX
+      'requirements': _parseRequirements(requirements),
       'latitude': latitude,
       'longitude': longitude,
-      'slots_available': slotAvailable, // ✅ CORRECT COLUMN
+      'slots_available': slotAvailable,
       'machine': machines,
       'shifts': shifts,
       'status': status,
@@ -134,6 +151,7 @@ class DashboardService {
     required String contactNumber,
   }) async {
     final status = computeStatus(slotAvailable);
+
     await _supabase
         .from('clinics')
         .update({

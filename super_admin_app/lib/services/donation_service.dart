@@ -7,7 +7,6 @@ import '../models/fund_distribution.dart';
 class DonationService {
   final SupabaseClient _supabase = SupabaseConfig.client;
 
-  // 🔥 FETCH ALL DONATIONS
   Future<List<DonationRecord>> fetchDonations() async {
     final response = await _supabase
         .from('donations')
@@ -17,11 +16,10 @@ class DonationService {
     final list = response as List<dynamic>;
 
     return list
-        .map((e) => DonationRecord.fromJson(e))
+        .map((item) => DonationRecord.fromJson(item as Map<String, dynamic>))
         .toList();
   }
 
-  // 🔥 TOTAL VERIFIED DONATIONS
   Future<double> fetchTotalDonations() async {
     final data = await _supabase
         .from('donations')
@@ -31,58 +29,52 @@ class DonationService {
     double total = 0;
 
     for (final item in data) {
-      total += double.tryParse(item['amount'].toString()) ?? 0;
+      final amount = double.tryParse(item['amount']?.toString() ?? '0') ?? 0.0;
+      total += amount;
     }
 
     return total;
   }
 
-  // 🔥 TOTAL DISTRIBUTED
   Future<double> fetchTotalDistributed() async {
-    final data = await _supabase
-        .from('fund_distributions')
-        .select('amount');
+    final data = await _supabase.from('fund_distributions').select('amount');
 
     double total = 0;
 
     for (final item in data) {
-      total += double.tryParse(item['amount'].toString()) ?? 0;
+      final amount = double.tryParse(item['amount']?.toString() ?? '0') ?? 0.0;
+      total += amount;
     }
 
     return total;
   }
 
-  // 🔥 SUMMARY (FOR GRAPH / UI)
   Future<List<DonationSummary>> fetchDonationSummary() async {
     final totalDonations = await fetchTotalDonations();
     final totalDistributed = await fetchTotalDistributed();
-
-    final remaining = totalDonations - totalDistributed;
+    final remaining = (totalDonations - totalDistributed)
+        .clamp(0, double.infinity)
+        .toDouble();
 
     return [
-      DonationSummary(
-        centerName: 'Available Funds',
-        totalAmount: remaining,
-      ),
+      DonationSummary(centerName: 'Available Funds', totalAmount: remaining),
     ];
   }
 
-  // 🔥 DONOR COUNT
   Future<int> fetchDonorCount() async {
     final response = await _supabase.from('donors').select('id');
     return (response as List).length;
   }
 
-  // 🔥 FETCH CENTER NAMES
   Future<List<Map<String, dynamic>>> fetchCenters() async {
     final response = await _supabase
         .from('clinics')
-        .select('id, name');
+        .select('id, name')
+        .order('name', ascending: true);
 
     return List<Map<String, dynamic>>.from(response);
   }
 
-  // 🔥 FETCH DISTRIBUTIONS (AUDIT LOG)
   Future<List<FundDistribution>> fetchFundDistributions() async {
     final response = await _supabase
         .from('fund_distributions')
@@ -92,20 +84,18 @@ class DonationService {
     final list = response as List<dynamic>;
 
     return list
-        .map((item) =>
-            FundDistribution.fromJson(item as Map<String, dynamic>))
+        .map((item) => FundDistribution.fromJson(item as Map<String, dynamic>))
         .toList();
   }
 
-  // 🔥 CREATE DISTRIBUTION
   Future<void> createFundDistribution({
     required String clinicId,
     required String centerName,
     required double amount,
     required String remarks,
   }) async {
-
     final adminId = _supabase.auth.currentUser?.id;
+    final now = DateTime.now().toIso8601String();
 
     await _supabase.from('fund_distributions').insert({
       'clinic_id': clinicId,
@@ -114,11 +104,11 @@ class DonationService {
       'remarks': remarks,
       'status': 'Distributed',
       'distributed_by': adminId,
-      'created_at': DateTime.now().toIso8601String(),
+      'distribution_date': now,
+      'created_at': now,
     });
   }
 
-  // 🔥 CREATE DONATION (OPTIONAL)
   Future<void> createDonation({
     required String donorName,
     required String clinicName,
@@ -126,15 +116,13 @@ class DonationService {
     required String status,
   }) async {
     await _supabase.from('donations').insert({
-      'donor_name': donorName,
-      'clinic_name': clinicName,
+      'name': donorName,
       'amount': amount,
       'status': status,
       'created_at': DateTime.now().toIso8601String(),
     });
   }
 
-  // 🔥 DELETE DONATION
   Future<void> deleteDonation(String donationId) async {
     await _supabase.from('donations').delete().eq('id', donationId);
   }

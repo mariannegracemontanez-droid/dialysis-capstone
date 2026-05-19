@@ -9,6 +9,63 @@ import '../config/supabase_config.dart';
 import '../services/profile_service.dart';
 import 'dart:ui';
 
+bool isCenterOpenByOperatingHours(String? operatingHours) {
+  if (operatingHours == null || operatingHours.trim().isEmpty) return false;
+
+  try {
+    final normalized = operatingHours
+        .replaceAll('–', '-')
+        .replaceAll('—', '-')
+        .replaceAll(RegExp(r'\s+to\s+', caseSensitive: false), '-')
+        .replaceAll(RegExp(r'\s+until\s+', caseSensitive: false), '-');
+
+    final parts = normalized.split('-');
+    if (parts.length < 2) return false;
+
+    final openTime = _parseOperatingTime(parts[0]);
+    final closeTime = _parseOperatingTime(parts[1]);
+    final now = TimeOfDay.now();
+
+    final nowMinutes = (now.hour * 60) + now.minute;
+    final openMinutes = (openTime.hour * 60) + openTime.minute;
+    final closeMinutes = (closeTime.hour * 60) + closeTime.minute;
+
+    if (openMinutes == closeMinutes) return true;
+
+    // Handles overnight schedules like 8:00 PM - 6:00 AM.
+    if (closeMinutes < openMinutes) {
+      return nowMinutes >= openMinutes || nowMinutes <= closeMinutes;
+    }
+
+    return nowMinutes >= openMinutes && nowMinutes <= closeMinutes;
+  } catch (_) {
+    return false;
+  }
+}
+
+TimeOfDay _parseOperatingTime(String value) {
+  final cleaned = value.trim().toUpperCase();
+  final regex = RegExp(r'(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?');
+  final match = regex.firstMatch(cleaned);
+
+  if (match == null) {
+    throw FormatException('Invalid operating hours format: $value');
+  }
+
+  var hour = int.parse(match.group(1)!);
+  final minute = int.tryParse(match.group(2) ?? '0') ?? 0;
+  final period = match.group(3);
+
+  if (period == 'PM' && hour != 12) hour += 12;
+  if (period == 'AM' && hour == 12) hour = 0;
+
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    throw FormatException('Invalid operating hours format: $value');
+  }
+
+  return TimeOfDay(hour: hour, minute: minute);
+}
+
 class ClinicsPage extends StatefulWidget {
   final VoidCallback? onUpdated;
 
@@ -41,6 +98,8 @@ class _ClinicsPageState extends State<ClinicsPage> {
 
     try {
       final clinics = await _service.fetchCenters();
+      clinics.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
       if (!mounted) return;
 
       setState(() => _clinics = clinics);
@@ -626,11 +685,18 @@ class _ClinicsPageState extends State<ClinicsPage> {
                                               );
                                             }
 
+                                            if (!mounted) return;
+
+                                            Navigator.of(context).pop();
+
+                                            await Future.delayed(
+                                              const Duration(milliseconds: 180),
+                                            );
+
                                             await _loadClinics();
                                             widget.onUpdated?.call();
 
                                             if (!mounted) return;
-                                            Navigator.pop(context);
 
                                             ScaffoldMessenger.of(
                                               context,
@@ -654,9 +720,11 @@ class _ClinicsPageState extends State<ClinicsPage> {
                                               ),
                                             );
                                           } finally {
-                                            setDialogState(
-                                              () => isSaving = false,
-                                            );
+                                            try {
+                                              setDialogState(
+                                                () => isSaving = false,
+                                              );
+                                            } catch (_) {}
                                           }
                                         },
                                   icon: isSaving
@@ -752,7 +820,10 @@ class _ClinicsPageState extends State<ClinicsPage> {
           .eq('role', 'admin')
           .select();
 
-      await SupabaseConfig.client.from('clinics').delete().eq('id', clinic.id);
+      await SupabaseConfig.client
+          .from('clinics')
+          .update({'status': 'closed'})
+          .eq('id', clinic.id);
 
       await ProfileService().logAction(
         action: 'delete_clinic',
@@ -782,7 +853,9 @@ class _ClinicsPageState extends State<ClinicsPage> {
   @override
   Widget build(BuildContext context) {
     final clinics = _filteredClinics;
-    final openCount = _clinics.where((clinic) => clinic.isOpen).length;
+    final openCount = _clinics
+        .where((clinic) => isCenterOpenByOperatingHours(clinic.operatingHours))
+        .length;
     final totalSlots = _clinics.fold<int>(
       0,
       (sum, clinic) => sum + clinic.availableSlots,
@@ -1210,16 +1283,13 @@ class _SearchAndRefreshBarState extends State<_SearchAndRefreshBar> {
             ),
           ),
           const SizedBox(width: 12),
-          Tooltip(
-            message: 'Refresh centers',
-            child: IconButton.filled(
-              onPressed: widget.onRefresh,
-              icon: const Icon(Icons.refresh_rounded),
-              style: IconButton.styleFrom(
-                backgroundColor: const Color(0xFFEFF8FC),
-                foregroundColor: const Color(0xFF0F719F),
-                padding: const EdgeInsets.all(16),
-              ),
+          IconButton.filled(
+            onPressed: widget.onRefresh,
+            icon: const Icon(Icons.refresh_rounded),
+            style: IconButton.styleFrom(
+              backgroundColor: const Color(0xFFEFF8FC),
+              foregroundColor: const Color(0xFF0F719F),
+              padding: const EdgeInsets.all(16),
             ),
           ),
         ],
@@ -1384,30 +1454,27 @@ class _CentersTableCard extends StatelessWidget {
                               icon: Icons.precision_manufacturing_rounded,
                             ),
                           ),
-                          DataCell(_StatusPill(isOpen: clinic.isOpen)),
+                          DataCell(
+                            _StatusPill(
+                              isOpen: isCenterOpenByOperatingHours(
+                                clinic.operatingHours,
+                              ),
+                            ),
+                          ),
                           DataCell(Text(formatDate(clinic.createdAt))),
                           DataCell(
                             Row(
                               children: [
-                                Tooltip(
-                                  message: 'Edit center',
-                                  child: IconButton(
-                                    onPressed: () => onEdit(clinic),
-                                    icon: const Icon(
-                                      Icons.edit_rounded,
-                                      color: Color(0xFF174E71),
-                                    ),
-                                  ),
+                                _ActionIconButton(
+                                  icon: Icons.edit_rounded,
+                                  color: const Color(0xFF174E71),
+                                  onTap: () => onEdit(clinic),
                                 ),
-                                Tooltip(
-                                  message: 'Delete center',
-                                  child: IconButton(
-                                    onPressed: () => onDelete(clinic),
-                                    icon: const Icon(
-                                      Icons.delete_rounded,
-                                      color: Color(0xFFEA5353),
-                                    ),
-                                  ),
+                                const SizedBox(width: 8),
+                                _ActionIconButton(
+                                  icon: Icons.delete_rounded,
+                                  color: const Color(0xFFEA5353),
+                                  onTap: () => onDelete(clinic),
                                 ),
                               ],
                             ),
@@ -1421,6 +1488,36 @@ class _CentersTableCard extends StatelessWidget {
             },
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ActionIconButton extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ActionIconButton({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color.withOpacity(0.08),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        hoverColor: color.withOpacity(0.14),
+        onTap: onTap,
+        child: SizedBox(
+          width: 38,
+          height: 38,
+          child: Icon(icon, color: color, size: 20),
+        ),
       ),
     );
   }

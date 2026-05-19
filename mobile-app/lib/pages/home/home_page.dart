@@ -367,6 +367,22 @@ class _HomePageState extends State<HomePage> {
         .split(' ')
         .first;
 
+    final pendingCount = _pendingApplications
+        .where(
+          (application) =>
+              application['status']?.toString().toLowerCase().trim() ==
+              'pending',
+        )
+        .length;
+
+    final declinedCount = _pendingApplications
+        .where(
+          (application) =>
+              application['status']?.toString().toLowerCase().trim() ==
+              'declined',
+        )
+        .length;
+
     return SafeArea(
       child: Container(
         color: const Color(0xFFF3F7FA),
@@ -422,7 +438,7 @@ class _HomePageState extends State<HomePage> {
                               ),
                               const SizedBox(height: 4),
                               const Text(
-                                'Application under review',
+                                'Application status',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 20,
@@ -437,7 +453,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 18),
                     const Text(
-                      'Your clinic application is being checked by the dialysis center. You can still search and apply to another center while waiting for approval.',
+                      'Your clinic application status will appear here. You can still search and apply to another center while waiting for approval.',
                       style: TextStyle(
                         color: Color(0xFFD9EDF3),
                         fontSize: 13.5,
@@ -507,7 +523,7 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   const Expanded(
                     child: Text(
-                      'Pending Applications',
+                      'Clinic Applications',
                       style: TextStyle(
                         color: Color(0xFF173B4F),
                         fontSize: 18,
@@ -521,13 +537,19 @@ class _HomePageState extends State<HomePage> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEAF4F7),
+                      color: declinedCount > 0
+                          ? const Color(0xFFFFE4E6)
+                          : const Color(0xFFEAF4F7),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      '${_pendingApplications.length} pending',
-                      style: const TextStyle(
-                        color: Color(0xFF225E72),
+                      declinedCount > 0
+                          ? '$pendingCount pending • $declinedCount declined'
+                          : '$pendingCount pending',
+                      style: TextStyle(
+                        color: declinedCount > 0
+                            ? const Color(0xFFB91C1C)
+                            : const Color(0xFF225E72),
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
                       ),
@@ -569,7 +591,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                       const SizedBox(height: 14),
                       const Text(
-                        'No pending application found',
+                        'No clinic application found',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Color(0xFF173B4F),
@@ -594,9 +616,13 @@ class _HomePageState extends State<HomePage> {
                 ..._pendingApplications.map((application) {
                   final clinicName =
                       application['clinic_name']?.toString() ?? 'Clinic';
-                  final status =
-                      application['status']?.toString().toUpperCase() ??
-                      'PENDING';
+                  final rawStatus =
+                      application['status']?.toString().toLowerCase().trim() ??
+                      'pending';
+                  final status = rawStatus.toUpperCase();
+                  final isDeclined = rawStatus == 'declined';
+                  final declineReason =
+                      application['decline_reason']?.toString().trim() ?? '';
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 14),
@@ -604,7 +630,11 @@ class _HomePageState extends State<HomePage> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFE1EAF0)),
+                      border: Border.all(
+                        color: isDeclined
+                            ? const Color(0xFFFECACA)
+                            : const Color(0xFFE1EAF0),
+                      ),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withOpacity(0.04),
@@ -620,12 +650,18 @@ class _HomePageState extends State<HomePage> {
                           height: 48,
                           width: 48,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFEAF4F7),
+                            color: isDeclined
+                                ? const Color(0xFFFFE4E6)
+                                : const Color(0xFFEAF4F7),
                             borderRadius: BorderRadius.circular(16),
                           ),
-                          child: const Icon(
-                            Icons.local_hospital_outlined,
-                            color: Color(0xFF225E72),
+                          child: Icon(
+                            isDeclined
+                                ? Icons.cancel_outlined
+                                : Icons.local_hospital_outlined,
+                            color: isDeclined
+                                ? const Color(0xFFB91C1C)
+                                : const Color(0xFF225E72),
                             size: 24,
                           ),
                         ),
@@ -651,13 +687,17 @@ class _HomePageState extends State<HomePage> {
                                       vertical: 5,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFFFF4D8),
+                                      color: isDeclined
+                                          ? const Color(0xFFFFE4E6)
+                                          : const Color(0xFFFFF4D8),
                                       borderRadius: BorderRadius.circular(20),
                                     ),
                                     child: Text(
                                       status,
-                                      style: const TextStyle(
-                                        color: Color(0xFF8A6200),
+                                      style: TextStyle(
+                                        color: isDeclined
+                                            ? const Color(0xFFB91C1C)
+                                            : const Color(0xFF8A6200),
                                         fontSize: 11,
                                         fontWeight: FontWeight.w900,
                                         letterSpacing: 0.4,
@@ -667,14 +707,44 @@ class _HomePageState extends State<HomePage> {
                                 ],
                               ),
                               const SizedBox(height: 10),
-                              const Text(
-                                'Please wait for the clinic to review your request. You will gain access once approved.',
+                              Text(
+                                isDeclined
+                                    ? 'Your application was declined by this center.'
+                                    : 'Please wait for the clinic to review your request. You will gain access once approved.',
                                 style: TextStyle(
-                                  color: Color(0xFF5B6D7D),
+                                  color: isDeclined
+                                      ? const Color(0xFF991B1B)
+                                      : const Color(0xFF5B6D7D),
                                   fontSize: 12.5,
                                   height: 1.4,
+                                  fontWeight: isDeclined
+                                      ? FontWeight.w700
+                                      : FontWeight.normal,
                                 ),
                               ),
+                              if (isDeclined && declineReason.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFEF2F2),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: const Color(0xFFFECACA),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'Reason: $declineReason',
+                                    style: const TextStyle(
+                                      color: Color(0xFF991B1B),
+                                      fontSize: 12,
+                                      height: 1.4,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ),

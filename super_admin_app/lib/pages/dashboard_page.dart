@@ -48,10 +48,8 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   List<CenterModel> _centers = [];
-  List<NotificationItem> _notifications = [];
   List<DonationSummary> _donationTotals = [];
 
-  Timer? _notificationTimer;
   Timer? _clockTimer;
 
   late AnimationController _fadeController;
@@ -89,8 +87,13 @@ class _DashboardPageState extends State<DashboardPage>
       int totalDonations = 0;
 
       for (final item in data) {
+        final status = item['status']?.toString().toLowerCase().trim() ?? '';
+
+        if (status != 'verified') continue;
+
         final amount =
             double.tryParse(item['amount']?.toString() ?? '0') ?? 0.0;
+
         totalDonations += amount.toInt();
       }
 
@@ -109,10 +112,6 @@ class _DashboardPageState extends State<DashboardPage>
       });
     });
 
-    _notificationTimer = Timer.periodic(const Duration(seconds: 12), (_) {
-      _refreshNotifications();
-    });
-
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
     });
@@ -120,7 +119,6 @@ class _DashboardPageState extends State<DashboardPage>
 
   @override
   void dispose() {
-    _notificationTimer?.cancel();
     _clockTimer?.cancel();
     _fadeController.dispose();
     super.dispose();
@@ -136,13 +134,15 @@ class _DashboardPageState extends State<DashboardPage>
     try {
       final stats = await _dashboardService.fetchOverviewStats();
       final centers = await _dashboardService.fetchCenters();
+      final verifiedDonationTotal = await _fetchVerifiedDonationTotal();
+
+      stats['donations'] = verifiedDonationTotal;
 
       if (!mounted) return;
 
       setState(() {
         _stats = stats;
         _centers = centers;
-        _notifications = [];
         _donationTotals = [];
       });
     } catch (error) {
@@ -160,21 +160,24 @@ class _DashboardPageState extends State<DashboardPage>
     }
   }
 
-  Future<void> _refreshNotifications() async {
-    try {
-      final notifications = await _dashboardService.fetchNotifications();
-      if (!mounted) return;
-
-      setState(() {
-        _notifications = notifications;
-      });
-    } catch (_) {
-      debugPrint('Notification refresh failed.');
-    }
-  }
-
   void _logout() {
     Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+  }
+
+  Future<int> _fetchVerifiedDonationTotal() async {
+    final response = await SupabaseConfig.client
+        .from('donations')
+        .select('amount')
+        .eq('status', 'verified');
+
+    int totalDonations = 0;
+
+    for (final item in response) {
+      final amount = double.tryParse(item['amount']?.toString() ?? '0') ?? 0.0;
+      totalDonations += amount.toInt();
+    }
+
+    return totalDonations;
   }
 
   @override
@@ -419,7 +422,7 @@ class _DashboardPageState extends State<DashboardPage>
     );
 
     final activeCenters = _centers
-        .where((center) => center.status.toLowerCase() == 'open')
+        .where((center) => _isOpenNow(center.operatingHours))
         .length;
 
     return SingleChildScrollView(
@@ -444,20 +447,6 @@ class _DashboardPageState extends State<DashboardPage>
 
           // FULL WIDTH CENTER SECTION
           _buildCenterGrid(width),
-
-          const SizedBox(height: 24),
-
-          // BOTTOM PANELS
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _buildNotificationsPanel()),
-
-              const SizedBox(width: 22),
-
-              Expanded(child: _buildDialysisGuideCard()),
-            ],
-          ),
         ],
       ),
     );
@@ -632,7 +621,7 @@ class _DashboardPageState extends State<DashboardPage>
                   value: '$activeCenters / ${_centers.length}',
                   icon: Icons.local_hospital_rounded,
                   color: const Color(0xFF059669),
-                  note: 'Centers currently marked open',
+                  note: 'Centers open based on operating hours',
                 ),
               ),
               const SizedBox(width: spacing),
@@ -668,7 +657,7 @@ class _DashboardPageState extends State<DashboardPage>
                   value: _formatPeso(_stats['donations'] ?? 0),
                   icon: Icons.volunteer_activism_rounded,
                   color: const Color(0xFFDB2777),
-                  note: 'Support fund available/recorded',
+                  note: 'Verified donations only',
                   isWide: true,
                 ),
               ),
@@ -684,7 +673,7 @@ class _DashboardPageState extends State<DashboardPage>
                 value: '$activeCenters / ${_centers.length}',
                 icon: Icons.local_hospital_rounded,
                 color: const Color(0xFF059669),
-                note: 'Centers currently marked open',
+                note: 'Centers open based on operating hours',
               ),
               right: _DashboardMetric(
                 label: 'Available Slots',
@@ -705,10 +694,10 @@ class _DashboardPageState extends State<DashboardPage>
               ),
               right: _DashboardMetric(
                 label: 'Donation Fund',
-                value: '₱${_stats['donations'] ?? 0}',
+                value: _formatPeso(_stats['donations'] ?? 0),
                 icon: Icons.volunteer_activism_rounded,
                 color: const Color(0xFFDB2777),
-                note: 'Support fund available/recorded',
+                note: 'Verified donations only',
                 isWide: true,
               ),
             ),
@@ -815,203 +804,6 @@ class _DashboardPageState extends State<DashboardPage>
       height: 52,
       margin: const EdgeInsets.symmetric(horizontal: 18),
       color: const Color(0xFFE5EAF0),
-    );
-  }
-
-  Widget _buildNotificationsPanel() {
-    final notifications = _notifications.isEmpty
-        ? [
-            NotificationItem(
-              id: 'placeholder1',
-              message: 'No recent center alerts yet. Updates will appear here.',
-              timestamp: DateTime.now(),
-              source: 'System',
-            ),
-          ]
-        : _notifications;
-
-    return _sectionCard(
-      title: 'Alerts & Notifications',
-      subtitle: _notifications.isEmpty
-          ? 'No active alerts'
-          : '${_notifications.length} recent center update(s)',
-      icon: Icons.notifications_active_rounded,
-      trailing: Container(
-        height: 38,
-        decoration: BoxDecoration(
-          color: accentColor.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: TextButton.icon(
-          onPressed: _refreshNotifications,
-          icon: const Icon(Icons.refresh_rounded, size: 16),
-          label: const Text('Refresh'),
-          style: TextButton.styleFrom(
-            foregroundColor: accentColor,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-          ),
-        ),
-      ),
-      child: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  accentColor.withOpacity(0.10),
-                  accentColor.withOpacity(0.04),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: accentColor.withOpacity(0.10)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(11),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.78),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Icon(
-                    Icons.campaign_rounded,
-                    color: accentColor,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 13),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Center Monitoring Feed',
-                        style: TextStyle(
-                          color: textDark,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        'Realtime notices, clinic updates, and system reminders will appear here.',
-                        style: TextStyle(
-                          color: mutedText,
-                          fontSize: 12.3,
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          ...notifications.take(5).map((item) {
-            final isPlaceholder = item.id.toString().startsWith('placeholder');
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: isPlaceholder ? const Color(0xFFF8FBFD) : Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: isPlaceholder
-                      ? const Color(0xFFE7EEF4)
-                      : accentColor.withOpacity(0.14),
-                ),
-                boxShadow: [
-                  if (!isPlaceholder)
-                    BoxShadow(
-                      color: accentColor.withOpacity(0.06),
-                      blurRadius: 14,
-                      offset: const Offset(0, 8),
-                    ),
-                ],
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: isPlaceholder
-                          ? const Color(0xFFEAF3F7)
-                          : accentColor.withOpacity(0.10),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      isPlaceholder
-                          ? Icons.info_outline_rounded
-                          : Icons.notifications_active_rounded,
-                      color: accentColor,
-                      size: 19,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.message,
-                          style: const TextStyle(
-                            color: textDark,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13.2,
-                            height: 1.35,
-                          ),
-                        ),
-                        const SizedBox(height: 7),
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                item.source,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: mutedText,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            Container(
-                              width: 4,
-                              height: 4,
-                              margin: const EdgeInsets.symmetric(horizontal: 8),
-                              decoration: BoxDecoration(
-                                color: mutedText.withOpacity(0.45),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            Text(
-                              _formatTimeAgo(item.timestamp),
-                              style: const TextStyle(
-                                color: mutedText,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }),
-        ],
-      ),
     );
   }
 
@@ -1597,38 +1389,6 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
-  Widget _buildDialysisGuideCard() {
-    return _sectionCard(
-      title: 'Dialysis Handling Notes',
-      subtitle: 'Helpful reminders for center coordination',
-      icon: Icons.tips_and_updates_rounded,
-      child: Column(
-        children: const [
-          _GuideItem(
-            icon: Icons.event_note_rounded,
-            title: 'Confirm patient schedule',
-            description:
-                'Check assigned day and available clinic capacity before confirming sessions.',
-          ),
-          SizedBox(height: 12),
-          _GuideItem(
-            icon: Icons.medical_services_rounded,
-            title: 'Monitor machine availability',
-            description:
-                'Centers with fewer slots should be reviewed to avoid overbooking.',
-          ),
-          SizedBox(height: 12),
-          _GuideItem(
-            icon: Icons.volunteer_activism_rounded,
-            title: 'Coordinate donation support',
-            description:
-                'Use donation records to help track assistance for dialysis-related needs.',
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _sectionCard({
     required String title,
     required String subtitle,
@@ -1689,7 +1449,7 @@ class _DashboardPageState extends State<DashboardPage>
                   ],
                 ),
               ),
-              ?trailing,
+              if (trailing != null) trailing,
             ],
           ),
           const SizedBox(height: 20),
@@ -2266,61 +2026,6 @@ class _DashboardMetric extends StatelessWidget {
         borderRadius: BorderRadius.circular(17),
       ),
       child: Icon(icon, color: color, size: iconSize),
-    );
-  }
-}
-
-class _GuideItem extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String description;
-
-  const _GuideItem({
-    required this.icon,
-    required this.title,
-    required this.description,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FBFD),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE7EEF4)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: const Color(0xFF1F719F), size: 22),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Color(0xFF102A43),
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13.5,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: const TextStyle(
-                    color: Color(0xFF6B7280),
-                    fontSize: 12.2,
-                    height: 1.35,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
