@@ -120,6 +120,8 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
   Color get _waterStatusColor =>
       _isWaterExceeded ? const Color(0xFFE53935) : const Color(0xFF16B9E2);
 
+  static const Color _waterIconColor = Color(0xFF1062C0);
+
   int get _waterPercent => ((_todayTotalMl / _dailyGoalMl) * 100).round();
 
   String get _todayDateLabel =>
@@ -250,6 +252,16 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
                                   const SnackBar(
                                     content: Text(
                                       'Please select or enter a valid amount.',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+                              if (amount > 10000) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Amount must be at most 10000 mL.',
                                     ),
                                   ),
                                 );
@@ -398,30 +410,12 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
 
   Widget _buildPlaceholderCard(String title, String message, IconData icon) {
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 14,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
+      decoration: _cardDecoration(),
       padding: const EdgeInsets.all(20),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F7F7),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(icon, color: const Color(0xFF008B8B), size: 26),
-          ),
+          _iconBox(icon, const Color(0xFF225E72)),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
@@ -471,17 +465,7 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
         children: [
           Container(
             width: double.infinity,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 14,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
+            decoration: _cardDecoration(),
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -509,154 +493,126 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
           const SizedBox(height: 18),
           weightContent,
           const SizedBox(height: 18),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 14,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 50,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE8F7F7),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: const Icon(
-                        Icons.water_drop,
-                        color: Color.fromARGB(255, 16, 98, 192),
-                        size: 26,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    const Text(
-                      
-                      'Water Intake',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  '${(_todayTotalMl / 1000).toStringAsFixed(1)} L',
-                  style: const TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Daily Goal: ${(_dailyGoalMl / 1000).toStringAsFixed(1)} L',
-                  style: const TextStyle(fontSize: 14, color: Colors.grey),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: LinearProgressIndicator(
-                          value: _progressValue,
-                          minHeight: 12,
-                          backgroundColor: const Color(0xFFE8F7F7),
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            _waterStatusColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      '$_waterPercent%',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: _waterStatusColor,
-                      ),
-                    ),
-                  ],
-                ),
+          _buildWaterCard(),
+        ],
+      ),
+    );
+  }
 
-                if (_isWaterExceeded) ...[
-                  const SizedBox(height: 10),
-                  const Text(
-                    'You have exceeded your recommended water intake for today.',
-                    style: TextStyle(
-                      color: Color(0xFFE53935),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+  Widget _buildWaterCard() {
+    return Container(
+      decoration: _cardDecoration(),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _iconBox(Icons.water_drop, _waterIconColor),
+              const SizedBox(width: 16),
+              const Text(
+                'Water Intake',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '${(_todayTotalMl / 1000).toStringAsFixed(1)} L',
+            style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Daily Goal: ${(_dailyGoalMl / 1000).toStringAsFixed(1)} L',
+            style: const TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: LinearProgressIndicator(
+                    value: _progressValue,
+                    minHeight: 12,
+                    backgroundColor: const Color(0xFFE8F7F7),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      _waterStatusColor,
                     ),
                   ),
-                ],
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: _showAddWaterIntakeSheet,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF225E72),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                        ),
-                        child: const Text(
-                          'Add Water Intake',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _showTodayLogs,
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(
-                            color: Color.fromARGB(255, 8, 80, 122),
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                        ),
-                        child: const Text(
-                          'View Today’s Logs',
-                          style: TextStyle(
-                            color: Color.fromARGB(255, 3, 47, 83),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'Manually log your water intake throughout the day',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                '$_waterPercent%',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: _waterStatusColor,
                 ),
-              ],
+              ),
+            ],
+          ),
+          if (_isWaterExceeded) ...[
+            const SizedBox(height: 10),
+            const Text(
+              'You have exceeded your recommended water intake for today.',
+              style: TextStyle(
+                color: Color(0xFFE53935),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
             ),
+          ],
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _showAddWaterIntakeSheet,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF225E72),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: const Text(
+                    'Add Water Intake',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _showTodayLogs,
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(
+                      color: Color.fromARGB(255, 8, 80, 122),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: const Text(
+                    'View Today’s Logs',
+                    style: TextStyle(color: Color.fromARGB(255, 3, 47, 83)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Manually log your water intake throughout the day',
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
           ),
         ],
       ),
@@ -1013,35 +969,6 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
     );
   }
 
-  Widget _chartPlaceholder(String title, String subtitle) {
-    return Container(
-      width: double.infinity,
-      height: 180,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEAF6F7),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.show_chart, size: 42, color: Color(0xFF225E72)),
-          const SizedBox(height: 10),
-          Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade600),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _analysisBox(String title, String message) {
     return Container(
       width: double.infinity,
@@ -1363,17 +1290,7 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
                     horizontal: 16,
                     vertical: 16,
                   ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 12,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-                  ),
+                  decoration: _cardDecoration(),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -1394,10 +1311,7 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
                           ),
                         ],
                       ),
-                      const Icon(
-                        Icons.water_drop,
-                        color: Color.fromARGB(255, 6, 145, 238),
-                      ),
+                      const Icon(Icons.water_drop, color: _waterIconColor),
                     ],
                   ),
                 );

@@ -3,6 +3,7 @@ import 'package:CureNurture/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth/auth_service.dart';
+import '../../utils/validators.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -18,11 +19,18 @@ class _LoginPageState extends State<LoginPage> {
 
   bool _isLoading = false;
   String? _errorMessage;
+  String? _emailError;
   bool _isPasswordVisible = false;
 
   @override
   void initState() {
     super.initState();
+  }
+
+  void _onEmailChanged(String value) {
+    setState(() {
+      _emailError = value.isEmpty ? null : Validators.validateEmail(value);
+    });
   }
 
   @override
@@ -36,10 +44,14 @@ class _LoginPageState extends State<LoginPage> {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
 
-    if (email.isEmpty || password.isEmpty) {
-      setState(() {
-        _errorMessage = 'Please enter your email and password.';
-      });
+    final emailError = Validators.validateEmail(email);
+    setState(() => _emailError = emailError);
+    if (emailError != null) {
+      setState(() => _errorMessage = emailError);
+      return;
+    }
+    if (password.isEmpty) {
+      setState(() => _errorMessage = 'Please enter your password.');
       return;
     }
 
@@ -176,6 +188,7 @@ class _LoginPageState extends State<LoginPage> {
                             TextField(
                               controller: _emailController,
                               keyboardType: TextInputType.emailAddress,
+                              onChanged: _onEmailChanged,
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 15,
@@ -189,6 +202,10 @@ class _LoginPageState extends State<LoginPage> {
                                 prefixIcon: Icon(
                                   Icons.alternate_email,
                                   color: Colors.white.withOpacity(0.65),
+                                ),
+                                errorText: _emailError,
+                                errorStyle: const TextStyle(
+                                  color: Color(0xFFFFC1C1),
                                 ),
                                 filled: true,
                                 fillColor: Colors.white.withOpacity(0.05),

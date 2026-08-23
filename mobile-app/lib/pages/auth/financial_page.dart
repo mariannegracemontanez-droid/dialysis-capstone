@@ -32,6 +32,21 @@ class _FinancialPageState extends State<FinancialPage> {
   String _selectedBudget = 'Low-cost / Government-supported';
   final String _selectedClinicType = 'Public Hospital';
 
+  @override
+  void initState() {
+    super.initState();
+    if (widget.signupData.insuranceOptions.isNotEmpty) {
+      _selectedInsurance.addAll(
+        widget.signupData.insuranceOptions.where(
+          _insuranceOptions.contains,
+        ),
+      );
+    }
+    if (_budgetOptions.contains(widget.signupData.budgetRange)) {
+      _selectedBudget = widget.signupData.budgetRange;
+    }
+  }
+
   void _toggleInsurance(String option) {
     setState(() {
       if (option == 'None') {

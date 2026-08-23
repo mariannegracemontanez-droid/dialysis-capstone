@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../models/signup_data.dart';
+import '../../utils/form_options.dart';
+import '../../utils/validators.dart';
 
 class SetupPage extends StatefulWidget {
   final SignupData signupData;
@@ -26,7 +29,12 @@ class _SetupPageState extends State<SetupPage> {
     'O-',
   ];
   String _selectedBloodType = 'O+';
+  String? _selectedBarangay;
+  String? _selectedRelationship;
   String? _errorMessage;
+  String? _addressError;
+  String? _contactNameError;
+  String? _contactNumberError;
 
   @override
   void initState() {
@@ -38,6 +46,13 @@ class _SetupPageState extends State<SetupPage> {
     _selectedBloodType = widget.signupData.bloodType.isNotEmpty
         ? widget.signupData.bloodType
         : _selectedBloodType;
+    _selectedBarangay = widget.signupData.barangay.isNotEmpty
+        ? widget.signupData.barangay
+        : null;
+    _selectedRelationship =
+        widget.signupData.emergencyContactRelationship.isNotEmpty
+        ? widget.signupData.emergencyContactRelationship
+        : null;
   }
 
   @override
@@ -86,34 +101,90 @@ class _SetupPageState extends State<SetupPage> {
     }
   }
 
+  void _onAddressChanged(String value) {
+    setState(() {
+      _addressError = value.isEmpty
+          ? null
+          : Validators.validateAddress(value, fieldLabel: 'Home address');
+    });
+  }
+
+  void _onContactNameChanged(String value) {
+    setState(() {
+      _contactNameError = value.isEmpty
+          ? null
+          : Validators.validateName(
+              value,
+              fieldLabel: 'Emergency contact name',
+            );
+    });
+  }
+
+  void _onContactNumberChanged(String value) {
+    setState(() {
+      _contactNumberError = value.isEmpty
+          ? null
+          : Validators.validatePhone(value);
+    });
+  }
+
   void _handleNext() {
     setState(() {
       _errorMessage = null;
+    });
+
+    final addressError = Validators.validateAddress(
+      _homeAddressController.text,
+      fieldLabel: 'Home address',
+    );
+    final contactNameError = Validators.validateName(
+      _emergencyNameController.text,
+      fieldLabel: 'Emergency contact name',
+    );
+    final contactNumberError = Validators.validatePhone(
+      _emergencyNumberController.text,
+    );
+    setState(() {
+      _addressError = addressError;
+      _contactNameError = contactNameError;
+      _contactNumberError = contactNumberError;
     });
 
     if (_dobController.text.isEmpty) {
       setState(() => _errorMessage = 'Date of birth is required.');
       return;
     }
-    if (_homeAddressController.text.isEmpty) {
-      setState(() => _errorMessage = 'Home address is required.');
+    if (addressError != null) {
+      setState(() => _errorMessage = addressError);
       return;
     }
-    if (_emergencyNameController.text.isEmpty) {
-      setState(() => _errorMessage = 'Emergency contact name is required.');
+    if (_selectedBarangay == null) {
+      setState(() => _errorMessage = 'Please select your barangay.');
       return;
     }
-    if (_emergencyNumberController.text.isEmpty) {
-      setState(() => _errorMessage = 'Emergency contact number is required.');
+    if (contactNameError != null) {
+      setState(() => _errorMessage = contactNameError);
+      return;
+    }
+    if (_selectedRelationship == null) {
+      setState(
+        () => _errorMessage = 'Please select the emergency contact\'s relationship to the patient.',
+      );
+      return;
+    }
+    if (contactNumberError != null) {
+      setState(() => _errorMessage = contactNumberError);
       return;
     }
 
     final updated = widget.signupData.copyWith(
       dateOfBirth: _dobController.text.trim(),
       homeAddress: _homeAddressController.text.trim(),
+      barangay: _selectedBarangay,
       bloodType: _selectedBloodType,
       emergencyContactName: _emergencyNameController.text.trim(),
       emergencyContactNumber: _emergencyNumberController.text.trim(),
+      emergencyContactRelationship: _selectedRelationship,
     );
 
     Navigator.of(context).pushNamed('/location', arguments: updated);
@@ -132,7 +203,7 @@ class _SetupPageState extends State<SetupPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Text(
-                  'Set Up',
+                  'Patient Information',
                   style: TextStyle(
                     color: Color(0xFF173B4F),
                     fontSize: 30,
@@ -242,10 +313,35 @@ class _SetupPageState extends State<SetupPage> {
                       TextField(
                         controller: _homeAddressController,
                         maxLines: 2,
+                        onChanged: _onAddressChanged,
                         decoration: _setupInputDecoration(
-                          label: 'Home Address',
+                          label: 'Street, House No. / Subdivision',
                           icon: Icons.home_outlined,
+                          errorText: _addressError,
                         ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      DropdownButtonFormField<String>(
+                        initialValue: _selectedBarangay,
+                        decoration: _setupInputDecoration(
+                          label: 'Barangay (Valenzuela City)',
+                          icon: Icons.location_city_outlined,
+                        ),
+                        isExpanded: true,
+                        hint: const Text('Select Barangay'),
+                        items: FormOptions.valenzuelaBarangays.map((brgy) {
+                          return DropdownMenuItem(
+                            value: brgy,
+                            child: Text(brgy),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedBarangay = value;
+                          });
+                        },
                       ),
 
                       const SizedBox(height: 16),
@@ -300,10 +396,37 @@ class _SetupPageState extends State<SetupPage> {
 
                       TextField(
                         controller: _emergencyNameController,
+                        onChanged: _onContactNameChanged,
                         decoration: _setupInputDecoration(
                           label: 'Contact Name',
                           icon: Icons.person_outline,
+                          errorText: _contactNameError,
                         ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      DropdownButtonFormField<String>(
+                        initialValue: _selectedRelationship,
+                        decoration: _setupInputDecoration(
+                          label: 'Relationship to Patient',
+                          icon: Icons.diversity_3_outlined,
+                        ),
+                        isExpanded: true,
+                        hint: const Text('Select Relationship'),
+                        items: FormOptions.emergencyContactRelationships.map((
+                          relationship,
+                        ) {
+                          return DropdownMenuItem(
+                            value: relationship,
+                            child: Text(relationship),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedRelationship = value;
+                          });
+                        },
                       ),
 
                       const SizedBox(height: 16),
@@ -311,9 +434,16 @@ class _SetupPageState extends State<SetupPage> {
                       TextField(
                         controller: _emergencyNumberController,
                         keyboardType: TextInputType.phone,
+                        maxLength: 11,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        onChanged: _onContactNumberChanged,
                         decoration: _setupInputDecoration(
                           label: 'Phone Number',
                           icon: Icons.phone_outlined,
+                          showCounter: false,
+                          errorText: _contactNumberError,
                         ),
                       ),
 
@@ -377,6 +507,8 @@ class _SetupPageState extends State<SetupPage> {
   InputDecoration _setupInputDecoration({
     required String label,
     required IconData icon,
+    bool showCounter = true,
+    String? errorText,
   }) {
     return InputDecoration(
       labelText: label,
@@ -385,6 +517,8 @@ class _SetupPageState extends State<SetupPage> {
         fontWeight: FontWeight.w500,
       ),
       prefixIcon: Icon(icon, color: const Color(0xFF5F7280)),
+      errorText: errorText,
+      counterText: showCounter ? null : '',
       filled: true,
       fillColor: const Color(0xFFF4F8FA),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),

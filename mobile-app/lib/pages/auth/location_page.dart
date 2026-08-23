@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/signup_data.dart';
+import 'clinic_detail_page.dart';
 import 'clinic_info_page.dart';
 
 class LocationPage extends StatefulWidget {
@@ -26,12 +27,60 @@ class _LocationPageState extends State<LocationPage> {
   List<Map<String, dynamic>> _clinics = [];
   Map<String, dynamic>? _selectedClinic;
   Set<String> _appliedClinicIds = {};
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
     _loadClinicsAndApplications();
     _getUserLocation();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<Map<String, dynamic>> get _filteredClinics {
+    final query = _searchQuery.trim().toLowerCase();
+    if (query.isEmpty) return [];
+
+    return _clinics.where((clinic) {
+      final name = clinic['name']?.toString().toLowerCase() ?? '';
+      final address = clinic['address']?.toString().toLowerCase() ?? '';
+      final requirements = _extractClinicRequirements(clinic['requirements'])
+          .join(' ')
+          .toLowerCase();
+
+      return name.contains(query) ||
+          address.contains(query) ||
+          requirements.contains(query);
+    }).toList();
+  }
+
+  Future<void> _openClinicDetail(Map<String, dynamic> clinic) async {
+    final isAlreadyApplied = _appliedClinicIds.contains(
+      clinic['id'].toString(),
+    );
+
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
+      MaterialPageRoute(
+        builder: (_) => ClinicDetailPage(
+          clinic: clinic,
+          isAlreadyApplied: isAlreadyApplied,
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _selectedClinic = result;
+        _searchController.clear();
+        _searchQuery = '';
+      });
+    }
   }
 
   Future<void> _loadClinicsAndApplications() async {
@@ -567,6 +616,119 @@ class _LocationPageState extends State<LocationPage> {
     );
   }
 
+  Widget _buildSearchResultsPanel() {
+    final results = _filteredClinics;
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE1EAF0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: results.isEmpty
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 40),
+                child: Text(
+                  'No clinics match your search.',
+                  style: TextStyle(color: Color(0xFF6B7C86)),
+                ),
+              ),
+            )
+          : ListView.separated(
+              itemCount: results.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (context, index) =>
+                  _buildSearchResultTile(results[index]),
+            ),
+    );
+  }
+
+  Widget _buildSearchResultTile(Map<String, dynamic> clinic) {
+    final isAlreadyApplied = _appliedClinicIds.contains(
+      clinic['id'].toString(),
+    );
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => _openClinicDetail(clinic),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF4F8FA),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE3EDF2)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFF2C5F7D),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.local_hospital,
+                color: Colors.white,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    clinic['name']?.toString() ?? 'Clinic',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      color: Color(0xFF173B4F),
+                    ),
+                  ),
+                  if (clinic['address'] != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      clinic['address'].toString(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF6B7C86),
+                      ),
+                    ),
+                  ],
+                  if (isAlreadyApplied) ...[
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Already applied',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.orange,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Color(0xFF5F7280)),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -646,10 +808,57 @@ class _LocationPageState extends State<LocationPage> {
                 ),
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 18),
+
+              TextField(
+                controller: _searchController,
+                onChanged: (value) => setState(() => _searchQuery = value),
+                decoration: InputDecoration(
+                  hintText: 'Search by clinic name, address, or requirement',
+                  hintStyle: const TextStyle(fontSize: 13),
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    color: Color(0xFF5F7280),
+                  ),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFE1EAF0)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFE1EAF0)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF2C5F7D),
+                      width: 1.2,
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 18),
 
               Expanded(
-                child: Container(
+                child: _searchQuery.trim().isNotEmpty
+                    ? _buildSearchResultsPanel()
+                    : Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(18),

@@ -295,7 +295,7 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
                           label: 'Emergency Contact',
                           value: widget.signupData.emergencyContactName.isEmpty
                               ? 'Not provided'
-                              : '${widget.signupData.emergencyContactName} (${widget.signupData.emergencyContactNumber})',
+                              : '${widget.signupData.emergencyContactName} · ${widget.signupData.emergencyContactNumber}',
                         ),
 
                         _buildInfoRow(

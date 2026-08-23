@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../models/user_model.dart';
 import '../../services/profile_update_service.dart';
+import '../../utils/form_options.dart';
+import '../../utils/validators.dart';
 
 class EditProfilePage extends StatefulWidget {
   final UserModel? user;
@@ -19,8 +22,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   final ProfileUpdateService _profileService = ProfileUpdateService();
 
+  String? _selectedBarangay;
   bool _isSaving = false;
   String? _saveMessage;
+  String? _phoneError;
 
   @override
   void initState() {
@@ -35,22 +40,50 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _locationController = TextEditingController(
       text: widget.user?.location ?? '',
     );
+    final existingLocation = widget.user?.location ?? '';
+    _selectedBarangay = FormOptions.valenzuelaBarangays.firstWhere(
+      (brgy) => existingLocation.toLowerCase().contains(brgy.toLowerCase()),
+      orElse: () => '',
+    );
+    if (_selectedBarangay!.isEmpty) _selectedBarangay = null;
+  }
+
+  void _onPhoneChanged(String value) {
+    setState(() {
+      _phoneError = value.isEmpty ? null : Validators.validatePhone(value);
+    });
   }
 
   Future<bool> _saveChanges() async {
     if (widget.user == null) return false;
 
+    final phone = _phoneController.text.trim();
+    if (phone.isNotEmpty) {
+      final phoneError = Validators.validatePhone(phone);
+      setState(() => _phoneError = phoneError);
+      if (phoneError != null) {
+        setState(() => _saveMessage = 'Failed: $phoneError');
+        return false;
+      }
+    }
+
     setState(() => _isSaving = true);
 
     try {
+      var location = _locationController.text.trim();
+      if (_selectedBarangay != null &&
+          !location.toLowerCase().contains('barangay')) {
+        location = location.isEmpty
+            ? 'Barangay $_selectedBarangay, Valenzuela City'
+            : '$location, Barangay $_selectedBarangay, Valenzuela City';
+      }
+
       await _profileService.updateContactInfo(
         patientId: widget.user!.id,
         email: _emailController.text,
         fullName: _nameController.text,
         phone: _phoneController.text.isEmpty ? null : _phoneController.text,
-        location: _locationController.text.isEmpty
-            ? null
-            : _locationController.text,
+        location: location.isEmpty ? null : location,
       );
 
       if (!mounted) return false;
@@ -149,9 +182,19 @@ class _EditProfilePageState extends State<EditProfilePage> {
               const SizedBox(height: 16),
               _buildField('Email Address', _emailController, readOnly: true),
               const SizedBox(height: 16),
-              _buildField('Phone Number', _phoneController),
+              _buildField(
+                'Phone Number',
+                _phoneController,
+                keyboardType: TextInputType.phone,
+                maxLength: 11,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                errorText: _phoneError,
+                onChanged: _onPhoneChanged,
+              ),
               const SizedBox(height: 16),
-              _buildField('Location', _locationController),
+              _buildField('Home Address', _locationController),
+              const SizedBox(height: 16),
+              _buildBarangayField(),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
@@ -204,10 +247,44 @@ class _EditProfilePageState extends State<EditProfilePage> {
     );
   }
 
+  Widget _buildBarangayField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Barangay (Valenzuela City)',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          initialValue: _selectedBarangay,
+          isExpanded: true,
+          hint: const Text('Select Barangay'),
+          decoration: InputDecoration(
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          items: FormOptions.valenzuelaBarangays.map((brgy) {
+            return DropdownMenuItem(value: brgy, child: Text(brgy));
+          }).toList(),
+          onChanged: (value) {
+            setState(() {
+              _selectedBarangay = value;
+            });
+          },
+        ),
+      ],
+    );
+  }
+
   Widget _buildField(
     String label,
     TextEditingController controller, {
     bool readOnly = false,
+    TextInputType? keyboardType,
+    int? maxLength,
+    List<TextInputFormatter>? inputFormatters,
+    String? errorText,
+    ValueChanged<String>? onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -217,8 +294,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
         TextField(
           controller: controller,
           readOnly: readOnly,
+          keyboardType: keyboardType,
+          maxLength: maxLength,
+          inputFormatters: inputFormatters,
+          onChanged: onChanged,
           decoration: InputDecoration(
             hintText: readOnly ? null : 'Enter $label',
+            errorText: errorText,
+            counterText: maxLength == null ? null : '',
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             suffixIcon: _isSaving
                 ? const SizedBox(

@@ -18,6 +18,7 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
   bool _isLoading = true;
   String? _errorMessage;
   List<String> _scheduledDays = [];
+  DateTime? _scheduleCreatedAt;
 
   static const Map<int, String> _weekdayNames = {
     DateTime.monday: 'Monday',
@@ -44,6 +45,9 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
       setState(() {
         _scheduledDays = _parseScheduledDays(
           data?['weekly_schedule']?['scheduled_days'],
+        );
+        _scheduleCreatedAt = DateTime.tryParse(
+          data?['weekly_schedule']?['created_at']?.toString() ?? '',
         );
         _isLoading = false;
       });
@@ -163,10 +167,18 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
 
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+    final scheduleStart = _scheduleCreatedAt == null
+        ? null
+        : DateTime(
+            _scheduleCreatedAt!.year,
+            _scheduleCreatedAt!.month,
+            _scheduleCreatedAt!.day,
+          );
     final pastDates = <DateTime>[];
 
     for (int i = 1; i <= 30; i++) {
       final date = today.subtract(Duration(days: i));
+      if (scheduleStart != null && date.isBefore(scheduleStart)) continue;
       final dayName = _weekdayNames[date.weekday];
 
       if (_scheduledDays.contains(dayName)) {

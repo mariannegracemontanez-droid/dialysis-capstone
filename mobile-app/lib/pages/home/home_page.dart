@@ -25,6 +25,7 @@ class _HomePageState extends State<HomePage> {
   int _selectedNavIndex = 0;
   bool _hasPatientAccess = false;
   bool _isLoading = true;
+  bool _isPreparingReapply = false;
   List<Map<String, dynamic>> _pendingApplications = [];
   RealtimeChannel? _patientChannel;
 
@@ -349,15 +350,38 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  SignupData _buildReapplySignupData() {
+  Future<SignupData> _buildReapplySignupData() async {
     final user = _currentUser;
-    return SignupData(
-      fullName: user?.fullName ?? '',
-      email: user?.email ?? '',
-      phone: user?.phone ?? '',
-      password: '',
-      profileId: user?.id ?? '',
-      patientId: '',
+    final profileId = user?.id ?? '';
+
+    Map<String, dynamic>? mostRecentRow;
+    if (profileId.isNotEmpty) {
+      try {
+        mostRecentRow = await PatientService().getMostRecentPatientRow(
+          profileId,
+        );
+      } catch (_) {
+        mostRecentRow = null;
+      }
+    }
+
+    if (mostRecentRow == null) {
+      return SignupData(
+        fullName: user?.fullName ?? '',
+        email: user?.email ?? '',
+        phone: user?.phone ?? '',
+        password: '',
+        profileId: profileId,
+        patientId: '',
+      );
+    }
+
+    return SignupData.fromPatientRow(
+      mostRecentRow,
+      profileId: profileId,
+      fallbackFullName: user?.fullName ?? '',
+      fallbackEmail: user?.email ?? '',
+      fallbackPhone: user?.phone ?? '',
     );
   }
 
@@ -758,17 +782,33 @@ class _HomePageState extends State<HomePage> {
               SizedBox(
                 height: 54,
                 child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).pushNamed(
-                      '/location',
-                      arguments: _buildReapplySignupData(),
-                    );
-                  },
-                  icon: const Icon(
-                    Icons.search_rounded,
-                    color: Colors.white,
-                    size: 21,
-                  ),
+                  onPressed: _isPreparingReapply
+                      ? null
+                      : () async {
+                          final navigator = Navigator.of(context);
+                          setState(() => _isPreparingReapply = true);
+                          final signupData = await _buildReapplySignupData();
+                          if (!mounted) return;
+                          setState(() => _isPreparingReapply = false);
+                          navigator.pushNamed(
+                            '/location',
+                            arguments: signupData,
+                          );
+                        },
+                  icon: _isPreparingReapply
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.2,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.search_rounded,
+                          color: Colors.white,
+                          size: 21,
+                        ),
                   label: const Text(
                     'Search another dialysis center',
                     style: TextStyle(

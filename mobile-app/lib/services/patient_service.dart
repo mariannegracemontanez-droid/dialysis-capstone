@@ -26,6 +26,24 @@ class PatientService {
     return Map<String, dynamic>.from(response);
   }
 
+  Future<Map<String, dynamic>?> getMostRecentPatientRow(
+    String profileId,
+  ) async {
+    final response = await _supabase
+        .from('patients')
+        .select()
+        .eq('profile_id', profileId)
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+
+    if (response == null) {
+      return null;
+    }
+
+    return Map<String, dynamic>.from(response);
+  }
+
   Future<bool> hasPatientAccess(String profileId) async {
     final activePatient = await getActivePatientRow(profileId);
     return activePatient != null;

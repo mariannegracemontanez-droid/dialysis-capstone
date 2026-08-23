@@ -12,8 +12,6 @@ class AppointmentService {
       throw Exception('No logged in user found.');
     }
 
-    print('AUTH USER ID: ${user.id}');
-
     final patient = await PatientService().getActivePatientRow(user.id);
 
     if (patient == null) {
@@ -22,11 +20,9 @@ class AppointmentService {
 
     final weeklySchedule = await _supabase
         .from('weekly_schedules')
-        .select('id, patient_id, clinic_id, slot_id, scheduled_days')
+        .select('id, patient_id, clinic_id, slot_id, scheduled_days, created_at')
         .eq('patient_id', patient['id'])
         .maybeSingle();
-
-    print('WEEKLY SCHEDULE: $weeklySchedule');
 
     if (weeklySchedule == null) {
       return null;

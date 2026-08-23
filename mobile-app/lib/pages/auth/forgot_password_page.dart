@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/auth/auth_service.dart';
+import '../../utils/validators.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key});
@@ -16,6 +17,8 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   bool _otpSent = false;
   String? _errorMessage;
   String? _successMessage;
+  String? _emailError;
+  String? _otpError;
 
   @override
   void dispose() {
@@ -24,19 +27,27 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     super.dispose();
   }
 
+  void _onEmailChanged(String value) {
+    setState(() {
+      _emailError = value.isEmpty ? null : Validators.validateEmail(value);
+    });
+  }
+
+  void _onOtpChanged(String value) {
+    setState(() {
+      _otpError = value.isEmpty
+          ? null
+          : (value.length < 6 ? 'OTP must be 6 digits' : null);
+    });
+  }
+
   Future<void> _sendOTP() async {
     final email = _emailController.text.trim();
-    if (email.isEmpty) {
+    final emailError = Validators.validateEmail(email);
+    setState(() => _emailError = emailError);
+    if (emailError != null) {
       setState(() {
-        _errorMessage = 'Please enter your email address';
-        _successMessage = null;
-      });
-      return;
-    }
-
-    if (!email.contains('@')) {
-      setState(() {
-        _errorMessage = 'Please enter a valid email address';
+        _errorMessage = emailError;
         _successMessage = null;
       });
       return;
@@ -70,6 +81,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     final otp = _otpController.text.trim();
     if (otp.isEmpty) {
       setState(() {
+        _otpError = 'Please enter the OTP';
         _errorMessage = 'Please enter the OTP';
         _successMessage = null;
       });
@@ -78,6 +90,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
 
     if (otp.length < 6) {
       setState(() {
+        _otpError = 'OTP must be 6 digits';
         _errorMessage = 'OTP must be at least 6 characters';
         _successMessage = null;
       });
@@ -223,6 +236,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                                 controller: _emailController,
                                 enabled: !_otpSent,
                                 keyboardType: TextInputType.emailAddress,
+                                onChanged: _onEmailChanged,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 15,
@@ -236,6 +250,10 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                                   prefixIcon: Icon(
                                     Icons.alternate_email,
                                     color: Colors.white.withOpacity(0.65),
+                                  ),
+                                  errorText: _emailError,
+                                  errorStyle: const TextStyle(
+                                    color: Color(0xFFFFC1C1),
                                   ),
                                   filled: true,
                                   fillColor: Colors.white.withOpacity(0.05),
@@ -299,6 +317,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                                 controller: _otpController,
                                 keyboardType: TextInputType.number,
                                 maxLength: 6,
+                                onChanged: _onOtpChanged,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 15,
@@ -307,6 +326,10 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                                 decoration: InputDecoration(
                                   counterStyle: TextStyle(
                                     color: Colors.white.withOpacity(0.45),
+                                  ),
+                                  errorText: _otpError,
+                                  errorStyle: const TextStyle(
+                                    color: Color(0xFFFFC1C1),
                                   ),
                                   hintText: '000000',
                                   hintStyle: TextStyle(

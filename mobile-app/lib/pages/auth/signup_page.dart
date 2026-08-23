@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../models/signup_data.dart';
 import '../../services/auth/auth_service.dart';
+import '../../utils/validators.dart';
 import 'dart:ui';
 
 class SignupPage extends StatefulWidget {
@@ -20,6 +22,11 @@ class _SignupPageState extends State<SignupPage> {
   bool _isLoading = false;
 
   String? _errorMessage;
+  String? _nameError;
+  String? _emailError;
+  String? _phoneError;
+  String? _passwordFieldError;
+  String? _confirmPasswordError;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _showPasswordRequirements = false;
@@ -33,6 +40,36 @@ class _SignupPageState extends State<SignupPage> {
         _showPasswordRequirements =
             _passwordFocusNode.hasFocus || _passwordController.text.isNotEmpty;
       });
+    });
+  }
+
+  void _onNameChanged(String value) {
+    setState(() {
+      _nameError = value.isEmpty
+          ? null
+          : Validators.validateName(value, fieldLabel: 'Patient name');
+    });
+  }
+
+  void _onEmailChanged(String value) {
+    setState(() {
+      _emailError = value.isEmpty ? null : Validators.validateEmail(value);
+    });
+  }
+
+  void _onPhoneChanged(String value) {
+    setState(() {
+      _phoneError = value.isEmpty ? null : Validators.validatePhone(value);
+    });
+  }
+
+  void _onConfirmPasswordChanged(String value) {
+    setState(() {
+      _confirmPasswordError = value.isEmpty
+          ? null
+          : (value != _passwordController.text
+                ? 'Passwords do not match'
+                : null);
     });
   }
 
@@ -52,6 +89,15 @@ class _SignupPageState extends State<SignupPage> {
       _passwordValidation = AuthService.passwordRequirements(password);
       _showPasswordRequirements =
           _passwordFocusNode.hasFocus || password.isNotEmpty;
+      _passwordFieldError = password.isEmpty
+          ? null
+          : AuthService.validatePassword(password);
+      if (_confirmPasswordController.text.isNotEmpty) {
+        _confirmPasswordError =
+            _confirmPasswordController.text != password
+            ? 'Passwords do not match'
+            : null;
+      }
     });
   }
 
@@ -60,16 +106,34 @@ class _SignupPageState extends State<SignupPage> {
     final confirmPassword = _confirmPasswordController.text;
     final passwordError = AuthService.validatePassword(password);
 
-    if (_fullNameController.text.isEmpty) {
-      setState(() => _errorMessage = 'Patient name is required');
+    final nameError = Validators.validateName(
+      _fullNameController.text,
+      fieldLabel: 'Patient name',
+    );
+    final emailError = Validators.validateEmail(_emailController.text);
+    final phoneError = Validators.validatePhone(_phoneController.text);
+    final confirmError = password.isEmpty
+        ? null
+        : (password != confirmPassword ? 'Passwords do not match' : null);
+
+    setState(() {
+      _nameError = nameError;
+      _emailError = emailError;
+      _phoneError = phoneError;
+      _passwordFieldError = password.isEmpty ? 'Password is required' : passwordError;
+      _confirmPasswordError = confirmError;
+    });
+
+    if (nameError != null) {
+      setState(() => _errorMessage = nameError);
       return;
     }
-    if (_emailController.text.isEmpty) {
-      setState(() => _errorMessage = 'Email is required');
+    if (emailError != null) {
+      setState(() => _errorMessage = emailError);
       return;
     }
-    if (_phoneController.text.isEmpty) {
-      setState(() => _errorMessage = 'Phone number is required');
+    if (phoneError != null) {
+      setState(() => _errorMessage = phoneError);
       return;
     }
     if (password.isEmpty) {
@@ -291,6 +355,8 @@ class _SignupPageState extends State<SignupPage> {
                                   controller: _fullNameController,
                                   hint: 'Patient Name',
                                   icon: Icons.person_outline,
+                                  errorText: _nameError,
+                                  onChanged: _onNameChanged,
                                 ),
 
                                 const SizedBox(height: 16),
@@ -300,6 +366,8 @@ class _SignupPageState extends State<SignupPage> {
                                   hint: 'Email Address',
                                   icon: Icons.alternate_email,
                                   keyboardType: TextInputType.emailAddress,
+                                  errorText: _emailError,
+                                  onChanged: _onEmailChanged,
                                 ),
 
                                 const SizedBox(height: 16),
@@ -309,6 +377,12 @@ class _SignupPageState extends State<SignupPage> {
                                   hint: 'Phone Number',
                                   icon: Icons.phone_outlined,
                                   keyboardType: TextInputType.phone,
+                                  maxLength: 11,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly,
+                                  ],
+                                  errorText: _phoneError,
+                                  onChanged: _onPhoneChanged,
                                 ),
 
                                 const SizedBox(height: 16),
@@ -321,6 +395,7 @@ class _SignupPageState extends State<SignupPage> {
                                   decoration: _inputDecoration(
                                     hint: 'Create Password',
                                     icon: Icons.lock_outline,
+                                    errorText: _passwordFieldError,
                                     suffixIcon: IconButton(
                                       icon: Icon(
                                         _obscurePassword
@@ -410,9 +485,11 @@ class _SignupPageState extends State<SignupPage> {
                                 TextField(
                                   controller: _confirmPasswordController,
                                   obscureText: _obscureConfirmPassword,
+                                  onChanged: _onConfirmPasswordChanged,
                                   decoration: _inputDecoration(
                                     hint: 'Confirm Password',
                                     icon: Icons.lock_outline,
+                                    errorText: _confirmPasswordError,
                                     suffixIcon: IconButton(
                                       icon: Icon(
                                         _obscureConfirmPassword
@@ -542,11 +619,23 @@ class _SignupPageState extends State<SignupPage> {
     required String hint,
     required IconData icon,
     TextInputType keyboardType = TextInputType.text,
+    int? maxLength,
+    List<TextInputFormatter>? inputFormatters,
+    String? errorText,
+    ValueChanged<String>? onChanged,
   }) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
-      decoration: _inputDecoration(hint: hint, icon: icon),
+      maxLength: maxLength,
+      inputFormatters: inputFormatters,
+      onChanged: onChanged,
+      decoration: _inputDecoration(
+        hint: hint,
+        icon: icon,
+        showCounter: maxLength == null,
+        errorText: errorText,
+      ),
     );
   }
 
@@ -554,6 +643,8 @@ class _SignupPageState extends State<SignupPage> {
     required String hint,
     required IconData icon,
     Widget? suffixIcon,
+    bool showCounter = true,
+    String? errorText,
   }) {
     return InputDecoration(
       hintText: hint,
@@ -563,6 +654,8 @@ class _SignupPageState extends State<SignupPage> {
       ),
       prefixIcon: Icon(icon, color: const Color(0xFF5F7280)),
       suffixIcon: suffixIcon,
+      errorText: errorText,
+      counterText: showCounter ? null : '',
       filled: true,
       fillColor: Colors.white.withOpacity(0.62),
       contentPadding: const EdgeInsets.symmetric(vertical: 20),

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
 import '../../services/profile_update_service.dart';
+import '../../utils/validators.dart';
 
 class MedicalInfoPage extends StatefulWidget {
   final UserModel? user;
@@ -23,6 +24,8 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
 
   bool _isSaving = false;
   String? _saveMessage;
+  String? _weightError;
+  String? _heightError;
   Timer? _debounceTimer;
 
   @override
@@ -49,7 +52,27 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
 
     _bloodTypeController.addListener(_scheduleSave);
     _weightController.addListener(_scheduleSave);
+    _weightController.addListener(_validateWeightLive);
     _heightController.addListener(_scheduleSave);
+    _heightController.addListener(_validateHeightLive);
+  }
+
+  void _validateWeightLive() {
+    final text = _weightController.text;
+    setState(() {
+      _weightError = text.isEmpty
+          ? null
+          : Validators.validateNumeric(text, 'Weight', min: 0, max: 500);
+    });
+  }
+
+  void _validateHeightLive() {
+    final text = _heightController.text;
+    setState(() {
+      _heightError = text.isEmpty
+          ? null
+          : Validators.validateNumeric(text, 'Height', min: 0, max: 300);
+    });
   }
 
   void _scheduleSave() {
@@ -77,6 +100,32 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
 
   Future<void> _saveChanges() async {
     if (widget.user == null) return;
+
+    if (_weightController.text.isNotEmpty) {
+      final weightError = Validators.validateNumeric(
+        _weightController.text,
+        'Weight',
+        min: 0,
+        max: 500,
+      );
+      if (weightError != null) {
+        setState(() => _saveMessage = 'Failed: $weightError');
+        return;
+      }
+    }
+
+    if (_heightController.text.isNotEmpty) {
+      final heightError = Validators.validateNumeric(
+        _heightController.text,
+        'Height',
+        min: 0,
+        max: 300,
+      );
+      if (heightError != null) {
+        setState(() => _saveMessage = 'Failed: $heightError');
+        return;
+      }
+    }
 
     setState(() => _isSaving = true);
 
@@ -208,6 +257,7 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
                 _weightController,
                 hint: 'e.g., 70.5',
                 keyboardType: TextInputType.number,
+                errorText: _weightError,
               ),
               const SizedBox(height: 16),
               _buildField(
@@ -215,6 +265,7 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
                 _heightController,
                 hint: 'e.g., 175',
                 keyboardType: TextInputType.number,
+                errorText: _heightError,
               ),
               const SizedBox(height: 16),
               _buildDateField('Last Dialysis Date', _lastDialysisController),
@@ -279,6 +330,7 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
     TextEditingController controller, {
     String? hint,
     TextInputType keyboardType = TextInputType.text,
+    String? errorText,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -290,6 +342,7 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
           keyboardType: keyboardType,
           decoration: InputDecoration(
             hintText: hint ?? 'Enter $label',
+            errorText: errorText,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             suffixIcon: _isSaving
                 ? const SizedBox(

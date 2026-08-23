@@ -23,6 +23,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
 
   Map<String, dynamic>? _weeklySchedule;
   List<String> _scheduledDays = [];
+  DateTime? _scheduleCreatedAt;
 
   static const Map<int, String> _weekdayNames = {
     DateTime.monday: 'Monday',
@@ -44,10 +45,6 @@ class _AppointmentPageState extends State<AppointmentPage> {
     try {
       final data = await _appointmentService.getMySchedule();
 
-      print('APPOINTMENT DATA: $data');
-      print('WEEKLY: ${data?['weekly_schedule']}');
-      print('SCHEDULED DAYS: ${data?['weekly_schedule']?['scheduled_days']}');
-
       if (!mounted) return;
 
       setState(() {
@@ -55,13 +52,15 @@ class _AppointmentPageState extends State<AppointmentPage> {
         _scheduledDays = _parseScheduledDays(
           data?['weekly_schedule']?['scheduled_days'],
         );
+        _scheduleCreatedAt = DateTime.tryParse(
+          data?['weekly_schedule']?['created_at']?.toString() ?? '',
+        );
         _isLoading = false;
       });
 
-      print('PARSED DAYS: $_scheduledDays');
       await _checkScheduleReminders();
     } catch (e) {
-      print('LOAD SCHEDULE ERROR: $e');
+      debugPrint('Load schedule error: $e');
 
       if (!mounted) return;
 
@@ -248,10 +247,18 @@ class _AppointmentPageState extends State<AppointmentPage> {
 
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+    final scheduleStart = _scheduleCreatedAt == null
+        ? null
+        : DateTime(
+            _scheduleCreatedAt!.year,
+            _scheduleCreatedAt!.month,
+            _scheduleCreatedAt!.day,
+          );
     final pastDates = <DateTime>[];
 
     for (int i = 1; i <= 30; i++) {
       final date = today.subtract(Duration(days: i));
+      if (scheduleStart != null && date.isBefore(scheduleStart)) continue;
       final dayName = _weekdayNames[date.weekday];
 
       if (_scheduledDays.contains(dayName)) {
