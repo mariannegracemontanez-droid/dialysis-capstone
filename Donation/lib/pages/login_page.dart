@@ -3,9 +3,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'landing_page.dart';
 import 'signup_page.dart';
+import 'donation_page.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({
+    super.key,
+    this.fromDonation = false,
+  });
+
+  final bool fromDonation;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -169,11 +175,22 @@ class _LoginPageState extends State<LoginPage>
           ),
         );
       } else {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LandingPage()),
-          (route) => false,
-        );
-      }
+  if (widget.fromDonation) {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const DonationPage(),
+      ),
+      (route) => false,
+    );
+  } else {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const LandingPage(),
+      ),
+      (route) => false,
+    );
+  }
+}
     } on AuthException catch (e) {
       if (!mounted) return;
       setState(() {

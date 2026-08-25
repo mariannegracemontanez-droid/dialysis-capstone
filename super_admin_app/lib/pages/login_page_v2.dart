@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../pages/dashboard_page.dart';
+import '../config/supabase_config.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -81,7 +82,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     });
 
     try {
-      final res = await Supabase.instance.client.auth.signInWithPassword(
+      final res = await SupabaseConfig.client.auth.signInWithPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
@@ -93,7 +94,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         return;
       }
 
-      final profile = await Supabase.instance.client
+      final profile = await SupabaseConfig.client
           .from('profiles')
           .select('role')
           .eq('id', res.user!.id)
@@ -109,7 +110,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           _isSuperAdminRole(roleFromUserMetadata);
 
       if (!isSuperAdmin) {
-        await Supabase.instance.client.auth.signOut();
+        await SupabaseConfig.client.auth.signOut();
         setState(() {
           _message = 'Incorrect email or password. Please try again.';
         });
@@ -121,15 +122,15 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const DashboardPage()),
       );
-    } on AuthException catch (_) {
-      setState(() {
-        _message = 'Incorrect email or password. Please try again.';
-      });
-    } catch (_) {
-      setState(() {
-        _message = 'Incorrect email or password. Please try again.';
-      });
-    } finally {
+    } on AuthException catch (e) {
+  setState(() {
+    _message = e.message;
+  });
+} catch (e) {
+  setState(() {
+    _message = e.toString();
+  });
+} finally {
       if (mounted) {
         setState(() {
           _loading = false;
