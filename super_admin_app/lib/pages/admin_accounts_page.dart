@@ -979,7 +979,7 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                             style: TextStyle(color: _muted, fontSize: 12),
                           ),
                           value: _changePassword,
-                          activeColor: _primary,
+                          activeThumbColor: _primary,
                           onChanged: (val) {
                             setState(() {
                               _changePassword = val;

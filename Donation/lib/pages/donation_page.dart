@@ -1502,6 +1502,16 @@ Future<void> _handleDonate() async {
     final isEqualDistribution = _selectedAllocationMethod ==
         'Distribute Donation Equally Among All Centers';
 
+    // Records which of the three allocation methods the donor picked, so
+    // Super Admin's review screen can show it truthfully -- a specific-
+    // center pick and a random-center pick both end up as the same
+    // donations.clinic_id, so that column alone can't tell them apart.
+    final allocationType = isEqualDistribution
+        ? 'equal_distribution'
+        : (_selectedAllocationMethod == 'Randomly Assign a Dialysis Center'
+              ? 'random_center'
+              : 'specific_center');
+
     final response = await Supabase.instance.client
         .from('donations')
         .insert({
@@ -1512,6 +1522,7 @@ Future<void> _handleDonate() async {
           'payment_method': _selectedPaymentChannel,
           'status': 'pending',
           'clinic_id': isEqualDistribution ? null : _selectedCenterId,
+          'allocation_type': allocationType,
         })
         .select('id')
         .single();

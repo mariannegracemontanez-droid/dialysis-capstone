@@ -1449,7 +1449,7 @@ class _DashboardPageState extends State<DashboardPage>
                   ],
                 ),
               ),
-              if (trailing != null) trailing,
+              ?trailing,
             ],
           ),
           const SizedBox(height: 20),
