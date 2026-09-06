@@ -48,6 +48,56 @@ class _HomeTabState extends State<HomeTab> {
 
   RealtimeChannel? _healthSummaryChannel;
 
+  String? _selectedMoodEmoji;
+
+  static const List<Map<String, String>> _moods = [
+    {
+      'emoji': '😊',
+      'label': 'Great',
+      'message':
+          'Great to hear! Keep up whatever you\'re doing right — steady fluid '
+          'and diet balance are a big reason you\'re feeling this way.',
+    },
+    {
+      'emoji': '🙂',
+      'label': 'Okay',
+      'message':
+          'Good to know you\'re managing well. Keep monitoring your fluid '
+          'intake and rest when your body asks for it.',
+    },
+    {
+      'emoji': '😴',
+      'label': 'Tired',
+      'message':
+          'Feeling tired after or between dialysis sessions is common. Rest '
+          'when you can, eat iron-rich foods, and let your care team know if '
+          'the fatigue feels unusual or doesn\'t improve.',
+    },
+    {
+      'emoji': '😟',
+      'label': 'Anxious',
+      'message':
+          'It\'s okay to feel anxious about treatment — you\'re not alone in '
+          'this. Try slow, deep breathing, and talk to your care team or a '
+          'loved one about what\'s on your mind.',
+    },
+    {
+      'emoji': '😣',
+      'label': 'In Pain',
+      'message':
+          'Please don\'t wait out pain or discomfort — tell your nurse or '
+          'doctor as soon as you can so they can check on you.',
+    },
+    {
+      'emoji': '😢',
+      'label': 'Down',
+      'message':
+          'It\'s okay to have hard days — dialysis is a long journey and '
+          'your feelings are valid. Lean on your support system or care '
+          'team; you don\'t have to carry it alone.',
+    },
+  ];
+
   final List<Map<String, String>> _dailyMotivations = const [
     {
       'title': 'You are doing great',
@@ -495,6 +545,115 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
+  Widget _buildMoodPicker() {
+    return SizedBox(
+      height: 62,
+      child: Row(
+        children: _moods.map((mood) {
+          final emoji = mood['emoji']!;
+          final isSelected = _selectedMoodEmoji == emoji;
+
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => _handleMoodTap(mood),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Colors.white.withOpacity(0.22)
+                      : Colors.white.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(14),
+                  border: isSelected
+                      ? Border.all(color: Colors.white.withOpacity(0.55))
+                      : null,
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(emoji, style: const TextStyle(fontSize: 20)),
+                    const SizedBox(height: 2),
+                    Text(
+                      mood['label']!,
+                      style: const TextStyle(
+                        color: Color(0xFFD9EDF3),
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  void _handleMoodTap(Map<String, String> mood) {
+    setState(() => _selectedMoodEmoji = mood['emoji']);
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.all(22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(mood['emoji']!, style: const TextStyle(fontSize: 44)),
+              const SizedBox(height: 12),
+              Text(
+                'Feeling ${mood['label']}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF173B4F),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                mood['message']!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  height: 1.5,
+                  color: Color(0xFF5B6D7D),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                height: 46,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: ElevatedButton.styleFrom(
+                    elevation: 0,
+                    backgroundColor: const Color(0xFF225E72),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Thank you',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildHeader(String userName) {
     return Container(
       width: double.infinity,
@@ -551,6 +710,8 @@ class _HomeTabState extends State<HomeTab> {
               fontWeight: FontWeight.w500,
             ),
           ),
+          const SizedBox(height: 12),
+          _buildMoodPicker(),
           const SizedBox(height: 20),
           Container(
             decoration: BoxDecoration(

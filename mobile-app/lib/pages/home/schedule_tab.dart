@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../services/appointment_service.dart';
+import '../../services/health_monitoring_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/reschedule_service.dart';
 
 class AppointmentPage extends StatefulWidget {
   const AppointmentPage({super.key});
@@ -13,10 +15,12 @@ class AppointmentPage extends StatefulWidget {
 
 class _AppointmentPageState extends State<AppointmentPage> {
   final AppointmentService _appointmentService = AppointmentService();
+  final HealthMonitoringService _healthService = HealthMonitoringService();
+  final RescheduleService _rescheduleService = RescheduleService();
 
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
-  bool _showHistory = false;
+  bool _showReschedule = false;
 
   bool _isLoading = true;
   String? _errorMessage;
@@ -24,6 +28,28 @@ class _AppointmentPageState extends State<AppointmentPage> {
   Map<String, dynamic>? _weeklySchedule;
   List<String> _scheduledDays = [];
   DateTime? _scheduleCreatedAt;
+
+  // Dates (yyyy-MM-dd) the patient actually has a logged BP or weight
+  // reading for — used to tell a completed session apart from a missed
+  // one when rendering past scheduled dates.
+  Set<String> _loggedSessionDates = {};
+
+  // Reschedule request state.
+  bool _isLoadingRequests = true;
+  bool _isSubmittingRequest = false;
+  String? _requestErrorMessage;
+  List<Map<String, dynamic>> _myRequests = [];
+  DateTime? _requestedDate;
+  String _requestReason = 'Medical emergency';
+  final TextEditingController _requestNotesController =
+      TextEditingController();
+
+  static const List<String> _rescheduleReasons = [
+    'Medical emergency',
+    'Personal conflict',
+    'Travel',
+    'Other',
+  ];
 
   static const Map<int, String> _weekdayNames = {
     DateTime.monday: 'Monday',
@@ -39,13 +65,36 @@ class _AppointmentPageState extends State<AppointmentPage> {
   void initState() {
     super.initState();
     _loadSchedule();
+    _loadMyRequests();
+  }
+
+  @override
+  void dispose() {
+    _requestNotesController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadSchedule() async {
     try {
-      final data = await _appointmentService.getMySchedule();
+      final results = await Future.wait([
+        _appointmentService.getMySchedule(),
+        _healthService.getBloodPressureRecords(),
+        _healthService.getWeightRecords(),
+      ]);
 
       if (!mounted) return;
+
+      final data = results[0] as Map<String, dynamic>?;
+      final bpRecords = results[1] as List<Map<String, dynamic>>;
+      final weightRecords = results[2] as List<Map<String, dynamic>>;
+
+      final loggedDates = <String>{};
+      for (final record in [...bpRecords, ...weightRecords]) {
+        final sessionDate = record['session_date']?.toString();
+        if (sessionDate != null && sessionDate.isNotEmpty) {
+          loggedDates.add(sessionDate.split('T').first);
+        }
+      }
 
       setState(() {
         _weeklySchedule = data?['weekly_schedule'];
@@ -55,6 +104,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
         _scheduleCreatedAt = DateTime.tryParse(
           data?['weekly_schedule']?['created_at']?.toString() ?? '',
         );
+        _loggedSessionDates = loggedDates;
         _isLoading = false;
       });
 
@@ -68,6 +118,89 @@ class _AppointmentPageState extends State<AppointmentPage> {
         _errorMessage = e.toString();
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _loadMyRequests() async {
+    try {
+      final requests = await _rescheduleService.getMyRequests();
+      if (!mounted) return;
+      setState(() {
+        _myRequests = requests;
+        _isLoadingRequests = false;
+      });
+    } catch (e) {
+      debugPrint('Load reschedule requests error: $e');
+      if (!mounted) return;
+      setState(() => _isLoadingRequests = false);
+    }
+  }
+
+  bool _hasLoggedSessionOn(DateTime date) {
+    final key = DateFormat('yyyy-MM-dd').format(date);
+    return _loggedSessionDates.contains(key);
+  }
+
+  Future<void> _pickRequestedDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _requestedDate ?? now.add(const Duration(days: 1)),
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 60)),
+    );
+    if (picked != null) {
+      setState(() => _requestedDate = picked);
+    }
+  }
+
+  Future<void> _submitRescheduleRequest() async {
+    if (_requestedDate == null) {
+      setState(
+        () => _requestErrorMessage = 'Please select your preferred date.',
+      );
+      return;
+    }
+
+    setState(() {
+      _isSubmittingRequest = true;
+      _requestErrorMessage = null;
+    });
+
+    try {
+      await _rescheduleService.submitRequest(
+        originalDate: _selectedDay ?? DateTime.now(),
+        requestedDate: _requestedDate!,
+        reason: _requestReason,
+        notes: _requestNotesController.text.trim().isEmpty
+            ? null
+            : _requestNotesController.text.trim(),
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _requestedDate = null;
+        _requestNotesController.clear();
+      });
+
+      await _loadMyRequests();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Reschedule request sent. Your clinic will review it soon.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _requestErrorMessage = e.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmittingRequest = false);
+      }
     }
   }
 
@@ -429,6 +562,412 @@ class _AppointmentPageState extends State<AppointmentPage> {
     );
   }
 
+  Widget _buildHistoryList() {
+    final historyDates = _getPastScheduleDates();
+
+    if (historyDates.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF4F8FA),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE3EDF2)),
+        ),
+        child: const Text(
+          'No past scheduled sessions yet.',
+          style: TextStyle(color: Color(0xFF5B6D7D), fontSize: 13),
+        ),
+      );
+    }
+
+    return Column(
+      children: historyDates.map((date) {
+        final attended = _hasLoggedSessionOn(date);
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: attended ? Colors.white : const Color(0xFFFFF3F0),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: attended
+                  ? const Color(0xFFE1EAF0)
+                  : const Color(0xFFF7C9BE),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: attended
+                      ? const Color(0xFFE8F1F5)
+                      : const Color(0xFFFBE2DB),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  attended ? Icons.check_circle_outline : Icons.error_outline,
+                  color: attended
+                      ? const Color(0xFF225E72)
+                      : const Color(0xFFC0432A),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      DateFormat('EEEE, MMMM d, yyyy').format(date),
+                      style: const TextStyle(
+                        color: Color(0xFF173B4F),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      attended
+                          ? 'Dialysis session completed'
+                          : 'Patient did not take dialysis session today',
+                      style: TextStyle(
+                        color: attended
+                            ? const Color(0xFF5B6D7D)
+                            : const Color(0xFFC0432A),
+                        fontSize: 11.5,
+                        fontWeight: attended
+                            ? FontWeight.normal
+                            : FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildRescheduleTab() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFE1EAF0)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Request a Reschedule',
+                style: TextStyle(
+                  color: Color(0xFF173B4F),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Need to move a dialysis session? Send a request and your '
+                'clinic will review and confirm it.',
+                style: TextStyle(color: Color(0xFF7A8A94), fontSize: 13),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Preferred New Date',
+                style: TextStyle(
+                  color: Color(0xFF173B4F),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: _pickRequestedDate,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF4F8FA),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE3EDF2)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.calendar_month_outlined,
+                        color: Color(0xFF5F7280),
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        _requestedDate == null
+                            ? 'Select a date'
+                            : DateFormat(
+                                'EEEE, MMMM d, yyyy',
+                              ).format(_requestedDate!),
+                        style: TextStyle(
+                          color: _requestedDate == null
+                              ? const Color(0xFF6F7F89)
+                              : const Color(0xFF173B4F),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Reason',
+                style: TextStyle(
+                  color: Color(0xFF173B4F),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: _requestReason,
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: const Color(0xFFF4F8FA),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE3EDF2)),
+                  ),
+                ),
+                items: _rescheduleReasons.map((reason) {
+                  return DropdownMenuItem(value: reason, child: Text(reason));
+                }).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _requestReason = value);
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Notes (optional)',
+                style: TextStyle(
+                  color: Color(0xFF173B4F),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _requestNotesController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Anything else your clinic should know',
+                  filled: true,
+                  fillColor: const Color(0xFFF4F8FA),
+                  contentPadding: const EdgeInsets.all(14),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE3EDF2)),
+                  ),
+                ),
+              ),
+              if (_requestErrorMessage != null) ...[
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.red.withOpacity(0.20)),
+                  ),
+                  child: Text(
+                    _requestErrorMessage!,
+                    style: TextStyle(
+                      color: Colors.red.shade700,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 18),
+              SizedBox(
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: _isSubmittingRequest
+                      ? null
+                      : _submitRescheduleRequest,
+                  style: ElevatedButton.styleFrom(
+                    elevation: 0,
+                    backgroundColor: const Color(0xFF225E72),
+                    disabledBackgroundColor: const Color(
+                      0xFF225E72,
+                    ).withOpacity(0.55),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: _isSubmittingRequest
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.2,
+                          ),
+                        )
+                      : const Text(
+                          'Send Request',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        const Text(
+          'Your Reschedule Requests',
+          style: TextStyle(
+            color: Color(0xFF173B4F),
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (_isLoadingRequests)
+          const Padding(
+            padding: EdgeInsets.only(top: 12),
+            child: Center(
+              child: CircularProgressIndicator(color: Color(0xFF225E72)),
+            ),
+          )
+        else if (_myRequests.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF4F8FA),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE3EDF2)),
+            ),
+            child: const Text(
+              'You haven\'t sent any reschedule requests yet.',
+              style: TextStyle(color: Color(0xFF5B6D7D), fontSize: 13),
+            ),
+          )
+        else
+          ..._myRequests.map((request) {
+            final status =
+                request['status']?.toString().toLowerCase().trim() ??
+                'pending';
+            final statusColor = status == 'approved'
+                ? const Color(0xFF2A9D65)
+                : status == 'declined'
+                ? const Color(0xFFC0432A)
+                : const Color(0xFFB4690E);
+            final requestedDate = DateTime.tryParse(
+              request['requested_date']?.toString() ?? '',
+            );
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE1EAF0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          requestedDate == null
+                              ? 'Requested date pending'
+                              : 'New date: ${DateFormat('MMM d, yyyy').format(requestedDate)}',
+                          style: const TextStyle(
+                            color: Color(0xFF173B4F),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusColor.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          status.toUpperCase(),
+                          style: TextStyle(
+                            color: statusColor,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Reason: ${request['reason'] ?? 'N/A'}',
+                    style: const TextStyle(
+                      color: Color(0xFF5B6D7D),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasSchedule = _scheduledDays.isNotEmpty;
@@ -557,7 +1096,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
                             child: GestureDetector(
                               onTap: () {
                                 setState(() {
-                                  _showHistory = false;
+                                  _showReschedule = false;
                                 });
                               },
                               child: AnimatedContainer(
@@ -566,7 +1105,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
                                   vertical: 13,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: !_showHistory
+                                  color: !_showReschedule
                                       ? Colors.white
                                       : Colors.transparent,
                                   borderRadius: BorderRadius.circular(12),
@@ -575,7 +1114,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
                                   'Calendar',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
-                                    color: !_showHistory
+                                    color: !_showReschedule
                                         ? const Color(0xFF225E72)
                                         : const Color(0xFF7A8A94),
                                     fontWeight: FontWeight.w800,
@@ -590,7 +1129,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
                             child: GestureDetector(
                               onTap: () {
                                 setState(() {
-                                  _showHistory = true;
+                                  _showReschedule = true;
                                 });
                               },
                               child: AnimatedContainer(
@@ -599,16 +1138,16 @@ class _AppointmentPageState extends State<AppointmentPage> {
                                   vertical: 13,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: _showHistory
+                                  color: _showReschedule
                                       ? Colors.white
                                       : Colors.transparent,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Text(
-                                  'History',
+                                  'Reschedule',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
-                                    color: _showHistory
+                                    color: _showReschedule
                                         ? const Color(0xFF225E72)
                                         : const Color(0xFF7A8A94),
                                     fontWeight: FontWeight.w800,
@@ -652,100 +1191,8 @@ class _AppointmentPageState extends State<AppointmentPage> {
                           ),
                         ),
                       )
-                    else if (_showHistory)
-                      Builder(
-                        builder: (context) {
-                          final historyDates = _getPastScheduleDates();
-
-                          if (historyDates.isEmpty) {
-                            return Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(18),
-                                border: Border.all(
-                                  color: const Color(0xFFE1EAF0),
-                                ),
-                              ),
-                              child: const Text(
-                                'No completed dialysis sessions yet.',
-                                style: TextStyle(
-                                  color: Color(0xFF5B6D7D),
-                                  fontSize: 13,
-                                  height: 1.4,
-                                ),
-                              ),
-                            );
-                          }
-
-                          return Column(
-                            children: historyDates.map((date) {
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(
-                                    color: const Color(0xFFE1EAF0),
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.04),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 6),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 44,
-                                      height: 44,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFE8F1F5),
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                      child: const Icon(
-                                        Icons.check_circle_outline,
-                                        color: Color(0xFF225E72),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 14),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            DateFormat(
-                                              'EEEE, MMMM d, yyyy',
-                                            ).format(date),
-                                            style: const TextStyle(
-                                              color: Color(0xFF173B4F),
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          const Text(
-                                            'Dialysis session completed',
-                                            style: TextStyle(
-                                              color: Color(0xFF5B6D7D),
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                          );
-                        },
-                      )
+                    else if (_showReschedule)
+                      _buildRescheduleTab()
                     else
                       Container(
                         padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
@@ -824,6 +1271,32 @@ class _AppointmentPageState extends State<AppointmentPage> {
                                 ],
                               ),
                             ),
+
+                            const SizedBox(height: 24),
+
+                            const Text(
+                              'History',
+                              style: TextStyle(
+                                color: Color(0xFF173B4F),
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+
+                            const SizedBox(height: 6),
+
+                            const Text(
+                              'Past scheduled sessions, based on your logged '
+                              'blood pressure and weight readings.',
+                              style: TextStyle(
+                                color: Color(0xFF7A8A94),
+                                fontSize: 12,
+                              ),
+                            ),
+
+                            const SizedBox(height: 14),
+
+                            _buildHistoryList(),
                           ],
                         ),
                       ),

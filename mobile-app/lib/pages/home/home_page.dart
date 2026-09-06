@@ -522,6 +522,57 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
               ),
+              const SizedBox(height: 18),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF4E5),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFFFD9A0)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.priority_high_rounded,
+                      color: Color(0xFFB4690E),
+                      size: 22,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Important reminder',
+                            style: TextStyle(
+                              color: Color(0xFF8A4B0A),
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Make sure all your required medical documents are '
+                            'complete and clearly uploaded — clinics cannot '
+                            'approve an incomplete application. If any '
+                            'document is missing or hard to read, you may '
+                            'also need to visit the clinic or hospital in '
+                            'person to submit or verify it before your '
+                            'application can move forward.',
+                            style: TextStyle(
+                              color: Color(0xFF8A4B0A),
+                              fontSize: 12.5,
+                              height: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 22),
               Row(
                 children: [
@@ -1045,15 +1096,47 @@ class _HomePageState extends State<HomePage> {
         onTap: _onNavTap,
         selectedItemColor: const Color(0xFF2C5F7D),
         unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today),
-            label: 'Schedule',
-          ),
-          BottomNavigationBarItem(icon: Icon(Icons.favorite), label: 'Health'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
-        ],
+        items: _hasPatientAccess
+            ? const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.home),
+                  label: 'Home',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.calendar_today),
+                  label: 'Schedule',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.favorite),
+                  label: 'Health',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.person),
+                  label: 'Profile',
+                ),
+              ]
+            : const [
+                // While pending, Home and Profile stay fully navigable, so
+                // keep them colored regardless of which tab is selected.
+                // Schedule and Health are locked until approval, so they
+                // stay grey to signal they're not clickable yet.
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.home, color: Color(0xFF2C5F7D)),
+                  label: 'Home',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.calendar_today, color: Colors.grey),
+                  label: 'Schedule',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.favorite, color: Colors.grey),
+                  label: 'Health',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.person, color: Color(0xFF2C5F7D)),
+                  label: 'Profile',
+                ),
+              ],
       ),
     );
   }

@@ -13,21 +13,38 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   final _emailController = TextEditingController();
   final _otpController = TextEditingController();
   final _authService = AuthService();
+  final FocusNode _emailFocusNode = FocusNode();
   bool _isLoading = false;
   bool _otpSent = false;
   String? _errorMessage;
   String? _successMessage;
   String? _emailError;
   String? _otpError;
+  bool _emailTouched = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailFocusNode.addListener(() {
+      if (!_emailFocusNode.hasFocus) {
+        setState(() {
+          _emailTouched = true;
+          _emailError = Validators.validateEmail(_emailController.text);
+        });
+      }
+    });
+  }
 
   @override
   void dispose() {
     _emailController.dispose();
     _otpController.dispose();
+    _emailFocusNode.dispose();
     super.dispose();
   }
 
   void _onEmailChanged(String value) {
+    if (!_emailTouched) return;
     setState(() {
       _emailError = value.isEmpty ? null : Validators.validateEmail(value);
     });
@@ -44,7 +61,10 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   Future<void> _sendOTP() async {
     final email = _emailController.text.trim();
     final emailError = Validators.validateEmail(email);
-    setState(() => _emailError = emailError);
+    setState(() {
+      _emailTouched = true;
+      _emailError = emailError;
+    });
     if (emailError != null) {
       setState(() {
         _errorMessage = emailError;
@@ -234,6 +254,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                             if (!_otpSent) ...[
                               TextField(
                                 controller: _emailController,
+                                focusNode: _emailFocusNode,
                                 enabled: !_otpSent,
                                 keyboardType: TextInputType.emailAddress,
                                 onChanged: _onEmailChanged,

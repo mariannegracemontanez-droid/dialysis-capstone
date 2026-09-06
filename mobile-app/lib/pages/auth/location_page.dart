@@ -60,7 +60,39 @@ class _LocationPageState extends State<LocationPage> {
     }).toList();
   }
 
-  Future<void> _openClinicDetail(Map<String, dynamic> clinic) async {
+  /// Moves the map camera to the given clinic's pin and opens the same
+  /// popup a marker tap would show, so a search/suggestion tap always
+  /// points the patient at where the clinic actually is before choosing it.
+  void _pinpointClinic(Map<String, dynamic> clinic) {
+    final latitude = double.tryParse(clinic['latitude']?.toString() ?? '');
+    final longitude = double.tryParse(clinic['longitude']?.toString() ?? '');
+
+    setState(() {
+      _searchController.clear();
+      _searchQuery = '';
+    });
+
+    if (latitude != null && longitude != null) {
+      _mapController.move(LatLng(latitude, longitude), 16);
+    }
+
+    final isAlreadyApplied = _appliedClinicIds.contains(
+      clinic['id'].toString(),
+    );
+
+    if (isAlreadyApplied) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You already have an application for this clinic.'),
+        ),
+      );
+      return;
+    }
+
+    _showClinicPopup(clinic);
+  }
+
+  Future<void> _openClinicDetailPage(Map<String, dynamic> clinic) async {
     final isAlreadyApplied = _appliedClinicIds.contains(
       clinic['id'].toString(),
     );
@@ -75,12 +107,45 @@ class _LocationPageState extends State<LocationPage> {
     );
 
     if (result != null && mounted) {
-      setState(() {
-        _selectedClinic = result;
-        _searchController.clear();
-        _searchQuery = '';
+      _pinpointClinic(result);
+    }
+  }
+
+  double? _distanceInKmFromUser(Map<String, dynamic> clinic) {
+    if (_userLocation == null) return null;
+
+    final latitude = double.tryParse(clinic['latitude']?.toString() ?? '');
+    final longitude = double.tryParse(clinic['longitude']?.toString() ?? '');
+    if (latitude == null || longitude == null) return null;
+
+    final distanceInMeters = Geolocator.distanceBetween(
+      _userLocation!.latitude,
+      _userLocation!.longitude,
+      latitude,
+      longitude,
+    );
+
+    return distanceInMeters / 1000;
+  }
+
+  /// The clinics closest to the address/location the patient provided
+  /// earlier in signup, nearest first. Falls back to the original list
+  /// order (with "Distance unavailable") if location isn't available.
+  List<Map<String, dynamic>> get _nearestClinics {
+    final list = List<Map<String, dynamic>>.from(_clinics);
+
+    if (_userLocation != null) {
+      list.sort((a, b) {
+        final distA = _distanceInKmFromUser(a);
+        final distB = _distanceInKmFromUser(b);
+        if (distA == null && distB == null) return 0;
+        if (distA == null) return 1;
+        if (distB == null) return -1;
+        return distA.compareTo(distB);
       });
     }
+
+    return list.take(5).toList();
   }
 
   Future<void> _loadClinicsAndApplications() async {
@@ -396,6 +461,18 @@ class _LocationPageState extends State<LocationPage> {
                   ..._buildRequirementItems(clinic['requirements']),
                   const SizedBox(height: 16),
                 ],
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _openClinicDetailPage(clinic);
+                    },
+                    icon: const Icon(Icons.open_in_new, size: 16),
+                    label: const Text('View full details'),
+                  ),
+                ),
+                const SizedBox(height: 4),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
@@ -616,6 +693,155 @@ class _LocationPageState extends State<LocationPage> {
     );
   }
 
+  Widget _buildSuggestedNearestClinics() {
+    final suggestions = _nearestClinics;
+
+    if (suggestions.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color.fromARGB(255, 88, 164, 202),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE3EDF2)),
+        ),
+        child: const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.info_outline_rounded,
+              color: Color(0xFF2C5F7D),
+              size: 20,
+            ),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Please choose a clinic from the map to continue.',
+                style: TextStyle(
+                  color: Color(0xFF5B6D7D),
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(
+              Icons.near_me_outlined,
+              color: Color(0xFF2C5F7D),
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'Suggested nearest clinic',
+              style: TextStyle(
+                color: Color(0xFF173B4F),
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          _userLocation == null
+              ? 'Based on your registered location. Turn on location for distances.'
+              : 'Based on your registered location.',
+          style: const TextStyle(color: Color(0xFF7A8A94), fontSize: 11.5),
+        ),
+        const SizedBox(height: 12),
+        ...suggestions.map((clinic) => _buildSuggestedClinicTile(clinic)),
+      ],
+    );
+  }
+
+  Widget _buildSuggestedClinicTile(Map<String, dynamic> clinic) {
+    final isAlreadyApplied = _appliedClinicIds.contains(
+      clinic['id'].toString(),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _pinpointClinic(clinic),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF4F8FA),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE3EDF2)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2C5F7D),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(
+                  Icons.local_hospital,
+                  color: Colors.white,
+                  size: 19,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      clinic['name']?.toString() ?? 'Clinic',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13.5,
+                        color: Color(0xFF173B4F),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _getDistanceFromUser(clinic),
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: Color(0xFF2C5F7D),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (isAlreadyApplied)
+                      const Text(
+                        'Already applied',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.orange,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right,
+                color: Color(0xFF5F7280),
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSearchResultsPanel() {
     final results = _filteredClinics;
 
@@ -660,7 +886,7 @@ class _LocationPageState extends State<LocationPage> {
 
     return InkWell(
       borderRadius: BorderRadius.circular(14),
-      onTap: () => _openClinicDetail(clinic),
+      onTap: () => _pinpointClinic(clinic),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -990,43 +1216,7 @@ class _LocationPageState extends State<LocationPage> {
                                   )
                                 else ...[
                                   if (_selectedClinic == null)
-                                    Container(
-                                      padding: const EdgeInsets.all(16),
-                                      decoration: BoxDecoration(
-                                        color: const Color.fromARGB(
-                                          255,
-                                          88,
-                                          164,
-                                          202,
-                                        ),
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(
-                                          color: const Color(0xFFE3EDF2),
-                                        ),
-                                      ),
-                                      child: const Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Icon(
-                                            Icons.info_outline_rounded,
-                                            color: Color(0xFF2C5F7D),
-                                            size: 20,
-                                          ),
-                                          SizedBox(width: 10),
-                                          Expanded(
-                                            child: Text(
-                                              'Please choose a clinic from the map to continue.',
-                                              style: TextStyle(
-                                                color: Color(0xFF5B6D7D),
-                                                fontSize: 13,
-                                                height: 1.4,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    )
+                                    _buildSuggestedNearestClinics()
                                   else
                                     _buildClinicDetailsCard(_selectedClinic!),
 

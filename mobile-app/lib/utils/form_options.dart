@@ -43,6 +43,5 @@ class FormOptions {
     'Relative',
     'Guardian',
     'Friend',
-    'Other',
   ];
 }

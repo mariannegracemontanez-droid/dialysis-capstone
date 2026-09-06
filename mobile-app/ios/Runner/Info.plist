@@ -26,6 +26,10 @@
 		<string>$(FLUTTER_BUILD_NUMBER)</string>
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
+		<key>NSCameraUsageDescription</key>
+		<string>CureNurture uses your camera so you can take photos of your medical documents and profile picture.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>CureNurture needs access to your photo library so you can upload medical documents and your profile picture.</string>
 		<key>UIApplicationSceneManifest</key>
 		<dict>
 			<key>UIApplicationSupportsMultipleScenes</key>
