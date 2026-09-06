@@ -858,13 +858,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
               const SizedBox(width: 18),
               Expanded(
                 flex: 3,
-                child: Column(
-                  children: [
-                    _buildDonationCard(),
-                    const SizedBox(height: 18),
-                    _buildOperationsPanel(),
-                  ],
-                ),
+                child: Column(children: [_buildDonationCard()]),
               ),
             ],
           ),
@@ -1503,122 +1497,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
               fontSize: 12,
               color: textDark,
               fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOperationsPanel() {
-    return _sectionCard(
-      title: 'Center Notes',
-      subtitle: 'Daily Head Nurse priorities.',
-      icon: Icons.fact_check_rounded,
-      accentColor: const Color(0xFF0EA5E9),
-      child: FutureBuilder<List<Patient>>(
-        future: _noSchedPatients,
-        builder: (context, snapshot) {
-          final noSchedCount = snapshot.data?.length ?? 0;
-
-          return Column(
-            children: [
-              _checklistItem(
-                Icons.event_available_rounded,
-                'Review schedule',
-                'Confirm patients per shift.',
-                'Daily',
-                green,
-              ),
-              _checklistItem(
-                Icons.person_add_alt_1_rounded,
-                'Approve registrations',
-                'Review pending patient access.',
-                'Review',
-                purple,
-              ),
-              _checklistItem(
-                Icons.assignment_late_rounded,
-                'Assign schedules',
-                '$noSchedCount patient(s) still need scheduling.',
-                noSchedCount == 0 ? 'Clear' : 'Needed',
-                orange,
-              ),
-              _checklistItem(
-                Icons.health_and_safety_rounded,
-                'Monitor capacity',
-                '$machineCount machines available.',
-                'Active',
-                primary,
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _checklistItem(
-    IconData icon,
-    String title,
-    String subtitle,
-    String status,
-    Color color,
-  ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.11),
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: Icon(icon, color: color, size: 19),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: textDark,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(color: textMuted, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.11),
-              borderRadius: BorderRadius.circular(50),
-            ),
-            child: Text(
-              status,
-              style: TextStyle(
-                color: color,
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-              ),
             ),
           ),
         ],

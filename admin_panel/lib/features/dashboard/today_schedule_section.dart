@@ -1,5 +1,7 @@
 import 'package:admin_panel/services/schedule_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
 
@@ -52,6 +54,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
   static const Color green = Color(0xFF10B981);
   static const Color teal = Color(0xFF70C8BF);
   static const Color softBg = Color(0xFFF8FAFC);
+  static const Color orange = Color(0xFFF59E0B);
 
   @override
   void initState() {
@@ -618,6 +621,811 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     }
   }
 
+  Future<void> openSessionModal(dynamic item, String shift) async {
+    final dailyScheduleId = item['id']?.toString() ?? '';
+    final patientName = getPatientName(item);
+
+    if (!mounted) return;
+
+    bool isCompleted = _service.isSessionCompleted(item);
+    bool beforeWeightSaved = item['before_weight'] != null;
+    bool beforeBpSaved =
+        item['before_systolic'] != null && item['before_diastolic'] != null;
+    bool afterWeightSaved = item['after_weight'] != null;
+
+    final beforeWeightController = TextEditingController(
+      text: item['before_weight']?.toString() ?? '',
+    );
+    final beforeSystolicController = TextEditingController(
+      text: item['before_systolic']?.toString() ?? '',
+    );
+    final beforeDiastolicController = TextEditingController(
+      text: item['before_diastolic']?.toString() ?? '',
+    );
+    final afterWeightController = TextEditingController(
+      text: item['after_weight']?.toString() ?? '',
+    );
+    final durationHoursController = TextEditingController(
+      text: item['duration_hours']?.toString() ?? '',
+    );
+    final durationMinutesController = TextEditingController(
+      text: item['duration_minutes']?.toString() ?? '',
+    );
+
+    bool isSavingBefore = false;
+    bool isSavingAfter = false;
+    bool isCompleting = false;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            Future<void> saveBefore() async {
+              final weight = double.tryParse(
+                beforeWeightController.text.trim(),
+              );
+              final systolic = int.tryParse(
+                beforeSystolicController.text.trim(),
+              );
+              final diastolic = int.tryParse(
+                beforeDiastolicController.text.trim(),
+              );
+
+              if (weight == null ||
+                  weight <= 0 ||
+                  systolic == null ||
+                  diastolic == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Please enter a valid before-dialysis weight and blood pressure.',
+                    ),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+
+              setModalState(() => isSavingBefore = true);
+
+              try {
+                await _service.saveBeforeDialysisData(
+                  dailyScheduleId: dailyScheduleId,
+                  clinicId: widget.clinicId,
+                  beforeWeight: weight,
+                  beforeSystolic: systolic,
+                  beforeDiastolic: diastolic,
+                );
+
+                setModalState(() {
+                  beforeWeightSaved = true;
+                  beforeBpSaved = true;
+                  isSavingBefore = false;
+                });
+
+                if (!mounted) return;
+                await _showFeedbackDialog(
+                  ctx: dialogContext,
+                  success: true,
+                  message: 'Before-dialysis data saved.',
+                );
+              } catch (e) {
+                debugPrint('Save before-dialysis data error: $e');
+                setModalState(() => isSavingBefore = false);
+                if (!mounted) return;
+                await _showFeedbackDialog(
+                  ctx: dialogContext,
+                  success: false,
+                  message: 'Failed to save before-dialysis data: $e',
+                );
+              }
+            }
+
+            Future<void> completeSession() async {
+              final confirmed = await showDialog<bool>(
+                context: dialogContext,
+                builder: (confirmContext) => AlertDialog(
+                  title: const Text('Complete Dialysis Session'),
+                  content: Text(
+                    'Confirm that $patientName has completed their dialysis session for the $shift shift?',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(confirmContext).pop(false),
+                      child: const Text('Cancel'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(confirmContext).pop(true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: green,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Confirm Completed'),
+                    ),
+                  ],
+                ),
+              );
+
+              if (confirmed != true) return;
+
+              setModalState(() => isCompleting = true);
+
+              try {
+                await _service.markSessionCompleted(
+                  dailyScheduleId: dailyScheduleId,
+                  clinicId: widget.clinicId,
+                );
+
+                setModalState(() {
+                  isCompleted = true;
+                  isCompleting = false;
+                });
+
+                if (!mounted) return;
+                await _showFeedbackDialog(
+                  ctx: dialogContext,
+                  success: true,
+                  message:
+                      '$patientName\'s dialysis session marked completed.',
+                );
+              } catch (e) {
+                debugPrint('Complete dialysis session error: $e');
+                setModalState(() => isCompleting = false);
+                if (!mounted) return;
+                await _showFeedbackDialog(
+                  ctx: dialogContext,
+                  success: false,
+                  message: 'Failed to update session status: $e',
+                );
+              }
+            }
+
+            Future<void> saveAfter() async {
+              final weight = double.tryParse(
+                afterWeightController.text.trim(),
+              );
+              final hours = int.tryParse(durationHoursController.text.trim());
+              final minutes = int.tryParse(
+                durationMinutesController.text.trim(),
+              );
+
+              if (weight == null || weight <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Please enter a valid after-dialysis weight.',
+                    ),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+
+              if (hours == null || hours < 0 || hours > 8) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Session duration hours must be between 0 and 8.',
+                    ),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+
+              if (minutes == null || minutes < 0 || minutes > 59) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Session duration minutes must be between 0 and 59.',
+                    ),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+
+              setModalState(() => isSavingAfter = true);
+
+              try {
+                await _service.saveAfterDialysisData(
+                  dailyScheduleId: dailyScheduleId,
+                  clinicId: widget.clinicId,
+                  afterWeight: weight,
+                  durationHours: hours,
+                  durationMinutes: minutes,
+                );
+
+                setModalState(() {
+                  afterWeightSaved = true;
+                  isSavingAfter = false;
+                });
+
+                if (!mounted) return;
+                await _showFeedbackDialog(
+                  ctx: dialogContext,
+                  success: true,
+                  message: "$patientName's after-dialysis data saved.",
+                );
+
+                if (!mounted) return;
+                Navigator.of(dialogContext).pop();
+              } catch (e) {
+                debugPrint('Save after-dialysis data error: $e');
+                setModalState(() => isSavingAfter = false);
+                if (!mounted) return;
+                await _showFeedbackDialog(
+                  ctx: dialogContext,
+                  success: false,
+                  message: 'Failed to save after-dialysis data: $e',
+                );
+              }
+            }
+
+            final canComplete =
+                beforeWeightSaved && beforeBpSaved && !isCompleted;
+            final beforeEnabled = !isCompleted;
+            final afterEnabled = isCompleted && !afterWeightSaved;
+            final isFullyCompleted = isCompleted && afterWeightSaved;
+
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.all(24),
+              child: Container(
+                width: 560,
+                constraints: const BoxConstraints(maxHeight: 680),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.16),
+                      blurRadius: 24,
+                      offset: const Offset(0, 12),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 12, 12),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: primary.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.medical_services_rounded,
+                              color: primary,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  patientName,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 16,
+                                    color: textDark,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  '$shift Shift • $selectedDay',
+                                  style: const TextStyle(
+                                    color: textMuted,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          _statusChip(isCompleted),
+                          IconButton(
+                            onPressed: () =>
+                                Navigator.of(dialogContext).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, color: border),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _sessionSectionCard(
+                              title: 'Before Dialysis',
+                              icon: Icons.play_circle_fill_rounded,
+                              accent: teal,
+                              enabled: beforeEnabled,
+                              children: [
+                                _sessionInputField(
+                                  label: 'Weight Before Dialysis (kg)',
+                                  controller: beforeWeightController,
+                                  icon: Icons.scale_rounded,
+                                  enabled: beforeEnabled,
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _sessionInputField(
+                                        label: 'Systolic',
+                                        controller: beforeSystolicController,
+                                        icon: Icons.favorite_rounded,
+                                        enabled: beforeEnabled,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: _sessionInputField(
+                                        label: 'Diastolic',
+                                        controller: beforeDiastolicController,
+                                        icon: Icons.favorite_border_rounded,
+                                        enabled: beforeEnabled,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                if (beforeEnabled)
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton.icon(
+                                      onPressed: isSavingBefore
+                                          ? null
+                                          : saveBefore,
+                                      icon: isSavingBefore
+                                          ? const SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons.save_rounded,
+                                              size: 16,
+                                            ),
+                                      label: Text(
+                                        isSavingBefore
+                                            ? 'Saving...'
+                                            : 'Save Before-Dialysis Data',
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: teal,
+                                        foregroundColor: Colors.white,
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  _lockedNote(
+                                    'Before-dialysis data is locked once the session is completed.',
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: (!canComplete || isCompleting)
+                                    ? null
+                                    : completeSession,
+                                icon: isCompleting
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : Icon(
+                                        isCompleted
+                                            ? Icons.check_circle_rounded
+                                            : Icons.task_alt_rounded,
+                                        size: 18,
+                                      ),
+                                label: Text(
+                                  isCompleted
+                                      ? 'Dialysis Session Completed'
+                                      : (canComplete
+                                            ? 'Mark Dialysis Session Completed'
+                                            : 'Enter Before-Dialysis Data First'),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: isCompleted
+                                      ? const Color(0xFFCBD5E1)
+                                      : green,
+                                  foregroundColor: Colors.white,
+                                  disabledBackgroundColor: const Color(
+                                    0xFFCBD5E1,
+                                  ),
+                                  disabledForegroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 13,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            _sessionSectionCard(
+                              title: 'After Dialysis',
+                              icon: Icons.flag_circle_rounded,
+                              accent: isFullyCompleted
+                                  ? green
+                                  : (isCompleted
+                                        ? primary
+                                        : const Color(0xFF94A3B8)),
+                              enabled: isCompleted,
+                              children: [
+                                _sessionInputField(
+                                  label: 'Weight After Dialysis (kg)',
+                                  controller: afterWeightController,
+                                  icon: Icons.monitor_weight_rounded,
+                                  enabled: afterEnabled,
+                                ),
+                                const SizedBox(height: 14),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.timer_rounded,
+                                      size: 14,
+                                      color: afterEnabled
+                                          ? primary
+                                          : const Color(0xFFB0BBC7),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Session Duration',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w900,
+                                        color: afterEnabled
+                                            ? textDark
+                                            : textMuted,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _sessionInputField(
+                                        label: 'Hours (0-8)',
+                                        controller: durationHoursController,
+                                        icon: Icons.hourglass_bottom_rounded,
+                                        enabled: afterEnabled,
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter
+                                              .digitsOnly,
+                                          LengthLimitingTextInputFormatter(1),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: _sessionInputField(
+                                        label: 'Minutes (0-59)',
+                                        controller: durationMinutesController,
+                                        icon: Icons.timer_rounded,
+                                        enabled: afterEnabled,
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter
+                                              .digitsOnly,
+                                          LengthLimitingTextInputFormatter(2),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                if (afterEnabled)
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton.icon(
+                                      onPressed: isSavingAfter
+                                          ? null
+                                          : saveAfter,
+                                      icon: isSavingAfter
+                                          ? const SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons.save_rounded,
+                                              size: 16,
+                                            ),
+                                      label: Text(
+                                        isSavingAfter
+                                            ? 'Saving...'
+                                            : 'Save After-Dialysis Data',
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: primary,
+                                        foregroundColor: Colors.white,
+                                        disabledBackgroundColor: const Color(
+                                          0xFFCBD5E1,
+                                        ),
+                                        disabledForegroundColor: Colors.white,
+                                      ),
+                                    ),
+                                  )
+                                else if (isFullyCompleted)
+                                  _lockedNote(
+                                    'Session record locked — dialysis session fully documented.',
+                                    positive: true,
+                                  )
+                                else
+                                  _lockedNote(
+                                    'Complete the dialysis session to unlock after-dialysis inputs.',
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    await loadSelectedDaySchedule();
+  }
+
+  Future<void> _showFeedbackDialog({
+    required BuildContext ctx,
+    required bool success,
+    required String message,
+  }) async {
+    final color = success ? green : const Color(0xFFEF4444);
+    final icon = success ? Icons.check_circle_rounded : Icons.error_rounded;
+
+    await showDialog(
+      context: ctx,
+      barrierDismissible: true,
+      builder: (feedbackContext) {
+        bool dismissed = false;
+        void dismiss() {
+          if (dismissed) return;
+          dismissed = true;
+          if (feedbackContext.mounted) {
+            Navigator.of(feedbackContext).pop();
+          }
+        }
+
+        Timer(const Duration(seconds: 3), dismiss);
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: dismiss,
+          child: Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.all(24),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.16),
+                    blurRadius: 24,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, color: color, size: 24),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Tap anywhere to dismiss',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _lockedNote(String message, {bool positive = false}) {
+    return Row(
+      children: [
+        Icon(
+          positive ? Icons.verified_rounded : Icons.lock_rounded,
+          size: 14,
+          color: positive ? green : textMuted,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            message,
+            style: TextStyle(
+              fontSize: 11,
+              color: positive ? green : textMuted,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _statusChip(bool completed) {
+    final color = completed ? green : orange;
+
+    return Container(
+      margin: const EdgeInsets.only(left: 8, right: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Text(
+        completed ? 'Completed' : 'Pending',
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  Widget _sessionSectionCard({
+    required String title,
+    required IconData icon,
+    required Color accent,
+    required bool enabled,
+    required List<Widget> children,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: enabled ? Colors.white : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: accent.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 16, color: accent),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  color: enabled ? textDark : textMuted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _sessionInputField({
+    required String label,
+    required TextEditingController controller,
+    required IconData icon,
+    required bool enabled,
+    TextInputType keyboardType = const TextInputType.numberWithOptions(
+      decimal: true,
+    ),
+    List<TextInputFormatter>? inputFormatters,
+  }) {
+    return TextField(
+      controller: controller,
+      enabled: enabled,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      style: TextStyle(
+        color: enabled ? textDark : textMuted,
+        fontWeight: FontWeight.w700,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(
+          icon,
+          size: 18,
+          color: enabled ? primary : const Color(0xFFB0BBC7),
+        ),
+        filled: true,
+        fillColor: enabled ? softBg : const Color(0xFFF1F5F9),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 14,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: border),
+        ),
+        disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: primary, width: 1.5),
+        ),
+      ),
+    );
+  }
+
   Widget buildDayTabs() {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -822,12 +1630,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                   ),
                   children: [
                     numberCell('${index + 1}'),
-                    patientCell(
-                      patient == null
-                          ? 'Available slot'
-                          : getPatientName(patient),
-                      patient == null,
-                    ),
+                    patientCell(patient, shift),
                     tableActionCell(patient),
                   ],
                 );
@@ -865,18 +1668,31 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     );
   }
 
-  Widget patientCell(String text, bool isEmpty) {
-    return Container(
-      height: 34,
-      padding: const EdgeInsets.symmetric(horizontal: 9),
-      alignment: Alignment.centerLeft,
-      child: Text(
-        text,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: isEmpty ? FontWeight.w500 : FontWeight.w800,
-          color: isEmpty ? const Color(0xFFB0BBC7) : textDark,
+  Widget patientCell(dynamic patient, String shift) {
+    final bool isEmpty = patient == null;
+    final String text = isEmpty ? 'Available slot' : getPatientName(patient);
+
+    return InkWell(
+      onTap: isEmpty ? null : () => openSessionModal(patient, shift),
+      child: Container(
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        alignment: Alignment.centerLeft,
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                text,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isEmpty ? FontWeight.w500 : FontWeight.w800,
+                  color: isEmpty ? const Color(0xFFB0BBC7) : textDark,
+                ),
+              ),
+            ),
+            if (!isEmpty) _statusChip(_service.isSessionCompleted(patient)),
+          ],
         ),
       ),
     );
@@ -1000,6 +1816,27 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.calendar_month_rounded,
+                size: 16,
+                color: primary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                DateFormat('MMMM yyyy').format(_currentWeekStart),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  color: textDark,
+                ),
+              ),
+            ],
+          ),
+        ),
         buildDayTabs(),
         const SizedBox(height: 14),
         _buildSummaryStrip(),

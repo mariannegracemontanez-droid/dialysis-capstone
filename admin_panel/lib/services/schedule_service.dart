@@ -54,6 +54,14 @@ class ScheduleService {
           shift,
           start_time,
           end_time,
+          status,
+          completed_at,
+          before_weight,
+          before_systolic,
+          before_diastolic,
+          after_weight,
+          duration_hours,
+          duration_minutes,
           created_at,
           patients (
             id,
@@ -65,6 +73,91 @@ class ScheduleService {
         .order('created_at', ascending: true);
 
     return response;
+  }
+
+  bool isSessionCompleted(dynamic item) {
+    return item['status']?.toString() == 'completed';
+  }
+
+  Future<void> markSessionCompleted({
+    required String dailyScheduleId,
+    required String clinicId,
+  }) async {
+    final updated = await supabase
+        .from('daily_schedules')
+        .update({
+          'status': 'completed',
+          'completed_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', dailyScheduleId)
+        .eq('clinic_id', clinicId)
+        .select('id');
+
+    if (updated.isEmpty) {
+      throw Exception(
+        'Session update was not applied. Check RLS policy or clinic_id permission.',
+      );
+    }
+  }
+
+  /// Persists the before-dialysis weight and blood pressure directly on the
+  /// daily_schedules row for this session (one row = one patient/date/shift
+  /// session, so this is the single source of truth for the session record).
+  Future<Map<String, dynamic>> saveBeforeDialysisData({
+    required String dailyScheduleId,
+    required String clinicId,
+    required double beforeWeight,
+    required int beforeSystolic,
+    required int beforeDiastolic,
+  }) async {
+    final updated = await supabase
+        .from('daily_schedules')
+        .update({
+          'before_weight': beforeWeight,
+          'before_systolic': beforeSystolic,
+          'before_diastolic': beforeDiastolic,
+        })
+        .eq('id', dailyScheduleId)
+        .eq('clinic_id', clinicId)
+        .select();
+
+    if (updated.isEmpty) {
+      throw Exception(
+        'Before-dialysis data was not saved. Check RLS policy or clinic_id permission.',
+      );
+    }
+
+    return updated.first;
+  }
+
+  /// Persists the after-dialysis weight and session duration on the same
+  /// daily_schedules row. Should only be called once the session has been
+  /// marked completed.
+  Future<Map<String, dynamic>> saveAfterDialysisData({
+    required String dailyScheduleId,
+    required String clinicId,
+    required double afterWeight,
+    required int durationHours,
+    required int durationMinutes,
+  }) async {
+    final updated = await supabase
+        .from('daily_schedules')
+        .update({
+          'after_weight': afterWeight,
+          'duration_hours': durationHours,
+          'duration_minutes': durationMinutes,
+        })
+        .eq('id', dailyScheduleId)
+        .eq('clinic_id', clinicId)
+        .select();
+
+    if (updated.isEmpty) {
+      throw Exception(
+        'After-dialysis data was not saved. Check RLS policy or clinic_id permission.',
+      );
+    }
+
+    return updated.first;
   }
 
   Future<bool> isPatientAlreadyAssigned({

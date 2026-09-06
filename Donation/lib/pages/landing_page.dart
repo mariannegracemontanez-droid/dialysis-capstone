@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'donation_page.dart';
+import 'donation_option_page.dart';
 import 'login_page.dart';
 import 'more_details_page.dart';
 import 'signup_page.dart';
@@ -110,17 +111,14 @@ class _LandingPageState extends State<LandingPage>
   }
 
   void _openDonation(BuildContext context) {
-    final user = Supabase.instance.client.auth.currentUser;
-
-    if (user != null) {
-      Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => const DonationPage()));
-    } else {
-      _openLogin(context);
-    }
-  }
-
+  Navigator.of(
+    context,
+  ).push(
+    MaterialPageRoute(
+      builder: (_) => const DonationOptionPage(),
+    ),
+  );
+}
   void _openMoreDetails(BuildContext context) {
     Navigator.of(
       context,
