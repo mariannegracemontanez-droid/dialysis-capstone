@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/patient.dart';
 import '../auth/login_page.dart';
 import '../patients/patients_page.dart';
+import 'patient_schedule_modal.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -26,6 +27,8 @@ RealtimeChannel? _patientsChannel;
 RealtimeChannel? _weeklySchedulesChannel;
 RealtimeChannel? _fundDistributionsChannel;
 RealtimeChannel? _purchaseLogsChannel;
+RealtimeChannel? _donationsChannel;
+RealtimeChannel? _donationAllocationsChannel;
 
 class _DashboardPageState extends ConsumerState<DashboardPage>
     with TickerProviderStateMixin {
@@ -117,6 +120,34 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
           },
         )
         .subscribe();
+
+    // A Superadmin approving a donation (specific/random -> donations.status,
+    // equal distribution -> the parent donations row referenced by this
+    // center's donation_allocations rows) should be reflected here without
+    // needing a manual refresh.
+    _donationsChannel = Supabase.instance.client
+        .channel('dashboard_donations_realtime')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'donations',
+          callback: (payload) {
+            fetchDonationData();
+          },
+        )
+        .subscribe();
+
+    _donationAllocationsChannel = Supabase.instance.client
+        .channel('dashboard_donation_allocations_realtime')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'donation_allocations',
+          callback: (payload) {
+            fetchDonationData();
+          },
+        )
+        .subscribe();
   }
 
   void _initAnimations() {
@@ -145,6 +176,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
 
     if (_purchaseLogsChannel != null) {
       Supabase.instance.client.removeChannel(_purchaseLogsChannel!);
+    }
+
+    if (_donationsChannel != null) {
+      Supabase.instance.client.removeChannel(_donationsChannel!);
+    }
+
+    if (_donationAllocationsChannel != null) {
+      Supabase.instance.client.removeChannel(_donationAllocationsChannel!);
     }
 
     super.dispose();
@@ -203,7 +242,17 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
   Future<void> fetchDonationData() async {
     try {
       final latest = await _service.getLatestDonation(centerName);
-      final total = await _service.getTotalDonations(centerName);
+      final manualTotal = await _service.getTotalDonations(centerName);
+
+      // Real donor-driven allocations (specific/random/equal-share, all
+      // resolved and verified through the donation flow) are additive with
+      // the manual fund_distributions total above -- not a replacement --
+      // so previously-distributed amounts are never dropped from the
+      // center's reported total.
+      num allocatedTotal = 0;
+      if (clinicId != null) {
+        allocatedTotal = await _service.getAllocatedDonationTotal(clinicId!);
+      }
 
       final logs = await Supabase.instance.client
           .from('donation_purchase_logs')
@@ -215,7 +264,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
 
       setState(() {
         latestDonation = latest;
-        totalDonations = total;
+        totalDonations = manualTotal + allocatedTotal;
         purchaseLogs = List<Map<String, dynamic>>.from(logs);
       });
     } catch (e) {
@@ -1594,7 +1643,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
               ],
               rows: patients.map((patient) {
                 return DataRow(
-                  onSelectChanged: (_) => _showPatientModal(patient),
+                  onSelectChanged: (_) => showPatientScheduleModal(
+                    context,
+                    patient: patient,
+                    onScheduled: () {
+                      _showMessage('Schedule updated successfully');
+                      _loadData();
+                    },
+                  ),
                   cells: [
                     DataCell(_buildNameCell(patient)),
                     DataCell(Text(patient.email)),
@@ -1740,363 +1796,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     );
   }
 
-  void _showPatientModal(Patient patient) {
-    final selectedDays = <String>{};
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return Dialog(
-              backgroundColor: Colors.transparent,
-              insetPadding: const EdgeInsets.all(24),
-              child: Container(
-                width: 760,
-                constraints: const BoxConstraints(maxHeight: 740),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.18),
-                      blurRadius: 26,
-                      offset: const Offset(0, 14),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(26),
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [primaryDark, primary],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 30,
-                                backgroundColor: Colors.white,
-                                child: Text(
-                                  _getInitial(patient.name),
-                                  style: const TextStyle(
-                                    color: primary,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 15),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      patient.name,
-                                      style: const TextStyle(
-                                        fontSize: 23,
-                                        fontWeight: FontWeight.w900,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      patient.email,
-                                      style: const TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.close_rounded,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                                onPressed: () => Navigator.pop(context),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.all(26),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Patient Information',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 17,
-                                  color: textDark,
-                                ),
-                              ),
-                              const SizedBox(height: 15),
-                              LayoutBuilder(
-                                builder: (context, constraints) {
-                                  final details = [
-                                    _buildPatientDetailRow(
-                                      'Name',
-                                      patient.name,
-                                    ),
-                                    _buildPatientDetailRow(
-                                      'Email',
-                                      patient.email,
-                                    ),
-                                    _buildPatientDetailRow(
-                                      'Phone',
-                                      _safeText(patient.phone),
-                                    ),
-                                    _buildPatientDetailRow(
-                                      'Date of Birth',
-                                      patient.birthDate
-                                              ?.toString()
-                                              .split(' ')
-                                              .first ??
-                                          'N/A',
-                                    ),
-                                    _buildPatientDetailRow(
-                                      'Blood Type',
-                                      _safeText(patient.bloodType),
-                                    ),
-                                    _buildPatientDetailRow(
-                                      'Guardian',
-                                      _safeText(patient.emergencyContactName),
-                                    ),
-                                    _buildPatientDetailRow(
-                                      'Guardian Contact',
-                                      _safeText(patient.emergencyContactNumber),
-                                    ),
-                                    _buildPatientDetailRow(
-                                      'Address',
-                                      patient.address ??
-                                          patient.homeAddress ??
-                                          'N/A',
-                                    ),
-                                  ];
-
-                                  if (constraints.maxWidth < 620) {
-                                    return Column(children: details);
-                                  }
-
-                                  return Wrap(
-                                    spacing: 12,
-                                    children: details
-                                        .map(
-                                          (item) => SizedBox(
-                                            width:
-                                                (constraints.maxWidth - 12) / 2,
-                                            child: item,
-                                          ),
-                                        )
-                                        .toList(),
-                                  );
-                                },
-                              ),
-                              const SizedBox(height: 22),
-                              const Row(
-                                children: [
-                                  Icon(
-                                    Icons.calendar_month_rounded,
-                                    color: primary,
-                                    size: 20,
-                                  ),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    'Weekly Schedule',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 16,
-                                      color: textDark,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                'Select the dialysis days assigned to this patient.',
-                                style: TextStyle(
-                                  color: textMuted,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              const SizedBox(height: 13),
-                              _buildWeeklyScheduleSelector(selectedDays, (day) {
-                                setDialogState(() {
-                                  if (selectedDays.contains(day)) {
-                                    selectedDays.remove(day);
-                                  } else {
-                                    selectedDays.add(day);
-                                  }
-                                });
-                              }),
-                              const SizedBox(height: 26),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  OutlinedButton(
-                                    onPressed: () => Navigator.pop(context),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: textDark,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 18,
-                                        vertical: 14,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                    ),
-                                    child: const Text('Cancel'),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  ElevatedButton.icon(
-                                    onPressed: () async {
-                                      if (selectedDays.isEmpty) {
-                                        _showMessage(
-                                          'Please select at least one day',
-                                          isError: true,
-                                        );
-                                        return;
-                                      }
-
-                                      try {
-                                        await _service.setPatientSchedule(
-                                          patientId: patient.id,
-                                          selectedDays: selectedDays.toList(),
-                                        );
-
-                                        if (!mounted) return;
-
-                                        Navigator.pop(context);
-                                        _showMessage(
-                                          'Schedule updated successfully',
-                                        );
-                                        _loadData();
-                                      } catch (error) {
-                                        _showMessage(
-                                          'Error: $error',
-                                          isError: true,
-                                        );
-                                      }
-                                    },
-                                    icon: const Icon(
-                                      Icons.save_rounded,
-                                      size: 18,
-                                    ),
-                                    label: const Text('Save Schedule'),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: primary,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 18,
-                                        vertical: 14,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildPatientDetailRow(String label, String value) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: border),
-      ),
-      child: Row(
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-              color: textMuted,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              value,
-              textAlign: TextAlign.end,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 12,
-                color: textDark,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildWeeklyScheduleSelector(
-    Set<String> selectedDays,
-    Function(String) onDaySelected,
-  ) {
-    const days = [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-    ];
-    const dayShorts = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-    return Wrap(
-      spacing: 9,
-      runSpacing: 9,
-      children: List.generate(days.length, (index) {
-        final isSelected = selectedDays.contains(days[index]);
-
-        return FilterChip(
-          label: Text(dayShorts[index]),
-          selected: isSelected,
-          onSelected: (_) => onDaySelected(days[index]),
-          backgroundColor: const Color(0xFFF8FAFC),
-          selectedColor: primary,
-          checkmarkColor: Colors.white,
-          side: BorderSide(color: isSelected ? primary : border),
-          labelStyle: TextStyle(
-            color: isSelected ? Colors.white : textDark,
-            fontWeight: FontWeight.w900,
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        );
-      }),
-    );
-  }
+  // The No Schedule patient assignment flow (patient info + day/shift
+  // selection + live capacity validation + suggested-schedule
+  // integration) now lives in showPatientScheduleModal
+  // (features/dashboard/patient_schedule_modal.dart), since assigning a
+  // recurring schedule now means picking a default SHIFT per day too,
+  // backed by CenterScheduleService rather than the old days-only flow.
 
   Widget _buildMonthlyChart() {
     return _sectionCard(

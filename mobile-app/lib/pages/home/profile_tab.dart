@@ -94,7 +94,7 @@ class _ProfileTabState extends State<ProfileTab> {
                       ? Image.network(
                           imageUrl,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const SizedBox(
+                          errorBuilder: (_, _, _) => const SizedBox(
                             height: 260,
                             child: Center(child: Icon(Icons.person, size: 70)),
                           ),
@@ -397,7 +397,7 @@ class _ProfileTabState extends State<ProfileTab> {
                                 ? Image.network(
                                     _profileImageUrl!,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
+                                    errorBuilder: (_, _, _) =>
                                         _defaultProfileIcon(),
                                   )
                                 : _defaultProfileIcon(),

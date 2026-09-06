@@ -1,7 +1,11 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/clinic_shift.dart';
+import 'center_schedule_service.dart';
+
 class ScheduleService {
   final SupabaseClient supabase = Supabase.instance.client;
+  final CenterScheduleService _centerScheduleService = CenterScheduleService();
 
   Future<List<dynamic>> getEligiblePatients(
     String clinicId,
@@ -199,8 +203,24 @@ class ScheduleService {
       throw Exception('This patient is already assigned for this day.');
     }
 
-    final startTime = shift == 'AM' ? '08:00:00' : '13:00:00';
-    final endTime = shift == 'AM' ? '12:00:00' : '17:00:00';
+    // Pull the configured shift time from clinic_shifts instead of a
+    // hardcoded AM/PM split, so a manually-added entry always matches
+    // whatever the center has actually configured for that shift. Falls
+    // back to the old defaults only if no shift configuration exists yet
+    // (e.g. the center scheduling foundation migration hasn't run).
+    final shifts = await _centerScheduleService.getClinicShifts(clinicId);
+    ClinicShift? matchedShift;
+    for (final s in shifts) {
+      if (s.shiftCode == shift) {
+        matchedShift = s;
+        break;
+      }
+    }
+
+    final startTime = matchedShift?.startTime ??
+        (shift == 'AM' ? '08:00:00' : '13:00:00');
+    final endTime = matchedShift?.endTime ??
+        (shift == 'AM' ? '12:00:00' : '17:00:00');
 
     await supabase.from('daily_schedules').insert({
       'weekly_schedule_id': weeklyScheduleId,

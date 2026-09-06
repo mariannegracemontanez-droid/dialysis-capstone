@@ -1,7 +1,6 @@
 import 'package:CureNurture/services/fcm_service.dart';
 import 'package:CureNurture/services/notification_service.dart';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth/auth_service.dart';
 import '../../utils/validators.dart';
 

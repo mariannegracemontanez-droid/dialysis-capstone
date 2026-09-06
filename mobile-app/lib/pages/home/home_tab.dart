@@ -435,8 +435,9 @@ class _HomeTabState extends State<HomeTab> {
 
   void _startHealthTipsAutoScroll() {
     _tipsAutoScrollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-      if (!mounted || !_tipsController.hasClients || _healthTips.isEmpty)
+      if (!mounted || !_tipsController.hasClients || _healthTips.isEmpty) {
         return;
+      }
 
       final nextPage = _currentTipIndex + 1 >= _healthTips.length
           ? 0

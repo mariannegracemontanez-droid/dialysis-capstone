@@ -151,35 +151,10 @@ String _getWeekdayName(int weekday) {
   return days[weekday - 1];
 }
 
-  Future<void> setPatientSchedule({
-    required String patientId,
-    required List<String> selectedDays,
-  }) async {
-    final clinicId = await getCurrentClinicId();
-
-    if (clinicId == null) {
-      throw Exception('No clinic assigned to this admin account.');
-    }
-
-    final user = supabase.auth.currentUser;
-
-    if (user == null) {
-      throw Exception('No logged in user found.');
-    }
-
-    await supabase.from('weekly_schedules').upsert({
-      'patient_id': patientId,
-      'clinic_id': clinicId,
-      'created_by': user.id,
-      'scheduled_days': selectedDays,
-    }, onConflict: 'patient_id');
-
-    await supabase
-        .from('patients')
-        .update({'status': 'active'})
-        .eq('id', patientId)
-        .eq('clinic_id', clinicId);
-  }
+  // Recurring schedule creation now lives in CenterScheduleService
+  // (setPatientRecurringSchedule -> set_patient_recurring_schedule), since
+  // a schedule always carries a default shift per day and CenterScheduleService
+  // owns the shift/capacity data needed to validate that.
 
   Future<void> removeTodaySchedule(String dailyScheduleId) async {
     await supabase
@@ -223,6 +198,42 @@ String _getWeekdayName(int weekday) {
         .order('distribution_date', ascending: false);
 
     return List<Map<String, dynamic>>.from(response);
+  }
+
+  /// The center's real received total from the donor-driven donation flow:
+  /// verified donations sent directly to this clinic (specific/random
+  /// allocation) plus this clinic's share of verified equal-distribution
+  /// donations. This is separate from -- and additive with -- the manual
+  /// fund_distributions ledger above, so existing manually-distributed
+  /// amounts are never dropped from the center's total.
+  Future<num> getAllocatedDonationTotal(String clinicId) async {
+    num total = 0;
+
+    final direct = await client
+        .from('donations')
+        .select('amount')
+        .eq('clinic_id', clinicId)
+        .eq('status', 'verified');
+
+    for (final item in direct) {
+      total += (item['amount'] as num?) ?? 0;
+    }
+
+    final shares = await client
+        .from('donation_allocations')
+        .select('amount, donations(status)')
+        .eq('clinic_id', clinicId);
+
+    for (final item in shares) {
+      final parent = item['donations'];
+      final parentStatus = parent is Map ? parent['status'] : null;
+
+      if (parentStatus == 'verified') {
+        total += (item['amount'] as num?) ?? 0;
+      }
+    }
+
+    return total;
   }
 
 }

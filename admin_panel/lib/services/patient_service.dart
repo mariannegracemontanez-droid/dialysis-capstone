@@ -52,6 +52,10 @@ class PatientService {
     };
   }
 
+  /// Updates contact details and, when provided, the medical/scheduling
+  /// fields. Changes to the medical fields are recorded automatically as
+  /// history by the patient_medical_updates trigger -- previous values
+  /// are never lost, only superseded.
   Future<void> updatePatientInfo({
     required String patientId,
     required String email,
@@ -59,6 +63,10 @@ class PatientService {
     required String homeAddress,
     required String emergencyContactName,
     required String emergencyContactNumber,
+    String? dialysisStage,
+    String? existingCondition,
+    int? sessionsPerWeek,
+    bool includeMedicalFields = false,
   }) async {
     final clinicId = await getCurrentClinicId();
 
@@ -66,17 +74,38 @@ class PatientService {
       throw Exception('No clinic assigned to this admin account.');
     }
 
+    final payload = <String, dynamic>{
+      'email': email,
+      'phone': phone,
+      'home_address': homeAddress,
+      'emergency_contact_name': emergencyContactName,
+      'emergency_contact_number': emergencyContactNumber,
+    };
+
+    if (includeMedicalFields) {
+      payload['dialysis_stage'] = dialysisStage;
+      payload['existing_condition'] = existingCondition;
+      payload['sessions_per_week'] = sessionsPerWeek;
+    }
+
     await client
         .from('patients')
-        .update({
-          'email': email,
-          'phone': phone,
-          'home_address': homeAddress,
-          'emergency_contact_name': emergencyContactName,
-          'emergency_contact_number': emergencyContactNumber,
-        })
+        .update(payload)
         .eq('id', patientId)
         .eq('clinic_id', clinicId);
+  }
+
+  /// Append-only medical change history for a patient, newest first.
+  /// Written by the database trigger, never by the client.
+  Future<List<Map<String, dynamic>>> getMedicalHistory(String patientId) async {
+    final response = await client
+        .from('patient_medical_updates')
+        .select('field, old_value, new_value, created_at')
+        .eq('patient_id', patientId)
+        .order('created_at', ascending: false)
+        .limit(50);
+
+    return List<Map<String, dynamic>>.from(response);
   }
 
   Future<List<Map<String, dynamic>>> getPatientMedicalDocs(

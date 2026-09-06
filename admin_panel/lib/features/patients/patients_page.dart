@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/patient_service.dart';
+import '../../services/center_schedule_service.dart';
+import '../../services/schedule_recommendation_service.dart';
 import '../../models/patient.dart';
+import '../../models/center_schedule.dart';
+import '../../models/schedule_recommendation.dart';
 import '../dashboard/dashboard_page.dart';
 import '../../services/health_monitoring_service.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -20,6 +24,25 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
   final PatientService _service = PatientService();
   int _selectedNavIndex = 1;
   final HealthMonitoringService _healthService = HealthMonitoringService();
+  final CenterScheduleService _centerScheduleService = CenterScheduleService();
+  final ScheduleRecommendationService _recommendationService =
+      ScheduleRecommendationService();
+
+  /// Every patient-list section keeps a stable height of roughly ten
+  /// rows and scrolls internally, so the page doesn't grow without bound
+  /// as the center takes on more patients.
+  static const double _listRowHeight = 58;
+  static const int _visibleRows = 10;
+  static const double _listMaxHeight = _listRowHeight * _visibleRows;
+
+  final ScrollController _pendingScroll = ScrollController();
+  final ScrollController _activeScroll = ScrollController();
+  final ScrollController _weeklyScroll = ScrollController();
+  final ScrollController _declinedScroll = ScrollController();
+  // Separate controller: the medical history list can be on screen at
+  // the same time as the page's own lists, and one controller cannot be
+  // attached to two scroll views.
+  final ScrollController _historyScroll = ScrollController();
 
   static const Color primary = Color(0xFF245C78);
   static const Color primaryDark = Color(0xFF153D54);
@@ -32,9 +55,11 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
   late Future<List<Patient>> _pendingPatients;
   late Future<List<Patient>> _allPatients;
   late Future<List<Patient>> _declinedPatients;
+  late Future<Map<String, List<WeeklyScheduleEntry>>> _weeklySchedule;
 
   RealtimeChannel? _patientsChannel;
   RealtimeChannel? _monitoringChannel;
+  RealtimeChannel? _scheduleChannel;
 
   @override
   void initState() {
@@ -47,6 +72,12 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
   void dispose() {
     _patientsChannel?.unsubscribe();
     _monitoringChannel?.unsubscribe();
+    _scheduleChannel?.unsubscribe();
+    _pendingScroll.dispose();
+    _activeScroll.dispose();
+    _weeklyScroll.dispose();
+    _declinedScroll.dispose();
+    _historyScroll.dispose();
     super.dispose();
   }
 
@@ -54,7 +85,16 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     _pendingPatients = _service.getPatientsByStatus('pending');
     _allPatients = _service.getPatientsByStatus('active');
     _declinedPatients = _service.getPatientsByStatus('declined');
+    _weeklySchedule = _loadWeeklySchedule();
     _adminInfo = _service.getCurrentAdminInfo();
+  }
+
+  /// The weekly view is derived straight from the stored recurring
+  /// schedules -- nothing about it is duplicated for the UI.
+  Future<Map<String, List<WeeklyScheduleEntry>>> _loadWeeklySchedule() async {
+    final clinicId = await _service.getCurrentClinicId();
+    if (clinicId == null) return {};
+    return _centerScheduleService.getWeeklyPatientSchedule(clinicId);
   }
 
   void _refreshData() {
@@ -103,6 +143,34 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           },
         )
         .subscribe();
+
+    // Keeps the weekly schedule view in sync when a recurring schedule
+    // is created or changed anywhere in the app.
+    _scheduleChannel = supabase
+        .channel('patients-page-schedules')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'patient_schedule_days',
+          callback: (payload) {
+            if (!mounted) return;
+            setState(() {
+              _weeklySchedule = _loadWeeklySchedule();
+            });
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'weekly_schedules',
+          callback: (payload) {
+            if (!mounted) return;
+            setState(() {
+              _weeklySchedule = _loadWeeklySchedule();
+            });
+          },
+        )
+        .subscribe();
   }
 
   String _formatTime(dynamic value) {
@@ -124,6 +192,13 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     final text = value.toString().trim();
     if (text.isEmpty || text.toLowerCase() == 'null') return fallback;
     return text;
+  }
+
+  /// Blank text fields clear the stored value rather than saving an
+  /// empty string, so "not recorded" stays distinguishable from "".
+  String? _nullIfBlank(String value) {
+    final text = value.trim();
+    return text.isEmpty ? null : text;
   }
 
   String _getInitial(String name) {
@@ -558,7 +633,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   const SizedBox(height: 20),
                   _buildAllPatientsSection(),
                   const SizedBox(height: 20),
-                  _buildDeclinedPatientsSection(),
+                  _buildWeeklyAndDeclinedRow(),
                 ],
               ),
             ),
@@ -1122,7 +1197,9 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 );
               }
 
-              return _buildTableWrapper(
+              return _scrollArea(
+                controller: _pendingScroll,
+                child: _buildTableWrapper(
                 minWidth: 980,
                 child: DataTable(
                   headingRowHeight: 54,
@@ -1163,6 +1240,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                     );
                   }).toList(),
                 ),
+                ),
               );
             },
           ),
@@ -1201,7 +1279,9 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 );
               }
 
-              return _buildTableWrapper(
+              return _scrollArea(
+                controller: _activeScroll,
+                child: _buildTableWrapper(
                 minWidth: 1120,
                 child: DataTable(
                   headingRowHeight: 54,
@@ -1264,6 +1344,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                     );
                   }).toList(),
                 ),
+                ),
               );
             },
           ),
@@ -1302,8 +1383,10 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 );
               }
 
-              return _buildTableWrapper(
-                minWidth: 740,
+              return _scrollArea(
+                controller: _declinedScroll,
+                child: _buildTableWrapper(
+                minWidth: 420,
                 child: DataTable(
                   headingRowHeight: 54,
                   dataRowMinHeight: 58,
@@ -1333,11 +1416,197 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                     );
                   }).toList(),
                 ),
+                ),
               );
             },
           ),
         );
       },
+    );
+  }
+
+  /// Keeps a list section at a stable height of about ten rows and lets
+  /// it scroll internally instead of stretching the whole page. The
+  /// vertical scroll here and the horizontal scroll inside
+  /// [_buildTableWrapper] are on different axes, so they don't fight.
+  Widget _scrollArea({
+    required Widget child,
+    required ScrollController controller,
+    double maxHeight = _listMaxHeight,
+  }) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: Scrollbar(
+        controller: controller,
+        thumbVisibility: true,
+        child: SingleChildScrollView(
+          controller: controller,
+          physics: const ClampingScrollPhysics(),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  /// Weekly Patient Schedule (~75%) beside Declined Patients (~25%),
+  /// stacking on narrower screens.
+  Widget _buildWeeklyAndDeclinedRow() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 1100) {
+          return Column(
+            children: [
+              _buildWeeklyScheduleSection(),
+              const SizedBox(height: 20),
+              _buildDeclinedPatientsSection(),
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(flex: 3, child: _buildWeeklyScheduleSection()),
+            const SizedBox(width: 20),
+            Expanded(flex: 1, child: _buildDeclinedPatientsSection()),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildWeeklyScheduleSection() {
+    return FutureBuilder<Map<String, List<WeeklyScheduleEntry>>>(
+      future: _weeklySchedule,
+      builder: (context, snapshot) {
+        final schedule = snapshot.data ?? {};
+        final total = schedule.values.fold<int>(0, (sum, l) => sum + l.length);
+
+        return _sectionCard(
+          title: 'Weekly Patient Schedule',
+          subtitle:
+              'Recurring dialysis days and default shifts, taken from each '
+              "patient's saved schedule.",
+          icon: Icons.calendar_view_week_rounded,
+          accentColor: primary,
+          count: snapshot.hasData ? total : null,
+          child: Builder(
+            builder: (_) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return _buildLoadingState();
+              }
+
+              if (snapshot.hasError) {
+                return _buildErrorState(snapshot.error);
+              }
+
+              if (total == 0) {
+                return _buildEmptyState(
+                  icon: Icons.event_available_outlined,
+                  title: 'No recurring schedules yet',
+                  subtitle:
+                      'Assign a weekly schedule from the dashboard to see '
+                      'patients here.',
+                );
+              }
+
+              return _buildWeeklyScheduleTable(schedule);
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  /// Simple six-column Mon-Sat table: each column lists the patients
+  /// whose recurring scheduled_days include that day, with their default
+  /// shift shown beside the name.
+  Widget _buildWeeklyScheduleTable(
+    Map<String, List<WeeklyScheduleEntry>> schedule,
+  ) {
+    final days = CenterScheduleService.allDays;
+    final rowCount = schedule.values.fold<int>(
+      0,
+      (longest, entries) => entries.length > longest ? entries.length : longest,
+    );
+
+    return _scrollArea(
+      controller: _weeklyScroll,
+      child: _buildTableWrapper(
+        minWidth: 900,
+        child: Table(
+          border: TableBorder(
+            horizontalInside: BorderSide(color: Colors.grey.shade200),
+            verticalInside: BorderSide(color: Colors.grey.shade200),
+          ),
+          defaultColumnWidth: const FlexColumnWidth(),
+          children: [
+            TableRow(
+              decoration: const BoxDecoration(color: Color(0xFFF4F7FA)),
+              children: days
+                  .map(
+                    (day) => Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 12,
+                      ),
+                      child: Text(
+                        day.toUpperCase(),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          color: textDark,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+            for (var row = 0; row < rowCount; row++)
+              TableRow(
+                children: days.map((day) {
+                  final entries = schedule[day] ?? const [];
+                  if (row >= entries.length) {
+                    return const SizedBox(height: 42);
+                  }
+                  return _buildWeeklyCell(entries[row]);
+                }).toList(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWeeklyCell(WeeklyScheduleEntry entry) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            entry.patientName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              color: textDark,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            entry.shiftLabel,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: entry.shiftCode.isEmpty ? textMuted : primary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1513,6 +1782,8 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                 const SizedBox(height: 14),
                                 _buildMedicalDocumentsReviewCard(patient),
                                 const SizedBox(height: 14),
+                                _buildAcceptanceCard(patient),
+                                const SizedBox(height: 14),
                                 _buildPendingDecisionPanel(patient),
                               ],
                             ),
@@ -1661,6 +1932,8 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                 _buildPatientHealthSummaryCards(patient),
                                 const SizedBox(height: 14),
                                 _buildHealthMonitoringSection(patient),
+                                const SizedBox(height: 18),
+                                _buildMedicalHistorySection(patient),
                               ],
                             ),
                           ),
@@ -1881,6 +2154,164 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           _buildMedicalDocsList(patient),
         ],
       ),
+    );
+  }
+
+  Future<AcceptanceEvaluation?> _evaluateAcceptance(Patient patient) async {
+    final clinicId = patient.clinicId ?? await _service.getCurrentClinicId();
+    if (clinicId == null) return null;
+
+    return _recommendationService.evaluateAcceptance(
+      patientId: patient.id,
+      clinicId: clinicId,
+    );
+  }
+
+  /// Capacity-based acceptance guidance, produced by the same engine that
+  /// generates schedule recommendations -- so it can never say the center
+  /// can take a patient the scheduler then fails to place. Advisory only:
+  /// the Accept/Decline decision stays with the admin below.
+  Widget _buildAcceptanceCard(Patient patient) {
+    return FutureBuilder<AcceptanceEvaluation?>(
+      future: _evaluateAcceptance(patient),
+      builder: (context, snapshot) {
+        final evaluation = snapshot.data;
+
+        Color accent;
+        IconData icon;
+        String headline;
+        String detail;
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          accent = textMuted;
+          icon = Icons.hourglass_top_rounded;
+          headline = 'Checking center capacity...';
+          detail = "Analyzing this center's weekly schedule and shift capacity.";
+        } else if (snapshot.hasError || evaluation == null) {
+          accent = textMuted;
+          icon = Icons.help_outline_rounded;
+          headline = 'Capacity check unavailable';
+          detail =
+              "The center's schedule configuration could not be read, so "
+              'capacity could not be evaluated.';
+        } else {
+          switch (evaluation.verdict) {
+            case AcceptanceVerdict.canAccommodate:
+              accent = const Color(0xFF16A34A);
+              icon = Icons.verified_rounded;
+              break;
+            case AcceptanceVerdict.reviewRequired:
+              accent = const Color(0xFFF59E0B);
+              icon = Icons.info_rounded;
+              break;
+            case AcceptanceVerdict.cannotAccommodate:
+              accent = const Color(0xFFEF4444);
+              icon = Icons.report_problem_rounded;
+              break;
+          }
+          headline = evaluation.headline;
+          detail = evaluation.detail;
+        }
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: cardBorder),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: accent.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(icon, size: 20, color: accent),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Center Capacity Assessment',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: textMuted,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          headline,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                            color: accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                detail,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: textMuted,
+                  height: 1.45,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              if (evaluation?.suggestion != null) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: evaluation!.suggestion!.days
+                      .map(
+                        (day) => Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: softBlue,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            day,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: primary,
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Indicative only. The schedule and its default shift are '
+                  'chosen when the patient is actually scheduled.',
+                  style: TextStyle(fontSize: 11, color: textMuted),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -2486,6 +2917,135 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     );
   }
 
+  /// Dated medical change history for the patient. Read-only: rows are
+  /// written by the database trigger whenever a medical field changes,
+  /// so nothing here can be edited or removed from the app.
+  Widget _buildMedicalHistorySection(Patient patient) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _service.getMedicalHistory(patient.id),
+      builder: (context, snapshot) {
+        final entries = snapshot.data ?? [];
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Medical Information History',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF1E293B),
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Every recorded change to this patient\'s medical and '
+              'scheduling information, newest first.',
+              style: TextStyle(
+                color: Color(0xFF64748B),
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (snapshot.connectionState == ConnectionState.waiting)
+              _buildLoadingState()
+            else if (snapshot.hasError)
+              _buildErrorState(snapshot.error)
+            else if (entries.isEmpty)
+              _buildEmptyState(
+                icon: Icons.history_rounded,
+                title: 'No recorded changes yet',
+                subtitle:
+                    'Updates to dialysis stage, condition, blood type or '
+                    'required sessions will be listed here.',
+              )
+            else
+              _scrollArea(
+                controller: _historyScroll,
+                maxHeight: 320,
+                child: Column(
+                  children: entries.map(_buildMedicalHistoryRow).toList(),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMedicalHistoryRow(Map<String, dynamic> entry) {
+    final createdAt = DateTime.tryParse(entry['created_at']?.toString() ?? '');
+    final oldValue = _safeText(entry['old_value'], fallback: 'Not set');
+    final newValue = _safeText(entry['new_value'], fallback: 'Not set');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _safeText(entry['field'], fallback: 'Medical information'),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    color: textDark,
+                  ),
+                ),
+              ),
+              Text(
+                createdAt == null
+                    ? ''
+                    : '${createdAt.toLocal()}'.split('.').first,
+                style: const TextStyle(fontSize: 11, color: textMuted),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  oldValue,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: textMuted,
+                    decoration: TextDecoration.lineThrough,
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_rounded,
+                size: 14,
+                color: textMuted,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  newValue,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: textDark,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _profilePanel({
     required String title,
     required IconData icon,
@@ -2756,6 +3316,20 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     final guardianContactController = TextEditingController(
       text: patient.emergencyContactNumber ?? '',
     );
+    final dialysisStageController = TextEditingController(
+      text: patient.dialysisStage ?? '',
+    );
+    final existingConditionController = TextEditingController(
+      text: patient.existingCondition ?? '',
+    );
+    final sessionsController = TextEditingController();
+
+    // Required sessions/week lives on the patient record and drives both
+    // schedule validation and the recommendation, so it's loaded on open
+    // rather than re-typed from memory.
+    _centerScheduleService.getSessionsPerWeek(patient.id).then((value) {
+      if (value != null) sessionsController.text = value.toString();
+    });
 
     showDialog(
       context: context,
@@ -2847,6 +3421,39 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                       controller: guardianContactController,
                       icon: Icons.contact_phone_rounded,
                     ),
+                    const SizedBox(height: 22),
+                    const Text(
+                      'Medical & Dialysis Information',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                        color: Color(0xFF26364A),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Every change here is kept in the patient\'s medical '
+                      'history with a timestamp -- previous values are never '
+                      'erased.',
+                      style: TextStyle(fontSize: 12, color: textMuted),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildEditField(
+                      label: 'Dialysis Stage',
+                      controller: dialysisStageController,
+                      icon: Icons.local_hospital_rounded,
+                    ),
+                    _buildEditField(
+                      label: 'Existing Condition',
+                      controller: existingConditionController,
+                      icon: Icons.health_and_safety_rounded,
+                      maxLines: 2,
+                    ),
+                    _buildEditField(
+                      label: 'Required Sessions per Week (1-6)',
+                      controller: sessionsController,
+                      icon: Icons.event_repeat_rounded,
+                    ),
                     const SizedBox(height: 26),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -2858,6 +3465,23 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                         const SizedBox(width: 10),
                         ElevatedButton.icon(
                           onPressed: () async {
+                            final sessionsText = sessionsController.text.trim();
+                            int? sessions;
+
+                            if (sessionsText.isNotEmpty) {
+                              sessions = int.tryParse(sessionsText);
+                              if (sessions == null ||
+                                  sessions < 1 ||
+                                  sessions > 6) {
+                                _showMessage(
+                                  'Required sessions per week must be a '
+                                  'number between 1 and 6.',
+                                  isError: true,
+                                );
+                                return;
+                              }
+                            }
+
                             try {
                               await _service.updatePatientInfo(
                                 patientId: patient.id,
@@ -2869,6 +3493,14 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                     .trim(),
                                 emergencyContactNumber:
                                     guardianContactController.text.trim(),
+                                includeMedicalFields: true,
+                                dialysisStage: _nullIfBlank(
+                                  dialysisStageController.text,
+                                ),
+                                existingCondition: _nullIfBlank(
+                                  existingConditionController.text,
+                                ),
+                                sessionsPerWeek: sessions,
                               );
 
                               if (!mounted) return;

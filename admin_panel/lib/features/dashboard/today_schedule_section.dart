@@ -2,8 +2,10 @@ import 'package:admin_panel/services/schedule_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
+
+import '../../models/clinic_shift.dart';
+import '../../services/center_schedule_service.dart';
 
 class TodayScheduleSection extends StatefulWidget {
   final String clinicId;
@@ -21,7 +23,24 @@ class TodayScheduleSection extends StatefulWidget {
 
 class _TodayScheduleSectionState extends State<TodayScheduleSection> {
   final ScheduleService _service = ScheduleService();
-  final SupabaseClient _supabase = Supabase.instance.client;
+  final CenterScheduleService _centerScheduleService = CenterScheduleService();
+
+  List<ClinicShift> _shifts = [];
+
+  /// patientId -> default shift code, for the day currently shown. Used
+  /// only to label a row as recurring vs. manually added.
+  Map<String, String> _recurringShifts = {};
+
+  /// Configured capacity for a shift code, from clinic_shifts -- never a
+  /// naive machine-count assumption. Falls back to the raw machine count
+  /// only if shift configuration hasn't loaded yet (e.g. the center
+  /// scheduling foundation migration hasn't been run).
+  int _capacityFor(String shiftCode) {
+    for (final shift in _shifts) {
+      if (shift.shiftCode == shiftCode) return shift.capacity;
+    }
+    return widget.machineCount;
+  }
 
   final List<String> days = [
     'Monday',
@@ -247,25 +266,25 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     return '';
   }
 
+  /// Reads shift label/time straight from clinic_shifts -- previously
+  /// this only showed a shift's time once at least one daily_schedules
+  /// row for that shift existed on some date, which meant a brand-new
+  /// clinic or an empty day showed "Time not set" even though the shift
+  /// was fully configured.
   Future<void> loadShiftTimes() async {
     try {
-      final response = await _supabase
-          .from('daily_schedules')
-          .select('shift, start_time, end_time')
-          .eq('clinic_id', widget.clinicId);
+      final shifts = await _centerScheduleService.getClinicShifts(
+        widget.clinicId,
+      );
 
       final nextShiftTimes = {'AM': 'Time not set', 'PM': 'Time not set'};
 
-      for (final slot in response) {
-        final shift = slot['shift']?.toString().toUpperCase();
+      for (final shift in shifts) {
+        final startTime = _formatTimeValue(shift.startTime);
+        final endTime = _formatTimeValue(shift.endTime);
 
-        if (shift == 'AM' || shift == 'PM') {
-          final startTime = _formatTimeValue(slot['start_time']);
-          final endTime = _formatTimeValue(slot['end_time']);
-
-          if (startTime.isNotEmpty && endTime.isNotEmpty) {
-            nextShiftTimes[shift!] = '$startTime - $endTime';
-          }
+        if (startTime.isNotEmpty && endTime.isNotEmpty) {
+          nextShiftTimes[shift.shiftCode] = '$startTime - $endTime';
         }
       }
 
@@ -273,6 +292,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
 
       setState(() {
         shiftTimes = nextShiftTimes;
+        _shifts = shifts;
       });
     } catch (e) {
       debugPrint('Load shift times error: $e');
@@ -286,12 +306,28 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
 
     try {
       final selectedDate = getDateForSelectedDay();
+      final dayIndex = days.indexOf(selectedDay);
 
       await loadShiftTimes();
+
+      // Populate today's default list from active recurring schedules
+      // before reading it back -- additive and idempotent, never
+      // touches a daily_schedules row that already exists for a patient
+      // on this date (manually added or previously generated).
+      await _centerScheduleService.generateTodayDefaultSchedule(
+        clinicId: widget.clinicId,
+        date: getDateForDay(dayIndex < 0 ? 0 : dayIndex),
+      );
 
       final data = await _service.getDailyAssignments(
         clinicId: widget.clinicId,
         scheduleDate: selectedDate,
+      );
+
+      final recurringShifts =
+          await _centerScheduleService.getRecurringPatientShiftsForDay(
+        clinicId: widget.clinicId,
+        day: selectedDay,
       );
 
       if (!mounted) return;
@@ -299,6 +335,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
       setState(() {
         amPatients = data.where((item) => item['shift'] == 'AM').toList();
         pmPatients = data.where((item) => item['shift'] == 'PM').toList();
+        _recurringShifts = recurringShifts;
       });
     } catch (e) {
       debugPrint('Load schedule error: $e');
@@ -1501,8 +1538,9 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     required String shift,
     required List<dynamic> patients,
   }) {
-    final bool isFull = patients.length >= widget.machineCount;
-    final int rowsToShow = widget.machineCount > 12 ? 12 : widget.machineCount;
+    final int capacity = _capacityFor(shift);
+    final bool isFull = patients.length >= capacity;
+    final int rowsToShow = capacity > 12 ? 12 : capacity;
 
     return Container(
       padding: const EdgeInsets.all(13),
@@ -1532,7 +1570,8 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                     Row(
                       children: [
                         Text(
-                          '${patients.length}/${widget.machineCount} slots filled',
+                          '${patients.length}/$capacity filled · '
+                          '${capacity - patients.length < 0 ? 0 : capacity - patients.length} vacant',
                           style: const TextStyle(
                             fontSize: 11,
                             color: textMuted,
@@ -1637,10 +1676,10 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
               }),
             ),
           ),
-          if (widget.machineCount > rowsToShow) ...[
+          if (capacity > rowsToShow) ...[
             const SizedBox(height: 10),
             Text(
-              '+ ${widget.machineCount - rowsToShow} more machine slots',
+              '+ ${capacity - rowsToShow} more machine slots',
               style: const TextStyle(
                 color: textMuted,
                 fontSize: 11,
@@ -1672,6 +1711,13 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     final bool isEmpty = patient == null;
     final String text = isEmpty ? 'Available slot' : getPatientName(patient);
 
+    // A session counts as recurring when the patient's saved schedule
+    // puts them on this day and shift; anything else was added by hand
+    // for this date only.
+    final patientId = isEmpty ? null : patient['patient_id']?.toString();
+    final bool isRecurring =
+        patientId != null && _recurringShifts[patientId] == shift;
+
     return InkWell(
       onTap: isEmpty ? null : () => openSessionModal(patient, shift),
       child: Container(
@@ -1691,8 +1737,35 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                 ),
               ),
             ),
+            if (!isEmpty) _sourceChip(isRecurring),
             if (!isEmpty) _statusChip(_service.isSessionCompleted(patient)),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sourceChip(bool isRecurring) {
+    final color = isRecurring ? primary : const Color(0xFF8E44AD);
+
+    return Tooltip(
+      message: isRecurring
+          ? "From the patient's recurring weekly schedule"
+          : 'Added manually for this date',
+      child: Container(
+        margin: const EdgeInsets.only(right: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: Text(
+          isRecurring ? 'Recurring' : 'Added',
+          style: TextStyle(
+            fontSize: 8.5,
+            fontWeight: FontWeight.w900,
+            color: color,
+          ),
         ),
       ),
     );
@@ -1720,7 +1793,9 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
 
   Widget _buildSummaryStrip() {
     final totalAssigned = amPatients.length + pmPatients.length;
-    final totalCapacity = widget.machineCount * 2;
+    final totalCapacity = _shifts.isEmpty
+        ? widget.machineCount * 2
+        : _shifts.fold<int>(0, (sum, s) => sum + s.capacity);
 
     return Container(
       width: double.infinity,
