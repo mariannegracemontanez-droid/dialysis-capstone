@@ -21,6 +21,8 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
   int _selectedTabIndex = 0;
   List<Map<String, dynamic>> _todayLogs = [];
   List<Map<String, dynamic>> _historyLogs = [];
+  List<Map<String, dynamic>> _bpHistory = [];
+  List<Map<String, dynamic>> _weightHistory = [];
   Map<String, dynamic>? _latestBloodPressure;
   Map<String, dynamic>? _latestWeightLog;
 
@@ -75,6 +77,8 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
         _service.getWaterHistory(),
         _service.getLatestBloodPressure(),
         _service.getLatestWeightLog(),
+        _service.getBloodPressureRecords(),
+        _service.getWeightRecords(),
       ]);
 
       setState(() {
@@ -87,6 +91,12 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
         );
         _latestBloodPressure = results[3] as Map<String, dynamic>?;
         _latestWeightLog = results[4] as Map<String, dynamic>?;
+        _bpHistory = List<Map<String, dynamic>>.from(
+          results[5] as List<dynamic>,
+        );
+        _weightHistory = List<Map<String, dynamic>>.from(
+          results[6] as List<dynamic>,
+        );
       });
     } catch (error) {
       if (mounted) {
@@ -1238,7 +1248,7 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
   }
 
   Widget _buildHistoryTab() {
-    if (_historyLogs.isEmpty) {
+    if (_historyLogs.isEmpty && _bpHistory.isEmpty && _weightHistory.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
@@ -1248,7 +1258,7 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
               Icon(Icons.history, size: 44, color: Colors.grey),
               SizedBox(height: 16),
               Text(
-                'No water intake history yet.',
+                'No health history yet.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 16, color: Colors.grey),
               ),
@@ -1258,6 +1268,198 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
       );
     }
 
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHistorySection(
+            icon: Icons.favorite,
+            iconColor: Colors.red,
+            title: 'Blood Pressure History',
+            emptyLabel: 'No blood pressure records yet.',
+            child: _bpHistory.isEmpty ? null : _buildBpHistoryList(),
+          ),
+          const SizedBox(height: 26),
+          _buildHistorySection(
+            icon: Icons.monitor_weight_outlined,
+            iconColor: const Color(0xFF225E72),
+            title: 'Weight History',
+            emptyLabel: 'No weight records yet.',
+            child: _weightHistory.isEmpty ? null : _buildWeightHistoryList(),
+          ),
+          const SizedBox(height: 26),
+          _buildHistorySection(
+            icon: Icons.water_drop,
+            iconColor: _waterIconColor,
+            title: 'Water Intake History',
+            emptyLabel: 'No water intake history yet.',
+            child: _historyLogs.isEmpty ? null : _buildWaterHistoryList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistorySection({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String emptyLabel,
+    required Widget? child,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: iconColor, size: 18),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF173B4F),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (child == null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF4F8FA),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE3EDF2)),
+            ),
+            child: Text(
+              emptyLabel,
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+            ),
+          )
+        else
+          child,
+      ],
+    );
+  }
+
+  Widget _buildBpHistoryList() {
+    return Column(
+      children: _bpHistory.map((bp) {
+        final systolic = bp['systolic']?.toString() ?? '--';
+        final diastolic = bp['diastolic']?.toString() ?? '--';
+        final date = bp['session_date']?.toString() ?? '';
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: _cardDecoration(),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$systolic/$diastolic mmHg',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _formatHistoryDate(date),
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                _getBpDescription(
+                  int.tryParse(systolic),
+                  int.tryParse(diastolic),
+                ),
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.red,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildWeightHistoryList() {
+    return Column(
+      children: _weightHistory.map((weight) {
+        final before =
+            double.tryParse(weight['before_weight'].toString()) ?? 0;
+        final after = double.tryParse(weight['after_weight'].toString()) ?? 0;
+        final removed = before - after;
+        final date = weight['session_date']?.toString() ?? '';
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: _cardDecoration(),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${before.toStringAsFixed(1)} kg → ${after.toStringAsFixed(1)} kg',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _formatHistoryDate(date),
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                'Removed: ${removed.toStringAsFixed(1)} kg',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF225E72),
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildWaterHistoryList() {
     final grouped = <String, List<Map<String, dynamic>>>{};
     for (final log in _historyLogs) {
       final logDate = log['log_date'] as String? ?? '';
@@ -1265,62 +1467,63 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
       grouped.putIfAbsent(formatted, () => []).add(log);
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: grouped.entries.map((entry) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                entry.key,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: grouped.entries.map((entry) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              entry.key,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Colors.grey.shade700,
               ),
-              const SizedBox(height: 12),
-              ...entry.value.map((log) {
-                final amount = log['amount_ml']?.toString() ?? '0';
-                final time = _formatTime(log['logged_at'] as String? ?? '');
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 16,
-                  ),
-                  decoration: _cardDecoration(),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '$amount mL',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 16,
-                            ),
+            ),
+            const SizedBox(height: 8),
+            ...entry.value.map((log) {
+              final amount = log['amount_ml']?.toString() ?? '0';
+              final time = _formatTime(log['logged_at'] as String? ?? '');
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                decoration: _cardDecoration(),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '$amount mL',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            time,
-                            style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          time,
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 12,
                           ),
-                        ],
-                      ),
-                      const Icon(Icons.water_drop, color: _waterIconColor),
-                    ],
-                  ),
-                );
-              }),
-              const SizedBox(height: 18),
-            ],
-          );
-        }).toList(),
-      ),
+                        ),
+                      ],
+                    ),
+                    const Icon(Icons.water_drop, color: _waterIconColor),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 12),
+          ],
+        );
+      }).toList(),
     );
   }
 

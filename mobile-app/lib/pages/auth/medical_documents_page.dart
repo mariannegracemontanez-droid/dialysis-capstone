@@ -168,21 +168,111 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
     super.dispose();
   }
 
-  Future<void> _pickDocumentFor(String requirementKey) async {
+  Future<void> _showSourceChooser(String requirementKey) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 44,
+                  height: 5,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.camera_alt_outlined,
+                    color: Color(0xFF2C5F7D),
+                  ),
+                  title: const Text('Take a photo'),
+                  onTap: () => Navigator.pop(context, ImageSource.camera),
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.photo_library_outlined,
+                    color: Color(0xFF2C5F7D),
+                  ),
+                  title: const Text('Choose from gallery'),
+                  onTap: () => Navigator.pop(context, ImageSource.gallery),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (source == null) return;
+    await _pickDocumentFor(requirementKey, source);
+  }
+
+  void _viewDocument(String url) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.network(
+                url,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  padding: const EdgeInsets.all(24),
+                  color: Colors.white,
+                  child: const Text('Unable to load this document.'),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              style: TextButton.styleFrom(
+                backgroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickDocumentFor(
+    String requirementKey,
+    ImageSource source,
+  ) async {
     setState(() {
       _isUploading[requirementKey] = true;
       _uploadError = null;
     });
 
     try {
-      final XFile? file = await _fileUploadService.pickImage(
-        source: ImageSource.gallery,
-      );
+      final XFile? file = await _fileUploadService.pickImage(source: source);
 
       if (file == null) {
         setState(() {
           _isUploading[requirementKey] = false;
-          _uploadError = 'No file selected.';
+          _uploadError = source == ImageSource.camera
+              ? 'No photo was taken.'
+              : 'No file selected.';
         });
         return;
       }
@@ -205,9 +295,18 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
         _uploadError = null;
       });
     } catch (e, stack) {
+      final message = e.toString().toLowerCase();
+      final isPermissionIssue =
+          message.contains('camera_access_denied') ||
+          message.contains('photo_access_denied') ||
+          message.contains('permission');
+
       setState(() {
         _isUploading[requirementKey] = false;
-        _uploadError = e.toString();
+        _uploadError = isPermissionIssue
+            ? 'Camera access was denied. Please allow camera access in your '
+                  'phone settings to take a photo.'
+            : e.toString();
       });
       debugPrint('Error uploading document: $e');
       debugPrint(stack.toString());
@@ -389,7 +488,7 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
                         const SizedBox(height: 6),
 
                         const Text(
-                          'Accepted files are selected from your gallery and uploaded securely.',
+                          'Take a photo or choose one from your gallery — files are uploaded securely.',
                           style: TextStyle(
                             color: Color(0xFF7A8A94),
                             fontSize: 13,
@@ -464,15 +563,18 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
                           ...clinicRequirements.map((item) {
                             final key = item['key']!;
                             final label = item['label']!;
-                            final uploaded =
-                                _documentUrls[key]?.isNotEmpty ?? false;
+                            final documentUrl = _documentUrls[key];
+                            final uploaded = documentUrl?.isNotEmpty ?? false;
                             final uploading = _isUploading[key] == true;
 
                             return _buildRequirementRow(
                               label: label,
                               uploaded: uploaded,
                               uploading: uploading,
-                              onUpload: () => _pickDocumentFor(key),
+                              onUpload: () => _showSourceChooser(key),
+                              onView: uploaded
+                                  ? () => _viewDocument(documentUrl!)
+                                  : null,
                             );
                           }),
 
@@ -542,6 +644,7 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
     required bool uploaded,
     required bool uploading,
     required VoidCallback onUpload,
+    VoidCallback? onView,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -575,7 +678,32 @@ class _MedicalDocumentsPageState extends State<MedicalDocumentsPage> {
             ),
           ),
 
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
+
+          if (onView != null) ...[
+            SizedBox(
+              height: 38,
+              child: OutlinedButton(
+                onPressed: onView,
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFF2A9D65)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'View',
+                  style: TextStyle(
+                    color: Color(0xFF2A9D65),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
 
           SizedBox(
             height: 38,

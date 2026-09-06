@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/signup_data.dart';
 import '../../services/auth/auth_service.dart';
+import '../../theme/auth_theme_controller.dart';
 import '../../utils/validators.dart';
 import 'dart:ui';
 
@@ -18,7 +19,9 @@ class _SignupPageState extends State<SignupPage> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final FocusNode _emailFocusNode = FocusNode();
   final FocusNode _passwordFocusNode = FocusNode();
+  final FocusNode _confirmPasswordFocusNode = FocusNode();
   bool _isLoading = false;
 
   String? _errorMessage;
@@ -27,6 +30,11 @@ class _SignupPageState extends State<SignupPage> {
   String? _phoneError;
   String? _passwordFieldError;
   String? _confirmPasswordError;
+  // Tracks whether the user has left each field at least once — an error
+  // for these is only ever shown after that, never while first typing.
+  bool _emailTouched = false;
+  bool _passwordTouched = false;
+  bool _confirmPasswordTouched = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _showPasswordRequirements = false;
@@ -35,11 +43,37 @@ class _SignupPageState extends State<SignupPage> {
   @override
   void initState() {
     super.initState();
+    _emailFocusNode.addListener(() {
+      if (!_emailFocusNode.hasFocus) {
+        setState(() {
+          _emailTouched = true;
+          _emailError = Validators.validateEmail(_emailController.text);
+        });
+      }
+    });
     _passwordFocusNode.addListener(() {
       setState(() {
         _showPasswordRequirements =
             _passwordFocusNode.hasFocus || _passwordController.text.isNotEmpty;
+        if (!_passwordFocusNode.hasFocus) {
+          _passwordTouched = true;
+          _passwordFieldError = _passwordController.text.isEmpty
+              ? null
+              : AuthService.validatePassword(_passwordController.text);
+        }
       });
+    });
+    _confirmPasswordFocusNode.addListener(() {
+      if (!_confirmPasswordFocusNode.hasFocus) {
+        setState(() {
+          _confirmPasswordTouched = true;
+          _confirmPasswordError = _confirmPasswordController.text.isEmpty
+              ? null
+              : (_confirmPasswordController.text != _passwordController.text
+                    ? 'Passwords do not match'
+                    : null);
+        });
+      }
     });
   }
 
@@ -52,6 +86,7 @@ class _SignupPageState extends State<SignupPage> {
   }
 
   void _onEmailChanged(String value) {
+    if (!_emailTouched) return;
     setState(() {
       _emailError = value.isEmpty ? null : Validators.validateEmail(value);
     });
@@ -64,6 +99,7 @@ class _SignupPageState extends State<SignupPage> {
   }
 
   void _onConfirmPasswordChanged(String value) {
+    if (!_confirmPasswordTouched) return;
     setState(() {
       _confirmPasswordError = value.isEmpty
           ? null
@@ -80,7 +116,9 @@ class _SignupPageState extends State<SignupPage> {
     _phoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _emailFocusNode.dispose();
     _passwordFocusNode.dispose();
+    _confirmPasswordFocusNode.dispose();
     super.dispose();
   }
 
@@ -89,10 +127,12 @@ class _SignupPageState extends State<SignupPage> {
       _passwordValidation = AuthService.passwordRequirements(password);
       _showPasswordRequirements =
           _passwordFocusNode.hasFocus || password.isNotEmpty;
-      _passwordFieldError = password.isEmpty
-          ? null
-          : AuthService.validatePassword(password);
-      if (_confirmPasswordController.text.isNotEmpty) {
+      if (_passwordTouched) {
+        _passwordFieldError = password.isEmpty
+            ? null
+            : AuthService.validatePassword(password);
+      }
+      if (_confirmPasswordTouched && _confirmPasswordController.text.isNotEmpty) {
         _confirmPasswordError =
             _confirmPasswordController.text != password
             ? 'Passwords do not match'
@@ -119,9 +159,12 @@ class _SignupPageState extends State<SignupPage> {
     setState(() {
       _nameError = nameError;
       _emailError = emailError;
+      _emailTouched = true;
       _phoneError = phoneError;
       _passwordFieldError = password.isEmpty ? 'Password is required' : passwordError;
+      _passwordTouched = true;
       _confirmPasswordError = confirmError;
+      _confirmPasswordTouched = true;
     });
 
     if (nameError != null) {
@@ -186,19 +229,26 @@ class _SignupPageState extends State<SignupPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Image.asset(
-              'lib/asset/Image/image 4.png',
-              fit: BoxFit.cover,
-            ),
-          ),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AuthThemeController.mode,
+      builder: (context, mode, _) {
+        final colors = AuthColors(mode == ThemeMode.dark);
 
-          Positioned.fill(
-            child: Container(color: Colors.black.withOpacity(0.26)),
-          ),
+        return Scaffold(
+          backgroundColor: colors.backgroundSolid,
+          body: Stack(
+            children: [
+              if (colors.useImageBackground)
+                Positioned.fill(
+                  child: Image.asset(
+                    'lib/asset/Image/image 4.png',
+                    fit: BoxFit.cover,
+                  ),
+                ),
+
+              Positioned.fill(
+                child: Container(color: colors.overlay),
+              ),
 
           SafeArea(
             child: SingleChildScrollView(
@@ -217,6 +267,13 @@ class _SignupPageState extends State<SignupPage> {
                   ),
                   child: Column(
                     children: [
+                      Align(
+                        alignment: Alignment.topRight,
+                        child: AuthThemeToggleButton(colors: colors),
+                      ),
+
+                      const SizedBox(height: 12),
+
                       Container(
                         width: 100,
                         height: 100,
@@ -228,11 +285,11 @@ class _SignupPageState extends State<SignupPage> {
 
                       const SizedBox(height: 24),
 
-                      const Text(
+                      Text(
                         'Create Account',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: Colors.white,
+                          color: colors.title,
                           fontSize: 30,
                           fontWeight: FontWeight.w800,
                         ),
@@ -244,7 +301,7 @@ class _SignupPageState extends State<SignupPage> {
                         'Start your healthcare journey with CureNurture',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.72),
+                          color: colors.subtitle,
                           fontSize: 15,
                           height: 1.4,
                         ),
@@ -261,10 +318,10 @@ class _SignupPageState extends State<SignupPage> {
                             padding: const EdgeInsets.all(18),
                             margin: const EdgeInsets.only(bottom: 22),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.72),
+                              color: colors.glassTint.withOpacity(0.72),
                               borderRadius: BorderRadius.circular(18),
                               border: Border.all(
-                                color: Colors.white.withOpacity(0.50),
+                                color: colors.glassTint.withOpacity(0.50),
                               ),
                             ),
                             child: Column(
@@ -335,10 +392,10 @@ class _SignupPageState extends State<SignupPage> {
                             width: double.infinity,
                             padding: const EdgeInsets.fromLTRB(22, 26, 22, 24),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.78),
+                              color: colors.glassTint.withOpacity(0.78),
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: Colors.white.withOpacity(0.55),
+                                color: colors.glassTint.withOpacity(0.55),
                               ),
                               boxShadow: [
                                 BoxShadow(
@@ -363,6 +420,7 @@ class _SignupPageState extends State<SignupPage> {
 
                                 _buildSignupField(
                                   controller: _emailController,
+                                  focusNode: _emailFocusNode,
                                   hint: 'Email Address',
                                   icon: Icons.alternate_email,
                                   keyboardType: TextInputType.emailAddress,
@@ -417,7 +475,9 @@ class _SignupPageState extends State<SignupPage> {
                                   Container(
                                     padding: const EdgeInsets.all(14),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.55),
+                                      color: colors.glassTint.withOpacity(
+                                        0.55,
+                                      ),
                                       borderRadius: BorderRadius.circular(14),
                                       border: Border.all(
                                         color: const Color(0xFFD7E8EE),
@@ -484,6 +544,7 @@ class _SignupPageState extends State<SignupPage> {
 
                                 TextField(
                                   controller: _confirmPasswordController,
+                                  focusNode: _confirmPasswordFocusNode,
                                   obscureText: _obscureConfirmPassword,
                                   onChanged: _onConfirmPasswordChanged,
                                   decoration: _inputDecoration(
@@ -612,12 +673,15 @@ class _SignupPageState extends State<SignupPage> {
         ],
       ),
     );
+      },
+    );
   }
 
   Widget _buildSignupField({
     required TextEditingController controller,
     required String hint,
     required IconData icon,
+    FocusNode? focusNode,
     TextInputType keyboardType = TextInputType.text,
     int? maxLength,
     List<TextInputFormatter>? inputFormatters,
@@ -626,6 +690,7 @@ class _SignupPageState extends State<SignupPage> {
   }) {
     return TextField(
       controller: controller,
+      focusNode: focusNode,
       keyboardType: keyboardType,
       maxLength: maxLength,
       inputFormatters: inputFormatters,
