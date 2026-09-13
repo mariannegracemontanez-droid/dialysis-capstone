@@ -163,3 +163,65 @@ class WeeklyScheduleEntry {
     required this.isActive,
   });
 }
+
+// ---------------------------------------------------------------------
+// Today's ACTUAL schedule (daily_schedules) -- deliberately kept apart
+// from the recurring types above. A recurring schedule says which days a
+// patient normally dialyses; these types describe what is happening on
+// one specific calendar date, which an admin can change for that date
+// alone without the recurring schedule ever moving.
+// ---------------------------------------------------------------------
+
+/// Why a patient is offered in the "Add Patient" modal for a given date.
+enum DateCandidateSource {
+  /// Their active recurring schedule puts them on this weekday.
+  recurring,
+
+  /// They were on this date's list and an admin removed/cancelled them --
+  /// re-adding them, or adding them to the other shift, is a move.
+  removedToday,
+
+  /// An approved reschedule request grants them this date, even though
+  /// their recurring schedule doesn't.
+  rescheduled,
+}
+
+/// One patient who may be added to a shift on a specific date.
+class DateScheduleCandidate {
+  final String patientId;
+  final String patientName;
+  final String weeklyScheduleId;
+  final DateCandidateSource source;
+
+  /// Their recurring default shift code for this weekday, when they have
+  /// one. Used only for display -- adding them to the other shift never
+  /// changes it.
+  final String? defaultShiftCode;
+
+  /// Set when an existing daily_schedules row for this patient/date is
+  /// being revived or moved rather than a new one inserted.
+  final String? dailyScheduleId;
+
+  /// The shift the cancelled/existing occurrence was on, if any.
+  final String? currentShiftCode;
+
+  // Reschedule context, only for [DateCandidateSource.rescheduled].
+  final String? rescheduleRequestId;
+  final DateTime? rescheduleOriginalDate;
+  final DateTime? rescheduleNewDate;
+
+  const DateScheduleCandidate({
+    required this.patientId,
+    required this.patientName,
+    required this.weeklyScheduleId,
+    required this.source,
+    this.defaultShiftCode,
+    this.dailyScheduleId,
+    this.currentShiftCode,
+    this.rescheduleRequestId,
+    this.rescheduleOriginalDate,
+    this.rescheduleNewDate,
+  });
+
+  bool get isRescheduled => source == DateCandidateSource.rescheduled;
+}

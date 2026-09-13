@@ -11,6 +11,7 @@ import '../../models/patient.dart';
 import '../auth/login_page.dart';
 import '../patients/patients_page.dart';
 import 'patient_schedule_modal.dart';
+import 'reschedule_requests_section.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -42,6 +43,13 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
   int _selectedNavIndex = 0;
   late AnimationController _fadeController;
   String? _connectionError;
+
+  // Today's Schedule and Reschedule Requests read the same daily_schedules
+  // rows, so a decision in one has to refresh the other.
+  final GlobalKey<TodayScheduleSectionState> _todayScheduleKey =
+      GlobalKey<TodayScheduleSectionState>();
+  final GlobalKey<RescheduleRequestsSectionState> _rescheduleRequestsKey =
+      GlobalKey<RescheduleRequestsSectionState>();
 
   String? clinicId;
   String centerName = 'Valenzuela Dialysis Center';
@@ -912,6 +920,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
             ],
           ),
           const SizedBox(height: 18),
+          _buildRescheduleRequestsSection(),
+          const SizedBox(height: 18),
           _buildNoSchedulePatients(),
         ],
       ),
@@ -1228,8 +1238,46 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
       icon: Icons.calendar_today_rounded,
       accentColor: green,
       child: TodayScheduleSection(
+        key: _todayScheduleKey,
         clinicId: clinicId!,
         machineCount: machineCount,
+        onScheduleChanged: () =>
+            _rescheduleRequestsKey.currentState?.load(),
+      ),
+    );
+  }
+
+  /// Patient-submitted reschedule requests, read from the same
+  /// `reschedule_requests` rows the mobile app writes. Sits directly under
+  /// the donation section, in the same fixed-height scrollable pattern the
+  /// other dashboard lists use.
+  Widget _buildRescheduleRequestsSection() {
+    if (clinicId == null) {
+      return _sectionCard(
+        title: 'Reschedule Requests',
+        subtitle: 'Loading patient reschedule requests.',
+        icon: Icons.event_repeat_rounded,
+        accentColor: orange,
+        child: const SizedBox(
+          height: 140,
+          child: Center(child: CircularProgressIndicator(color: primary)),
+        ),
+      );
+    }
+
+    return _sectionCard(
+      title: 'Reschedule Requests',
+      subtitle:
+          'Session change requests sent by patients from the mobile app. '
+          'Accepting one changes that session only — never the recurring '
+          'weekly schedule.',
+      icon: Icons.event_repeat_rounded,
+      accentColor: orange,
+      child: RescheduleRequestsSection(
+        key: _rescheduleRequestsKey,
+        clinicId: clinicId!,
+        onRequestApplied: () =>
+            _todayScheduleKey.currentState?.loadSelectedDaySchedule(),
       ),
     );
   }

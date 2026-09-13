@@ -1,4 +1,5 @@
-import 'package:admin_panel/features/dashboard/dashboard_page.dart' show supabase;
+import 'package:admin_panel/features/dashboard/dashboard_page.dart'
+    show supabase;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/patient.dart';
 import 'supabase_config.dart';
@@ -78,90 +79,99 @@ class DashboardService {
         .toList();
   }
 
-Future<List<Map<String, dynamic>>> getMonthlyPatientData() async {
-  final clinicId = await getCurrentClinicId();
-  if (clinicId == null) return [];
+  Future<List<Map<String, dynamic>>> getMonthlyPatientData() async {
+    final clinicId = await getCurrentClinicId();
+    if (clinicId == null) return [];
 
-  final now = DateTime.now();
-  final data = <Map<String, dynamic>>[];
+    final now = DateTime.now();
+    final data = <Map<String, dynamic>>[];
 
-  for (int i = 4; i >= 0; i--) {
-    final monthStart = DateTime(now.year, now.month - i, 1);
-    final nextMonth = DateTime(monthStart.year, monthStart.month + 1, 1);
+    for (int i = 4; i >= 0; i--) {
+      final monthStart = DateTime(now.year, now.month - i, 1);
+      final nextMonth = DateTime(monthStart.year, monthStart.month + 1, 1);
 
-    final response = await client
-        .from('patients')
-        .select('id')
-        .eq('clinic_id', clinicId)
-        .gte('created_at', monthStart.toIso8601String())
-        .lt('created_at', nextMonth.toIso8601String());
+      final response = await client
+          .from('patients')
+          .select('id')
+          .eq('clinic_id', clinicId)
+          .gte('created_at', monthStart.toIso8601String())
+          .lt('created_at', nextMonth.toIso8601String());
 
-    data.add({
-      'month': _getMonthName(monthStart.month),
-      'count': (response as List).length,
-    });
+      data.add({
+        'month': _getMonthName(monthStart.month),
+        'count': (response as List).length,
+      });
+    }
+
+    return data;
   }
 
-  return data;
-}
+  String _getMonthName(int month) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
 
-String _getMonthName(int month) {
-  const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-  ];
+    return months[month - 1];
+  }
 
-  return months[month - 1];
-}
+  Future<List<Map<String, dynamic>>> getTodaySchedules({
+    required String clinicId,
+  }) async {
+    final today = DateTime.now();
+    final weekday = _getWeekdayName(today.weekday);
 
-Future<List<Map<String, dynamic>>> getTodaySchedules({
-  required String clinicId,
-}) async {
-  final today = DateTime.now();
-  final weekday = _getWeekdayName(today.weekday);
+    final weekly = await supabase
+        .from('weekly_schedules')
+        .select('patient_id')
+        .eq('clinic_id', clinicId)
+        .contains('scheduled_days', [weekday]);
 
-  final weekly = await supabase
-      .from('weekly_schedules')
-      .select('patient_id')
-      .eq('clinic_id', clinicId)
-      .contains('scheduled_days', [weekday]);
+    if (weekly.isEmpty) return [];
 
-  if (weekly.isEmpty) return [];
+    final patientIds = weekly.map((e) => e['patient_id']).toList();
 
-  final patientIds = weekly.map((e) => e['patient_id']).toList();
+    final response = await supabase
+        .from('patients')
+        .select()
+        .inFilter('id', patientIds);
 
-  final response = await supabase
-      .from('patients')
-      .select()
-      .inFilter('id', patientIds);
+    return List<Map<String, dynamic>>.from(response);
+  }
 
-  return List<Map<String, dynamic>>.from(response);
-}
-
-String _getWeekdayName(int weekday) {
-  const days = [
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-    'Sunday'
-  ];
-  return days[weekday - 1];
-}
+  String _getWeekdayName(int weekday) {
+    const days = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    return days[weekday - 1];
+  }
 
   // Recurring schedule creation now lives in CenterScheduleService
   // (setPatientRecurringSchedule -> set_patient_recurring_schedule), since
   // a schedule always carries a default shift per day and CenterScheduleService
   // owns the shift/capacity data needed to validate that.
 
-  Future<void> removeTodaySchedule(String dailyScheduleId) async {
-    await supabase
-        .from('daily_schedules')
-        .delete()
-        .eq('id', dailyScheduleId);
-  }
+  // Removing a patient from a day's schedule lives in
+  // CenterScheduleService.cancelDateOccurrence. It must never be a DELETE:
+  // generateTodayDefaultSchedule re-creates a deleted row from the
+  // patient's recurring schedule on the next refresh, so the row is
+  // cancelled in place instead and acts as that date's one-day override.
 
   Future<Map<String, dynamic>?> getLatestDonation(String centerName) async {
     final response = await client
@@ -190,7 +200,9 @@ String _getWeekdayName(int weekday) {
     return total;
   }
 
-  Future<List<Map<String, dynamic>>> getDonationHistory(String centerName) async {
+  Future<List<Map<String, dynamic>>> getDonationHistory(
+    String centerName,
+  ) async {
     final response = await client
         .from('fund_distributions')
         .select()
@@ -235,5 +247,4 @@ String _getWeekdayName(int weekday) {
 
     return total;
   }
-
 }

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 
+import '../../models/center_schedule.dart';
 import '../../models/clinic_shift.dart';
 import '../../services/center_schedule_service.dart';
 
@@ -11,17 +12,23 @@ class TodayScheduleSection extends StatefulWidget {
   final String clinicId;
   final int machineCount;
 
+  /// Fired after this section changes a day's schedule, so the dashboard
+  /// can refresh anything that reads the same data (the reschedule
+  /// requests list, for one).
+  final VoidCallback? onScheduleChanged;
+
   const TodayScheduleSection({
     super.key,
     required this.clinicId,
     required this.machineCount,
+    this.onScheduleChanged,
   });
 
   @override
-  State<TodayScheduleSection> createState() => _TodayScheduleSectionState();
+  State<TodayScheduleSection> createState() => TodayScheduleSectionState();
 }
 
-class _TodayScheduleSectionState extends State<TodayScheduleSection> {
+class TodayScheduleSectionState extends State<TodayScheduleSection> {
   final ScheduleService _service = ScheduleService();
   final CenterScheduleService _centerScheduleService = CenterScheduleService();
 
@@ -31,15 +38,52 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
   /// only to label a row as recurring vs. manually added.
   Map<String, String> _recurringShifts = {};
 
-  /// Configured capacity for a shift code, from clinic_shifts -- never a
-  /// naive machine-count assumption. Falls back to the raw machine count
-  /// only if shift configuration hasn't loaded yet (e.g. the center
-  /// scheduling foundation migration hasn't been run).
+  /// This DATE's capacity picture, straight from
+  /// CenterScheduleService.getDateCapacity -- the one capacity
+  /// calculation in the app. Cancelled (removed) occupants never count,
+  /// so removing a patient frees a seat and adding one takes it.
+  DayCapacity? _dateCapacity;
+
+  ShiftCapacity? _shiftCapacityFor(String shiftCode) {
+    for (final entry in _dateCapacity?.shifts ?? const <ShiftCapacity>[]) {
+      if (entry.shift.shiftCode == shiftCode) return entry;
+    }
+    return null;
+  }
+
+  /// Configured capacity for a shift code -- never a naive machine-count
+  /// assumption. Falls back to the raw clinic_shifts figure, and then the
+  /// machine count, only while the date snapshot hasn't loaded yet.
   int _capacityFor(String shiftCode) {
+    final entry = _shiftCapacityFor(shiftCode);
+    if (entry != null) return entry.effectiveCapacity;
+
     for (final shift in _shifts) {
       if (shift.shiftCode == shiftCode) return shift.capacity;
     }
     return widget.machineCount;
+  }
+
+  void _showMessage(String message, {bool isError = false}) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? const Color(0xFFDC2626) : green,
+        duration: Duration(seconds: isError ? 6 : 4),
+      ),
+    );
+  }
+
+  /// Strips Dart's "Exception: " prefix so a blocked add/move/remove reads
+  /// as the plain explanation the service wrote.
+  String _friendlyError(Object error) {
+    final text = error.toString();
+    if (text.startsWith('Exception: ')) {
+      return text.substring('Exception: '.length);
+    }
+    return text;
   }
 
   final List<String> days = [
@@ -74,6 +118,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
   static const Color teal = Color(0xFF70C8BF);
   static const Color softBg = Color(0xFFF8FAFC);
   static const Color orange = Color(0xFFF59E0B);
+  static const Color purple = Color(0xFF8E44AD);
 
   @override
   void initState() {
@@ -330,12 +375,20 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
         day: selectedDay,
       );
 
+      // Capacity for this exact date, not the recurring week -- so a
+      // removal frees a seat and an addition takes one straight away.
+      final dateCapacity = await _centerScheduleService.getDateCapacity(
+        clinicId: widget.clinicId,
+        date: getDateForDay(dayIndex < 0 ? 0 : dayIndex),
+      );
+
       if (!mounted) return;
 
       setState(() {
         amPatients = data.where((item) => item['shift'] == 'AM').toList();
         pmPatients = data.where((item) => item['shift'] == 'PM').toList();
         _recurringShifts = recurringShifts;
+        _dateCapacity = dateCapacity;
       });
     } catch (e) {
       debugPrint('Load schedule error: $e');
@@ -354,32 +407,136 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     }
   }
 
+  /// Colour + wording for why a candidate is offered on this date.
+  static (String, Color, IconData) _sourceBadge(DateCandidateSource source) {
+    switch (source) {
+      case DateCandidateSource.rescheduled:
+        return ('Rescheduled', purple, Icons.swap_horiz_rounded);
+      case DateCandidateSource.removedToday:
+        return ('Removed', orange, Icons.undo_rounded);
+      case DateCandidateSource.recurring:
+        return ('Recurring', primary, Icons.event_repeat_rounded);
+    }
+  }
+
+  Widget _candidateBadge(DateCandidateSource source) {
+    final (label, color, icon) = _sourceBadge(source);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: color.withOpacity(0.28)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Why this patient can be added today, in one short line under their
+  /// name -- so an approved reschedule is never a silent appearance.
+  String _candidateSubtitle(DateScheduleCandidate candidate) {
+    switch (candidate.source) {
+      case DateCandidateSource.rescheduled:
+        final from = candidate.rescheduleOriginalDate;
+        final to = candidate.rescheduleNewDate;
+        final range = from == null || to == null
+            ? ''
+            : '  •  ${DateFormat('EEE, MMM d').format(from)} → '
+                '${DateFormat('EEE, MMM d').format(to)}';
+        return 'Available from an approved reschedule request$range';
+
+      case DateCandidateSource.removedToday:
+        final was = candidate.currentShiftCode;
+        return was == null
+            ? 'Taken off this day earlier — adding them back affects this '
+                'day only'
+            : 'Taken off the $was shift earlier — adding them here affects '
+                'this day only';
+
+      case DateCandidateSource.recurring:
+        final code = candidate.defaultShiftCode;
+        return code == null
+            ? 'From their recurring weekly schedule'
+            : 'Recurring $code patient on $selectedDay';
+    }
+  }
+
   Future<void> openAddModal(String shift) async {
     try {
       final selectedDate = getDateForSelectedDay();
+      final dayIndex = days.indexOf(selectedDay);
+      final date = getDateForDay(dayIndex < 0 ? 0 : dayIndex);
 
-      final patients = await _service.getEligiblePatients(
-        widget.clinicId,
-        selectedDay,
-      );
-
-      final latestAssignments = await _service.getDailyAssignments(
+      final dayCapacity = await _centerScheduleService.getDateCapacity(
         clinicId: widget.clinicId,
-        scheduleDate: selectedDate,
+        date: date,
       );
-
-      final assignedPatientIds = latestAssignments
-          .map((item) => item['patient_id']?.toString())
-          .where((id) => id != null)
-          .toSet();
-
-      final availablePatients = patients.where((item) {
-        return !assignedPatientIds.contains(item['patient_id']?.toString());
-      }).toList();
 
       if (!mounted) return;
 
-      showDialog(
+      if (!dayCapacity.isOperating) {
+        _showMessage(
+          'The center does not operate on $selectedDay.',
+          isError: true,
+        );
+        return;
+      }
+
+      ShiftCapacity? shiftCapacity;
+      for (final entry in dayCapacity.shifts) {
+        if (entry.shift.shiftCode == shift) shiftCapacity = entry;
+      }
+
+      if (shiftCapacity == null || !shiftCapacity.shift.isActive) {
+        _showMessage(
+          'The $shift shift is not active at this center.',
+          isError: true,
+        );
+        return;
+      }
+
+      if (shiftCapacity.isFull) {
+        _showMessage(
+          'The $shift shift is full '
+          '(${shiftCapacity.scheduled}/${shiftCapacity.effectiveCapacity}). '
+          'Remove a patient from this shift before adding another.',
+          isError: true,
+        );
+        return;
+      }
+
+      // Candidates are resolved for the DATE, not just the weekday:
+      // recurring patients who aren't on the list yet, anyone an admin
+      // removed from this date earlier, and anyone an approved reschedule
+      // request grants this date. Nobody already live on this date is
+      // offered -- they can only be moved.
+      final candidates = await _centerScheduleService.getDateCandidates(
+        clinicId: widget.clinicId,
+        date: date,
+      );
+
+      if (!mounted) return;
+
+      final capacityLine =
+          '${shiftCapacity.scheduled}/${shiftCapacity.effectiveCapacity} '
+          'filled · ${shiftCapacity.available} vacant';
+
+      await showDialog(
         context: context,
         builder: (dialogContext) {
           bool dialogIsAdding = false;
@@ -390,8 +547,8 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                 backgroundColor: Colors.transparent,
                 insetPadding: const EdgeInsets.all(24),
                 child: Container(
-                  width: 520,
-                  constraints: const BoxConstraints(maxHeight: 560),
+                  width: 540,
+                  constraints: const BoxConstraints(maxHeight: 580),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
@@ -437,7 +594,8 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    '$selectedDay • $selectedDate',
+                                    '$selectedDay • $selectedDate • '
+                                    '$capacityLine',
                                     style: const TextStyle(
                                       color: textMuted,
                                       fontSize: 12,
@@ -459,28 +617,33 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                       Flexible(
                         child: SizedBox(
                           height: 430,
-                          child: availablePatients.isEmpty
+                          child: candidates.isEmpty
                               ? const Center(
                                   child: Padding(
                                     padding: EdgeInsets.all(24),
                                     child: Text(
-                                      'No available patients scheduled for this day.',
+                                      'Everyone scheduled for this day is '
+                                      'already on the list.\n\nPatients also '
+                                      'appear here once they are removed from '
+                                      'this day, or once a reschedule request '
+                                      'for this date is approved.',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         color: textMuted,
                                         fontWeight: FontWeight.w700,
+                                        height: 1.5,
                                       ),
                                     ),
                                   ),
                                 )
                               : ListView.separated(
                                   padding: const EdgeInsets.all(16),
-                                  itemCount: availablePatients.length,
+                                  itemCount: candidates.length,
                                   separatorBuilder: (_, _) =>
                                       const SizedBox(height: 8),
                                   itemBuilder: (context, index) {
-                                    final item = availablePatients[index];
-                                    final patientName = getPatientName(item);
+                                    final candidate = candidates[index];
+                                    final patientName = candidate.patientName;
 
                                     return InkWell(
                                       borderRadius: BorderRadius.circular(10),
@@ -492,16 +655,18 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                                               });
 
                                               try {
-                                                await _service
-                                                    .assignDailySchedule(
-                                                      weeklyScheduleId:
-                                                          item['id'],
-                                                      patientId:
-                                                          item['patient_id'],
+                                                await _centerScheduleService
+                                                    .addPatientToDate(
                                                       clinicId: widget.clinicId,
-                                                      shift: shift,
-                                                      scheduleDate:
-                                                          selectedDate,
+                                                      date: date,
+                                                      shiftCode: shift,
+                                                      patientId:
+                                                          candidate.patientId,
+                                                      weeklyScheduleId: candidate
+                                                          .weeklyScheduleId,
+                                                      rescheduleRequestId:
+                                                          candidate
+                                                              .rescheduleRequestId,
                                                     );
 
                                                 if (!mounted) return;
@@ -509,19 +674,16 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                                                 Navigator.of(
                                                   dialogContext,
                                                 ).pop();
+
                                                 await loadSelectedDaySchedule();
+                                                widget.onScheduleChanged?.call();
 
                                                 if (!mounted) return;
 
-                                                ScaffoldMessenger.of(
-                                                  context,
-                                                ).showSnackBar(
-                                                  SnackBar(
-                                                    content: Text(
-                                                      '$patientName added to $shift Shift.',
-                                                    ),
-                                                    backgroundColor: green,
-                                                  ),
+                                                _showMessage(
+                                                  '$patientName added to the '
+                                                  '$shift shift for '
+                                                  '$selectedDay.',
                                                 );
                                               } catch (e) {
                                                 debugPrint(
@@ -534,15 +696,9 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                                                   dialogIsAdding = false;
                                                 });
 
-                                                ScaffoldMessenger.of(
-                                                  context,
-                                                ).showSnackBar(
-                                                  SnackBar(
-                                                    content: Text(
-                                                      'Failed to add patient: $e',
-                                                    ),
-                                                    backgroundColor: Colors.red,
-                                                  ),
+                                                _showMessage(
+                                                  _friendlyError(e),
+                                                  isError: true,
                                                 );
                                               }
                                             },
@@ -576,14 +732,48 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                                             ),
                                             const SizedBox(width: 11),
                                             Expanded(
-                                              child: Text(
-                                                patientName,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w800,
-                                                  color: textDark,
-                                                ),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      Flexible(
+                                                        child: Text(
+                                                          patientName,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style:
+                                                              const TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                            color: textDark,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 7),
+                                                      _candidateBadge(
+                                                        candidate.source,
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 3),
+                                                  Text(
+                                                    _candidateSubtitle(
+                                                      candidate,
+                                                    ),
+                                                    style: const TextStyle(
+                                                      fontSize: 10.5,
+                                                      color: textMuted,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      height: 1.35,
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                             ),
+                                            const SizedBox(width: 8),
                                             dialogIsAdding
                                                 ? const SizedBox(
                                                     width: 18,
@@ -617,44 +807,135 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
       debugPrint('Open modal error: $e');
 
       if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error loading patients: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showMessage(_friendlyError(e), isError: true);
     }
   }
 
+  /// Takes the patient off THIS DATE only.
+  ///
+  /// This cancels the date's daily_schedules occurrence. It does not touch
+  /// patient_schedule_days, weekly_schedules or patients.preferred_shift,
+  /// so the patient's recurring Mon/Wed/Fri (or whatever they are on)
+  /// stays exactly as it was and they reappear automatically on their next
+  /// scheduled day.
   Future<void> removePatient(dynamic item) async {
+    final patientName = getPatientName(item);
+    final shift = item['shift']?.toString() ?? '';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (confirmContext) => AlertDialog(
+        title: const Text('Remove from this day'),
+        content: Text(
+          'Remove $patientName from the $shift shift on $selectedDay '
+          '(${getDateForSelectedDay()})?\n\n'
+          'This affects this day only. Their recurring weekly schedule is '
+          'not changed, and they will appear again on their next scheduled '
+          'day.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(confirmContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(confirmContext).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Remove from this day'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
     try {
-      await _service.deleteDailySchedule(
+      await _centerScheduleService.cancelDateOccurrence(
         dailyScheduleId: item['id'].toString(),
         clinicId: widget.clinicId,
+        reason: 'Removed from the $selectedDay $shift list by the center admin',
       );
 
       await loadSelectedDaySchedule();
+      widget.onScheduleChanged?.call();
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Patient removed from schedule.'),
-          backgroundColor: green,
-        ),
+      _showMessage(
+        '$patientName removed from the $shift shift for $selectedDay only. '
+        'Their recurring schedule is unchanged.',
       );
     } catch (e) {
       debugPrint('Remove patient error: $e');
 
       if (!mounted) return;
+      _showMessage(_friendlyError(e), isError: true);
+    }
+  }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to remove patient: $e'),
-          backgroundColor: Colors.red,
+  /// Moves a patient to the other shift FOR THIS DATE ONLY, by updating
+  /// the single occurrence row they already have -- so no duplicate
+  /// session can appear, and their recurring default shift
+  /// (patient_schedule_days.shift_id) is untouched.
+  Future<void> movePatient(dynamic item, String fromShift) async {
+    final toShift = fromShift == 'AM' ? 'PM' : 'AM';
+    final patientName = getPatientName(item);
+    final dayIndex = days.indexOf(selectedDay);
+    final date = getDateForDay(dayIndex < 0 ? 0 : dayIndex);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (confirmContext) => AlertDialog(
+        title: Text('Move to $toShift shift'),
+        content: Text(
+          'Move $patientName from the $fromShift shift to the $toShift shift '
+          'on $selectedDay?\n\n'
+          'This applies to this day only — their normal default shift stays '
+          '$fromShift.',
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(confirmContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(confirmContext).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primary,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Move to $toShift'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await _centerScheduleService.moveOccurrenceToShift(
+        dailyScheduleId: item['id'].toString(),
+        clinicId: widget.clinicId,
+        date: date,
+        toShiftCode: toShift,
       );
+
+      await loadSelectedDaySchedule();
+      widget.onScheduleChanged?.call();
+
+      if (!mounted) return;
+
+      _showMessage(
+        '$patientName moved to the $toShift shift for $selectedDay only.',
+      );
+    } catch (e) {
+      debugPrint('Move patient error: $e');
+
+      if (!mounted) return;
+      _showMessage(_friendlyError(e), isError: true);
     }
   }
 
@@ -1540,7 +1821,13 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
   }) {
     final int capacity = _capacityFor(shift);
     final bool isFull = patients.length >= capacity;
-    final int rowsToShow = capacity > 12 ? 12 : capacity;
+
+    // Never hide a scheduled patient: if a shift is somehow over its
+    // configured capacity, show every one of them rather than cutting the
+    // list at the capacity figure.
+    final int cappedRows = capacity > 12 ? 12 : capacity;
+    final int rowsToShow =
+        patients.length > cappedRows ? patients.length : cappedRows;
 
     return Container(
       padding: const EdgeInsets.all(13),
@@ -1654,7 +1941,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
               columnWidths: const {
                 0: FixedColumnWidth(34),
                 1: FlexColumnWidth(),
-                2: FixedColumnWidth(42),
+                2: FixedColumnWidth(62),
               },
               children: List.generate(rowsToShow, (index) {
                 final patient = index < patients.length
@@ -1670,7 +1957,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                   children: [
                     numberCell('${index + 1}'),
                     patientCell(patient, shift),
-                    tableActionCell(patient),
+                    tableActionCell(patient, shift),
                   ],
                 );
               }),
@@ -1712,11 +1999,14 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     final String text = isEmpty ? 'Available slot' : getPatientName(patient);
 
     // A session counts as recurring when the patient's saved schedule
-    // puts them on this day and shift; anything else was added by hand
-    // for this date only.
+    // puts them on this day and shift; anything else is a change made for
+    // this date only -- either an approved reschedule request (the row
+    // carries its id) or a manual addition/move by the admin.
     final patientId = isEmpty ? null : patient['patient_id']?.toString();
     final bool isRecurring =
         patientId != null && _recurringShifts[patientId] == shift;
+    final bool isRescheduled =
+        !isEmpty && patient['reschedule_request_id'] != null;
 
     return InkWell(
       onTap: isEmpty ? null : () => openSessionModal(patient, shift),
@@ -1737,7 +2027,8 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                 ),
               ),
             ),
-            if (!isEmpty) _sourceChip(isRecurring),
+            if (!isEmpty)
+              _sourceChip(isRecurring: isRecurring, isRescheduled: isRescheduled),
             if (!isEmpty) _statusChip(_service.isSessionCompleted(patient)),
           ],
         ),
@@ -1745,13 +2036,28 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     );
   }
 
-  Widget _sourceChip(bool isRecurring) {
-    final color = isRecurring ? primary : const Color(0xFF8E44AD);
+  Widget _sourceChip({required bool isRecurring, required bool isRescheduled}) {
+    final Color color;
+    final String label;
+    final String tooltip;
+
+    if (isRescheduled) {
+      color = purple;
+      label = 'Rescheduled';
+      tooltip = 'Here for this date only, from an approved reschedule request. '
+          'Their recurring weekly schedule is unchanged.';
+    } else if (isRecurring) {
+      color = primary;
+      label = 'Recurring';
+      tooltip = "From the patient's recurring weekly schedule";
+    } else {
+      color = orange;
+      label = 'Added';
+      tooltip = 'Added or moved by an admin for this date only';
+    }
 
     return Tooltip(
-      message: isRecurring
-          ? "From the patient's recurring weekly schedule"
-          : 'Added manually for this date',
+      message: tooltip,
       child: Container(
         margin: const EdgeInsets.only(right: 4),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
@@ -1760,7 +2066,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
           borderRadius: BorderRadius.circular(99),
         ),
         child: Text(
-          isRecurring ? 'Recurring' : 'Added',
+          label,
           style: TextStyle(
             fontSize: 8.5,
             fontWeight: FontWeight.w900,
@@ -1771,31 +2077,65 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     );
   }
 
-  Widget tableActionCell(dynamic patient) {
+  Widget tableActionCell(dynamic patient, String shift) {
+    if (patient == null) {
+      return const SizedBox(height: 34);
+    }
+
+    final isCompleted = _service.isSessionCompleted(patient);
+    final otherShift = shift == 'AM' ? 'PM' : 'AM';
+
     return Container(
       height: 34,
       alignment: Alignment.center,
-      child: patient == null
-          ? const SizedBox.shrink()
-          : IconButton(
-              tooltip: 'Remove',
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-              icon: const Icon(
-                Icons.close_rounded,
-                size: 16,
-                color: Color(0xFFEF4444),
-              ),
-              onPressed: () => removePatient(patient),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: isCompleted
+                ? 'A completed session cannot be moved'
+                : 'Move to $otherShift shift (this day only)',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 24, minHeight: 26),
+            icon: Icon(
+              Icons.swap_horiz_rounded,
+              size: 16,
+              color: isCompleted ? const Color(0xFFCBD5E1) : primary,
             ),
+            onPressed: isCompleted ? null : () => movePatient(patient, shift),
+          ),
+          IconButton(
+            tooltip: isCompleted
+                ? 'A completed session cannot be removed'
+                : 'Remove from this day only',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 24, minHeight: 26),
+            icon: Icon(
+              Icons.close_rounded,
+              size: 16,
+              color: isCompleted
+                  ? const Color(0xFFCBD5E1)
+                  : const Color(0xFFEF4444),
+            ),
+            onPressed: isCompleted ? null : () => removePatient(patient),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildSummaryStrip() {
     final totalAssigned = amPatients.length + pmPatients.length;
-    final totalCapacity = _shifts.isEmpty
-        ? widget.machineCount * 2
-        : _shifts.fold<int>(0, (sum, s) => sum + s.capacity);
+
+    // Same date-level capacity the shift cards use, so the strip can
+    // never disagree with them.
+    final dateCapacity = _dateCapacity;
+    final totalCapacity = dateCapacity != null
+        ? dateCapacity.capacity
+        : (_shifts.isEmpty
+            ? widget.machineCount * 2
+            : _shifts.fold<int>(0, (sum, s) => sum + s.capacity));
 
     return Container(
       width: double.infinity,

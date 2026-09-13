@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/center_schedule.dart';
@@ -32,6 +33,19 @@ class CenterScheduleService {
   /// capacity" in the UI and penalized (but not excluded) when ranking
   /// recommendations.
   static const double nearCapacityThreshold = 0.8;
+
+  /// daily_schedules.status -- one row is one real session on one date.
+  static const String occurrencePending = 'pending';
+  static const String occurrenceCompleted = 'completed';
+
+  /// The ONE-DAY override. A cancelled row means "this patient is off the
+  /// list for this date only": it keeps the date's slot reserved against
+  /// regeneration, frees the capacity seat, and leaves the recurring
+  /// schedule (weekly_schedules / patient_schedule_days) untouched.
+  static const String occurrenceCancelled = 'cancelled';
+
+  /// Patient statuses that may hold a live dialysis session.
+  static const List<String> schedulablePatientStatuses = ['active', 'approved'];
 
   // ------------------------------------------------------------------
   // Center configuration
@@ -610,7 +624,7 @@ class CenterScheduleService {
 
     final existingToday = await supabase
         .from('daily_schedules')
-        .select('patient_id, shift')
+        .select('patient_id, shift, status')
         .eq('clinic_id', clinicId)
         .eq('schedule_date', isoDate);
 
@@ -621,7 +635,14 @@ class CenterScheduleService {
 
     for (final row in existingToday) {
       final patientId = row['patient_id']?.toString();
+      final isCancelled = row['status']?.toString() == occurrenceCancelled;
+
+      // A cancelled row is this date's one-day override: the patient was
+      // deliberately taken off this date, so it still blocks regeneration
+      // (that is the whole point of keeping the row) -- but it must not
+      // count against the shift's capacity, since the seat is free again.
       if (patientId != null) alreadyAssigned.add(patientId);
+      if (isCancelled) continue;
 
       final shiftCode = row['shift']?.toString();
       if (shiftCode != null && currentShiftCounts.containsKey(shiftCode)) {
@@ -662,6 +683,546 @@ class CenterScheduleService {
         // this patient's entry for today. Safe to ignore.
         if (e.code != '23505') rethrow;
       }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Today's ACTUAL schedule -- one calendar date at a time
+  // ------------------------------------------------------------------
+  //
+  // Everything below operates on daily_schedules ONLY. None of it reads
+  // or writes patient_schedule_days, weekly_schedules.scheduled_days or
+  // patients.preferred_shift, so removing, adding or moving a patient on
+  // one date can never disturb their recurring weekly schedule or the
+  // Patients page weekly table.
+
+  static String isoDate(DateTime date) =>
+      DateTime(date.year, date.month, date.day).toIso8601String().split('T')[0];
+
+  /// Weekday name for a date, or null on Sunday (never an operating day
+  /// in this system -- allDays stops at Saturday).
+  static String? dayNameFor(DateTime date) {
+    if (date.weekday == DateTime.sunday) return null;
+    return allDays[date.weekday - 1];
+  }
+
+  /// Capacity for one calendar DATE: the configured/effective capacity
+  /// comes from [getCapacitySnapshot] (the single capacity calculation),
+  /// but "scheduled" is this date's real occupancy from daily_schedules
+  /// rather than the recurring load. Cancelled occurrences never count --
+  /// removing a patient frees their seat immediately.
+  Future<DayCapacity> getDateCapacity({
+    required String clinicId,
+    required DateTime date,
+    CenterCapacitySnapshot? snapshot,
+  }) async {
+    final capacity = snapshot ?? await getCapacitySnapshot(clinicId);
+    final dayName = dayNameFor(date);
+    final baseDay = dayName == null ? null : capacity.dayByName(dayName);
+
+    final rows = await supabase
+        .from('daily_schedules')
+        .select('shift')
+        .eq('clinic_id', clinicId)
+        .eq('schedule_date', isoDate(date))
+        .neq('status', occurrenceCancelled);
+
+    final counts = <String, int>{};
+    for (final row in rows) {
+      final code = row['shift']?.toString();
+      if (code == null) continue;
+      counts[code] = (counts[code] ?? 0) + 1;
+    }
+
+    final shifts = baseDay == null
+        ? capacity.activeShifts
+            .map(
+              (shift) => ShiftCapacity(
+                shift: shift,
+                scheduled: counts[shift.shiftCode] ?? 0,
+                effectiveCapacity: 0,
+              ),
+            )
+            .toList()
+        : baseDay.shifts
+            .map(
+              (entry) => ShiftCapacity(
+                shift: entry.shift,
+                scheduled: counts[entry.shift.shiftCode] ?? 0,
+                effectiveCapacity: entry.effectiveCapacity,
+              ),
+            )
+            .toList();
+
+    return DayCapacity(
+      day: dayName ?? 'Sunday',
+      isOperating: baseDay?.isOperating ?? false,
+      shifts: shifts,
+    );
+  }
+
+  ShiftCapacity? _shiftCapacityByCode(DayCapacity day, String shiftCode) {
+    for (final entry in day.shifts) {
+      if (entry.shift.shiftCode == shiftCode) return entry;
+    }
+    return null;
+  }
+
+  /// Everything already on a date, keyed by patient -- the live rows and
+  /// the cancelled (one-day-off) rows kept apart.
+  Future<(Map<String, Map<String, dynamic>>, Map<String, Map<String, dynamic>>)>
+      _occurrencesByPatient({
+    required String clinicId,
+    required DateTime date,
+  }) async {
+    final rows = await supabase
+        .from('daily_schedules')
+        .select('id, patient_id, shift, status')
+        .eq('clinic_id', clinicId)
+        .eq('schedule_date', isoDate(date));
+
+    final live = <String, Map<String, dynamic>>{};
+    final cancelled = <String, Map<String, dynamic>>{};
+
+    for (final row in rows) {
+      final patientId = row['patient_id']?.toString();
+      if (patientId == null) continue;
+
+      final entry = Map<String, dynamic>.from(row as Map);
+      if (entry['status']?.toString() == occurrenceCancelled) {
+        cancelled[patientId] = entry;
+      } else {
+        live[patientId] = entry;
+      }
+    }
+
+    return (live, cancelled);
+  }
+
+  /// Who may still be added to a shift on [date].
+  ///
+  /// Three sources, in priority order:
+  ///   1. an approved reschedule request that grants this exact date,
+  ///   2. a patient an admin removed from this date earlier (re-adding
+  ///      them, or adding them to the other shift, is a same-day move),
+  ///   3. the patient's active recurring schedule for this weekday.
+  ///
+  /// A patient who is already live on this date is never offered -- the
+  /// unique (patient, date) constraint means they can only be *moved*,
+  /// which is a separate operation on their existing row.
+  Future<List<DateScheduleCandidate>> getDateCandidates({
+    required String clinicId,
+    required DateTime date,
+  }) async {
+    final dayName = dayNameFor(date);
+    if (dayName == null) return [];
+
+    final (live, cancelled) = await _occurrencesByPatient(
+      clinicId: clinicId,
+      date: date,
+    );
+
+    // --- recurring candidates for this weekday -------------------------
+    final dayRows = await supabase
+        .from('patient_schedule_days')
+        .select('weekly_schedule_id, shift_id')
+        .eq('clinic_id', clinicId)
+        .eq('day_of_week', dayName);
+
+    final shifts = await getClinicShifts(clinicId);
+    final shiftCodeById = {for (final s in shifts) s.id: s.shiftCode};
+
+    final weeklyIdsForDay =
+        dayRows.map((r) => r['weekly_schedule_id'].toString()).toSet().toList();
+
+    final patientIdByWeeklyId = <String, String>{};
+
+    if (weeklyIdsForDay.isNotEmpty) {
+      final weeklyRows = await supabase
+          .from('weekly_schedules')
+          .select('id, patient_id')
+          .inFilter('id', weeklyIdsForDay)
+          .eq('is_active', true);
+
+      for (final row in weeklyRows) {
+        patientIdByWeeklyId[row['id'].toString()] =
+            row['patient_id'].toString();
+      }
+    }
+
+    // --- approved reschedules landing on this date ---------------------
+    // Adding a patient to a day is the core workflow; the reschedule
+    // feature layers on top of it. If reschedule_requests isn't reachable
+    // (its migration hasn't been run yet), fall back to the recurring
+    // candidates rather than failing the whole modal.
+    List<Map<String, dynamic>> grantedRows = [];
+
+    try {
+      final rows = await supabase
+          .from('reschedule_requests')
+          .select('id, patient_id, original_date, requested_date, resolved_date')
+          .eq('clinic_id', clinicId)
+          .inFilter('status', ['approved', 'changed_date'])
+          .eq('resolved_date', isoDate(date));
+
+      grantedRows = List<Map<String, dynamic>>.from(rows as List);
+    } on PostgrestException catch (e) {
+      debugPrint('Approved reschedule lookup skipped: ${e.message}');
+    }
+
+    final grantedPatientIds =
+        grantedRows.map((r) => r['patient_id'].toString()).toSet().toList();
+
+    // A rescheduled patient needs a weekly_schedules row too -- it is
+    // what daily_schedules.weekly_schedule_id points at.
+    final weeklyIdByPatientId = <String, String>{};
+
+    if (grantedPatientIds.isNotEmpty) {
+      final weeklyRows = await supabase
+          .from('weekly_schedules')
+          .select('id, patient_id')
+          .eq('clinic_id', clinicId)
+          .inFilter('patient_id', grantedPatientIds)
+          .eq('is_active', true);
+
+      for (final row in weeklyRows) {
+        weeklyIdByPatientId[row['patient_id'].toString()] =
+            row['id'].toString();
+      }
+    }
+
+    // --- names, and the active-patient filter --------------------------
+    final allPatientIds = <String>{
+      ...patientIdByWeeklyId.values,
+      ...grantedPatientIds,
+    }..removeWhere(live.containsKey);
+
+    if (allPatientIds.isEmpty) return [];
+
+    final patientRows = await supabase
+        .from('patients')
+        .select('id, full_name, status')
+        .eq('clinic_id', clinicId)
+        .inFilter('id', allPatientIds.toList())
+        .inFilter('status', schedulablePatientStatuses);
+
+    final nameById = {
+      for (final row in patientRows)
+        row['id'].toString(): (row['full_name'] ?? 'Unknown patient').toString(),
+    };
+
+    final candidates = <String, DateScheduleCandidate>{};
+
+    for (final dayRow in dayRows) {
+      final weeklyScheduleId = dayRow['weekly_schedule_id'].toString();
+      final patientId = patientIdByWeeklyId[weeklyScheduleId];
+      if (patientId == null) continue;
+
+      final name = nameById[patientId];
+      if (name == null) continue;
+
+      final cancelledRow = cancelled[patientId];
+
+      candidates[patientId] = DateScheduleCandidate(
+        patientId: patientId,
+        patientName: name,
+        weeklyScheduleId: weeklyScheduleId,
+        source: cancelledRow == null
+            ? DateCandidateSource.recurring
+            : DateCandidateSource.removedToday,
+        defaultShiftCode: shiftCodeById[dayRow['shift_id'].toString()],
+        dailyScheduleId: cancelledRow?['id']?.toString(),
+        currentShiftCode: cancelledRow?['shift']?.toString(),
+      );
+    }
+
+    for (final request in grantedRows) {
+      final patientId = request['patient_id'].toString();
+      final name = nameById[patientId];
+      if (name == null) continue;
+
+      final weeklyScheduleId = weeklyIdByPatientId[patientId] ??
+          candidates[patientId]?.weeklyScheduleId;
+      if (weeklyScheduleId == null) continue;
+
+      final cancelledRow = cancelled[patientId];
+
+      // An approved reschedule outranks the recurring label: it is the
+      // reason this patient is available on a date they normally aren't.
+      candidates[patientId] = DateScheduleCandidate(
+        patientId: patientId,
+        patientName: name,
+        weeklyScheduleId: weeklyScheduleId,
+        source: DateCandidateSource.rescheduled,
+        defaultShiftCode: candidates[patientId]?.defaultShiftCode,
+        dailyScheduleId: cancelledRow?['id']?.toString(),
+        currentShiftCode: cancelledRow?['shift']?.toString(),
+        rescheduleRequestId: request['id'].toString(),
+        rescheduleOriginalDate:
+            DateTime.tryParse(request['original_date']?.toString() ?? ''),
+        rescheduleNewDate:
+            DateTime.tryParse(request['resolved_date']?.toString() ?? ''),
+      );
+    }
+
+    final ordered = candidates.values.toList();
+
+    ordered.sort((a, b) {
+      final bySource = a.source.index.compareTo(b.source.index);
+      if (bySource != 0) return -bySource; // rescheduled, removed, recurring
+      return a.patientName.toLowerCase().compareTo(b.patientName.toLowerCase());
+    });
+
+    return ordered;
+  }
+
+  /// Adds a patient to one shift on one date, or revives/moves the row
+  /// they already have for that date. Never inserts a second row for the
+  /// same patient and date (daily_schedules_patient_date_unique), and
+  /// never writes to the recurring schedule.
+  Future<String> addPatientToDate({
+    required String clinicId,
+    required DateTime date,
+    required String shiftCode,
+    required String patientId,
+    required String weeklyScheduleId,
+    String? rescheduleRequestId,
+  }) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      throw Exception('No logged-in admin found.');
+    }
+
+    final dayCapacity = await getDateCapacity(clinicId: clinicId, date: date);
+
+    if (!dayCapacity.isOperating) {
+      throw Exception('The center does not operate on ${dayCapacity.day}.');
+    }
+
+    final shiftCapacity = _shiftCapacityByCode(dayCapacity, shiftCode);
+
+    if (shiftCapacity == null || !shiftCapacity.shift.isActive) {
+      throw Exception('The $shiftCode shift is not available at this center.');
+    }
+
+    final existing = await supabase
+        .from('daily_schedules')
+        .select('id, status, shift')
+        .eq('clinic_id', clinicId)
+        .eq('patient_id', patientId)
+        .eq('schedule_date', isoDate(date))
+        .maybeSingle();
+
+    final existingStatus = existing?['status']?.toString();
+
+    if (existingStatus == occurrenceCompleted) {
+      throw Exception(
+        'This patient already completed a dialysis session on this date.',
+      );
+    }
+
+    if (existingStatus == occurrencePending) {
+      final currentShift = existing?['shift']?.toString();
+      if (currentShift == shiftCode) {
+        throw Exception(
+          'This patient is already scheduled in the $shiftCode shift today.',
+        );
+      }
+      throw Exception(
+        'This patient is already scheduled in the $currentShift shift today. '
+        'Use Move on their row to change shift.',
+      );
+    }
+
+    if (shiftCapacity.isFull) {
+      throw Exception(
+        'The $shiftCode shift is full '
+        '(${shiftCapacity.scheduled}/${shiftCapacity.effectiveCapacity}). '
+        'Remove a patient from this shift before adding another.',
+      );
+    }
+
+    final shift = shiftCapacity.shift;
+
+    // Reviving a cancelled row rather than inserting is what keeps the
+    // "one patient, one date" rule intact when an admin puts a removed
+    // patient back, or moves them to the other shift.
+    if (existing != null) {
+      final revived = await supabase
+          .from('daily_schedules')
+          .update({
+            'status': occurrencePending,
+            'shift': shift.shiftCode,
+            'start_time': shift.startTime,
+            'end_time': shift.endTime,
+            'weekly_schedule_id': weeklyScheduleId,
+            'cancelled_at': null,
+            'cancelled_by': null,
+            'cancel_reason': null,
+            'reschedule_request_id': rescheduleRequestId,
+          })
+          .eq('id', existing['id'])
+          .eq('clinic_id', clinicId)
+          .select('id');
+
+      if (revived.isEmpty) {
+        throw Exception(
+          'The patient could not be added. Check RLS policy or clinic_id '
+          'permission.',
+        );
+      }
+
+      return revived.first['id'].toString();
+    }
+
+    final inserted = await supabase
+        .from('daily_schedules')
+        .insert({
+          'weekly_schedule_id': weeklyScheduleId,
+          'patient_id': patientId,
+          'clinic_id': clinicId,
+          'schedule_date': isoDate(date),
+          'shift': shift.shiftCode,
+          'start_time': shift.startTime,
+          'end_time': shift.endTime,
+          'created_by': user.id,
+          'status': occurrencePending,
+          'reschedule_request_id': rescheduleRequestId,
+        })
+        .select('id');
+
+    if (inserted.isEmpty) {
+      throw Exception(
+        'The patient could not be added. Check RLS policy or clinic_id '
+        'permission.',
+      );
+    }
+
+    return inserted.first['id'].toString();
+  }
+
+  /// Takes a patient off ONE date. The row is cancelled, never deleted:
+  /// deleting it let generateTodayDefaultSchedule re-create it from the
+  /// recurring schedule on the very next refresh, which is why Remove
+  /// looked like it did nothing. The recurring schedule itself is not
+  /// touched, so the patient still appears on their next scheduled day.
+  Future<void> cancelDateOccurrence({
+    required String dailyScheduleId,
+    required String clinicId,
+    String? reason,
+  }) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      throw Exception('No logged-in admin found.');
+    }
+
+    final row = await supabase
+        .from('daily_schedules')
+        .select('id, status')
+        .eq('id', dailyScheduleId)
+        .eq('clinic_id', clinicId)
+        .maybeSingle();
+
+    if (row == null) {
+      throw Exception('That schedule entry no longer exists.');
+    }
+
+    final status = row['status']?.toString();
+
+    if (status == occurrenceCompleted) {
+      throw Exception(
+        'This session is already completed and cannot be removed. Its record '
+        'is part of the patient history.',
+      );
+    }
+
+    if (status == occurrenceCancelled) return;
+
+    final updated = await supabase
+        .from('daily_schedules')
+        .update({
+          'status': occurrenceCancelled,
+          'cancelled_at': DateTime.now().toIso8601String(),
+          'cancelled_by': user.id,
+          'cancel_reason': reason,
+        })
+        .eq('id', dailyScheduleId)
+        .eq('clinic_id', clinicId)
+        .select('id');
+
+    if (updated.isEmpty) {
+      throw Exception(
+        'The patient was not removed. Check RLS policy or clinic_id '
+        'permission.',
+      );
+    }
+  }
+
+  /// Moves an existing occurrence to the other shift ON THE SAME DATE.
+  /// Updates the one row the patient already has, so no duplicate session
+  /// can appear -- and patient_schedule_days.shift_id, the recurring
+  /// default, stays exactly as it was.
+  Future<void> moveOccurrenceToShift({
+    required String dailyScheduleId,
+    required String clinicId,
+    required DateTime date,
+    required String toShiftCode,
+  }) async {
+    final row = await supabase
+        .from('daily_schedules')
+        .select('id, status, shift')
+        .eq('id', dailyScheduleId)
+        .eq('clinic_id', clinicId)
+        .maybeSingle();
+
+    if (row == null) {
+      throw Exception('That schedule entry no longer exists.');
+    }
+
+    if (row['status']?.toString() == occurrenceCompleted) {
+      throw Exception('A completed session cannot be moved to another shift.');
+    }
+
+    if (row['shift']?.toString() == toShiftCode) {
+      throw Exception('This patient is already in the $toShiftCode shift.');
+    }
+
+    final dayCapacity = await getDateCapacity(clinicId: clinicId, date: date);
+    final shiftCapacity = _shiftCapacityByCode(dayCapacity, toShiftCode);
+
+    if (shiftCapacity == null || !shiftCapacity.shift.isActive) {
+      throw Exception('The $toShiftCode shift is not available at this center.');
+    }
+
+    if (shiftCapacity.isFull) {
+      throw Exception(
+        'The $toShiftCode shift is full '
+        '(${shiftCapacity.scheduled}/${shiftCapacity.effectiveCapacity}). '
+        'Free a slot there before moving this patient.',
+      );
+    }
+
+    final shift = shiftCapacity.shift;
+
+    final updated = await supabase
+        .from('daily_schedules')
+        .update({
+          'shift': shift.shiftCode,
+          'start_time': shift.startTime,
+          'end_time': shift.endTime,
+          'status': occurrencePending,
+          'cancelled_at': null,
+          'cancelled_by': null,
+          'cancel_reason': null,
+        })
+        .eq('id', dailyScheduleId)
+        .eq('clinic_id', clinicId)
+        .select('id');
+
+    if (updated.isEmpty) {
+      throw Exception(
+        'The patient was not moved. Check RLS policy or clinic_id permission.',
+      );
     }
   }
 }
