@@ -173,16 +173,143 @@ class DashboardService {
   // patient's recurring schedule on the next refresh, so the row is
   // cancelled in place instead and acts as that date's one-day override.
 
-  Future<Map<String, dynamic>?> getLatestDonation(String centerName) async {
-    final response = await client
+  /// The center's most recent *received* donation, across every source the
+  /// "Received" total is built from: the Super Admin's manual
+  /// fund_distributions ledger, verified donations sent directly to this
+  /// clinic (specific/random allocation), and this clinic's share of
+  /// verified equal-distribution donations.
+  ///
+  /// This used to read fund_distributions alone, so a donor-driven donation
+  /// moved the Received total without ever becoming the "Latest Donation" --
+  /// the card then reported an older manual distribution and that row's
+  /// distribution_date as the date received. Each source is matched here the
+  /// same way getTotalDonations / getAllocatedDonationTotal match it
+  /// (center_name for the manual ledger, clinic_id for the donor flow), so
+  /// "latest" is always the newest of exactly what the total counts.
+  ///
+  /// Pending and rejected donations are excluded for the same reason they
+  /// are excluded from the total: the center has not received them.
+  ///
+  /// Returns a normalized row -- amount, received_at, remarks, source -- or
+  /// null when the center has received nothing yet.
+  Future<Map<String, dynamic>?> getLatestDonation({
+    required String centerName,
+    String? clinicId,
+  }) async {
+    final candidates = <Map<String, dynamic>>[];
+
+    void addCandidate({
+      required dynamic amount,
+      required dynamic receivedAt,
+      required String source,
+      dynamic remarks,
+    }) {
+      final parsedDate = DateTime.tryParse(receivedAt?.toString() ?? '');
+      if (parsedDate == null) return;
+
+      // Sources store this differently -- timestamptz comes back UTC, a
+      // plain date comes back local -- so ordering compares UTC instants
+      // while the returned value is local, which is the wall-clock date the
+      // center actually received the funds on.
+      candidates.add({
+        'amount': _toNum(amount),
+        'received_at': parsedDate.toLocal().toIso8601String(),
+        'remarks': remarks,
+        'source': source,
+        '_sort_at': parsedDate.toUtc(),
+      });
+    }
+
+    // 1. Manual Super Admin distribution.
+    //
+    //    Ordered by created_at, NOT distribution_date: distribution_date is
+    //    null on every ledger row written before that column was added to
+    //    the Super Admin insert, and Postgres orders DESC as NULLS FIRST --
+    //    so "order by distribution_date desc, limit 1" handed back one of
+    //    those null-dated rows as the "latest", which is what made this card
+    //    show an old amount with an N/A date. created_at is populated on
+    //    every row and is what the Super Admin app orders this ledger by.
+    final manual = await client
         .from('fund_distributions')
-        .select()
+        .select('amount, distribution_date, created_at, remarks')
         .eq('center_name', centerName)
-        .order('distribution_date', ascending: false)
+        .order('created_at', ascending: false)
         .limit(1)
         .maybeSingle();
 
-    return response;
+    if (manual != null) {
+      addCandidate(
+        amount: manual['amount'],
+        // distribution_date is the real "pushed to the center" moment when
+        // it is set; created_at stands in for the older rows that lack it.
+        receivedAt: manual['distribution_date'] ?? manual['created_at'],
+        source: 'fund_distribution',
+        remarks: manual['remarks'],
+      );
+    }
+
+    if (clinicId != null) {
+      // 2. Specific / random donations, which resolve to this clinic_id
+      //    directly. created_at is the received timestamp: the donor flow
+      //    writes the row at submission time and the status column is what
+      //    marks it as usable by the center.
+      final direct = await client
+          .from('donations')
+          .select('amount, created_at')
+          .eq('clinic_id', clinicId)
+          .eq('status', 'verified')
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (direct != null) {
+        addCandidate(
+          amount: direct['amount'],
+          receivedAt: direct['created_at'],
+          source: 'donation',
+        );
+      }
+
+      // 3. This clinic's share of an equal-distribution donation. The share
+      //    row itself carries no status, so the parent donation's status is
+      //    what decides whether it counts -- same join and same in-Dart
+      //    status check getAllocatedDonationTotal already uses.
+      final shares = await client
+          .from('donation_allocations')
+          .select('amount, created_at, donations(status)')
+          .eq('clinic_id', clinicId)
+          .order('created_at', ascending: false);
+
+      for (final item in shares) {
+        final parent = item['donations'];
+        final parentStatus = parent is Map ? parent['status'] : null;
+
+        if (parentStatus != 'verified') continue;
+
+        addCandidate(
+          amount: item['amount'],
+          receivedAt: item['created_at'],
+          source: 'donation_allocation',
+        );
+        break;
+      }
+    }
+
+    if (candidates.isEmpty) return null;
+
+    candidates.sort(
+      (a, b) => (b['_sort_at'] as DateTime).compareTo(a['_sort_at'] as DateTime),
+    );
+
+    final latest = Map<String, dynamic>.from(candidates.first)
+      ..remove('_sort_at');
+
+    return latest;
+  }
+
+  num _toNum(dynamic value) {
+    if (value is num) return value;
+    return num.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   Future<num> getTotalDonations(String centerName) async {

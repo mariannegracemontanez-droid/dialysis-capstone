@@ -275,6 +275,7 @@ declare
   -- here, not a text[].
   v_scheduled_days jsonb;
   v_entry jsonb;
+  v_status text;
 begin
   if p_day_shifts is null or jsonb_typeof(p_day_shifts) <> 'array'
      or jsonb_array_length(p_day_shifts) = 0 then
@@ -283,13 +284,27 @@ begin
 
   -- Row-lock the patient for the rest of this transaction so a
   -- concurrent scheduling attempt on the same patient can't race past
-  -- the duplicate check below.
-  perform 1 from patients
+  -- the duplicate check below. The status is read under the same lock so
+  -- the acceptance check below is race-free too.
+  select status into v_status
+    from patients
     where id = p_patient_id and clinic_id = p_clinic_id
     for update;
 
   if not found then
     raise exception 'Patient not found for this clinic.';
+  end if;
+
+  -- Only an ACCEPTED patient may be given a recurring schedule.
+  -- 'no_sched' is the accepted-but-unscheduled state. Without this, a
+  -- patient still at 'pending' could be taken straight to 'active',
+  -- skipping the accepted/reserved step the Super Admin capacity estimate
+  -- counts. See supabase/patient_acceptance_status_guard.sql.
+  if v_status is null or v_status not in ('no_sched', 'active', 'approved') then
+    raise exception
+      'This patient has not been accepted by the center yet (current status: '
+      '%). Accept the patient first, then assign their schedule.',
+      coalesce(v_status, 'unknown');
   end if;
 
   if exists (select 1 from weekly_schedules where patient_id = p_patient_id) then
@@ -314,6 +329,11 @@ begin
     );
   end loop;
 
+  -- THE one place a patient becomes 'active'. It runs last, in the same
+  -- transaction as the two inserts above, so 'active' can only ever mean
+  -- "this patient has a recurring schedule that was actually saved" -- and
+  -- if any insert above fails, this rolls back with it and the patient
+  -- stays 'no_sched'. clinic_id is deliberately left untouched.
   update patients
     set status = 'active'
     where id = p_patient_id and clinic_id = p_clinic_id;

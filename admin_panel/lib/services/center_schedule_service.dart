@@ -44,8 +44,20 @@ class CenterScheduleService {
   /// schedule (weekly_schedules / patient_schedule_days) untouched.
   static const String occurrenceCancelled = 'cancelled';
 
-  /// Patient statuses that may hold a live dialysis session.
+  /// Patient statuses that may hold a live dialysis session -- i.e. they
+  /// already have a recurring schedule.
   static const List<String> schedulablePatientStatuses = ['active', 'approved'];
+
+  /// Patient statuses that mean "accepted/reserved by this center", and so
+  /// may be given a recurring schedule. Mirrors the guard inside
+  /// set_patient_recurring_schedule exactly: 'no_sched' is the
+  /// accepted-but-unscheduled state, 'active' already holds a schedule.
+  /// These are also the statuses the Super Admin capacity estimate counts.
+  static const List<String> acceptedPatientStatuses = [
+    'no_sched',
+    'active',
+    'approved',
+  ];
 
   // ------------------------------------------------------------------
   // Center configuration
@@ -530,6 +542,32 @@ class CenterScheduleService {
     final days = dayShifts.map((d) => d.day).toList();
     if (days.toSet().length != days.length) {
       return 'The same day was selected more than once.';
+    }
+
+    // Only an ACCEPTED patient at this clinic may be scheduled. Saving a
+    // schedule is what moves them from 'no_sched' to 'active', so a
+    // patient who was never accepted must not reach that transition.
+    // set_patient_recurring_schedule re-checks this under a row lock.
+    final patient = await supabase
+        .from('patients')
+        .select('status, clinic_id')
+        .eq('id', patientId)
+        .maybeSingle();
+
+    if (patient == null) {
+      return 'This patient record could not be found.';
+    }
+
+    if (patient['clinic_id']?.toString() != clinicId) {
+      return 'This patient is not registered at your center.';
+    }
+
+    final status = patient['status']?.toString();
+
+    if (!acceptedPatientStatuses.contains(status)) {
+      return 'This patient has not been accepted by the center yet '
+          '(currently "${status ?? 'unknown'}"). Accept them first, then '
+          'assign their schedule.';
     }
 
     // A patient may only ever hold one weekly_schedules row (the table is

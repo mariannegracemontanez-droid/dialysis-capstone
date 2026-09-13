@@ -258,8 +258,19 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(18),
+        duration: Duration(seconds: isError ? 6 : 4),
       ),
     );
+  }
+
+  /// Strips Dart's "Exception: " prefix so a rejected status change reads
+  /// as the plain explanation PatientService wrote.
+  String _friendlyError(Object error) {
+    final text = error.toString();
+    if (text.startsWith('Exception: ')) {
+      return text.substring('Exception: '.length);
+    }
+    return text;
   }
 
   void _showMedicalDocPreview(String fileName, String imageUrl) {
@@ -4985,13 +4996,20 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     );
   }
 
+  /// Accepting reserves the patient at this center (`no_sched`) -- it does
+  /// NOT schedule them. They move to `active` only once a recurring
+  /// schedule is actually saved.
   Future<void> _acceptPatient(Patient patient) async {
     try {
       await _service.acceptPatient(patient.id);
       _refreshData();
-      _showMessage('Patient accepted, awaiting schedule');
+      _showMessage(
+        '${patient.name} accepted. They are now reserved at your center and '
+        'waiting for a schedule — assign one from No Schedule Patients on '
+        'the Dashboard.',
+      );
     } catch (e) {
-      _showMessage('Error: $e', isError: true);
+      _showMessage(_friendlyError(e), isError: true);
     }
   }
 
@@ -5043,9 +5061,15 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
         if (!mounted) return;
         Navigator.of(context, rootNavigator: true).pop();
         _refreshData();
-        _showMessage('Patient accepted, awaiting schedule');
+        _showMessage(
+          '${patient.name} accepted. They are now reserved at your center and '
+          'waiting for a schedule — assign one from No Schedule Patients on '
+          'the Dashboard.',
+        );
       } catch (e) {
-        _showMessage('Error: $e', isError: true);
+        // The dialog stays closed only on success; on failure the patient
+        // is unchanged and the admin sees why.
+        _showMessage(_friendlyError(e), isError: true);
       }
       return;
     }
@@ -5228,23 +5252,15 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                         errorText = null;
                                       });
 
-                                      final clinicId = await _service
-                                          .getCurrentClinicId();
-
-                                      if (clinicId == null) {
-                                        throw Exception(
-                                          'No clinic assigned to this admin account.',
-                                        );
-                                      }
-
-                                      await Supabase.instance.client
-                                          .from('patients')
-                                          .update({
-                                            'status': 'declined',
-                                            'decline_reason': reason,
-                                          })
-                                          .eq('id', patient.id)
-                                          .eq('clinic_id', clinicId);
+                                      // Routed through PatientService so the
+                                      // write is verified: a raw update here
+                                      // matched zero rows silently whenever
+                                      // the clinic or status didn't line up,
+                                      // and still reported success.
+                                      await _service.declinePatientWithReason(
+                                        patientId: patient.id,
+                                        reason: reason,
+                                      );
 
                                       if (!mounted) return;
                                       Navigator.of(dialogContext).pop(true);
@@ -5253,7 +5269,10 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                         isSaving = false;
                                         errorText = 'Unable to save reason.';
                                       });
-                                      _showMessage('Error: $e', isError: true);
+                                      _showMessage(
+                                        _friendlyError(e),
+                                        isError: true,
+                                      );
                                     }
                                   },
                             icon: isSaving
@@ -5558,25 +5577,14 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                           notesError = null;
                                         });
 
-                                        final clinicId = await _service
-                                            .getCurrentClinicId();
-
-                                        if (clinicId == null) {
-                                          throw Exception(
-                                            'No clinic assigned to this admin account.',
-                                          );
-                                        }
-
-                                        await Supabase.instance.client
-                                            .from('patients')
-                                            .update({
-                                              'status': 'deleted',
-                                              'delete_reason': finalReason,
-                                              'deleted_at': DateTime.now()
-                                                  .toIso8601String(),
-                                            })
-                                            .eq('id', patient.id)
-                                            .eq('clinic_id', clinicId);
+                                        // Routed through PatientService so the
+                                        // write is verified rather than
+                                        // silently matching zero rows.
+                                        await _service.deletePatientWithReason(
+                                          patientId: patient.id,
+                                          reason: finalReason,
+                                          deletedAt: DateTime.now(),
+                                        );
 
                                         if (!mounted) return;
                                         Navigator.of(dialogContext).pop(true);
@@ -5586,7 +5594,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                           notesError = 'Unable to save reason.';
                                         });
                                         _showMessage(
-                                          'Error: $e',
+                                          _friendlyError(e),
                                           isError: true,
                                         );
                                       }

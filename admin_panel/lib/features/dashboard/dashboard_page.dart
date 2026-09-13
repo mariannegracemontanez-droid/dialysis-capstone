@@ -76,8 +76,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     _initAnimations();
     _loadData();
     _verifyDatabaseConnection();
+    // Donation data is keyed by clinic, so it is fetched by loadClinicData
+    // once clinicId/centerName resolve -- calling it here would read against
+    // the placeholder centerName and show another center's donation.
     loadClinicData();
-    fetchDonationData();
 
     _patientsChannel = Supabase.instance.client
         .channel('dashboard_patients_realtime')
@@ -249,7 +251,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
 
   Future<void> fetchDonationData() async {
     try {
-      final latest = await _service.getLatestDonation(centerName);
+      final latest = await _service.getLatestDonation(
+        centerName: centerName,
+        clinicId: clinicId,
+      );
       final manualTotal = await _service.getTotalDonations(centerName);
 
       // Real donor-driven allocations (specific/random/equal-share, all
@@ -329,7 +334,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     if (value == null) return 'N/A';
 
     try {
-      final date = DateTime.parse(value.toString());
+      final date = DateTime.parse(value.toString()).toLocal();
       return '${date.month}/${date.day}/${date.year}';
     } catch (_) {
       return value.toString();
@@ -765,7 +770,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
                         return FadeTransition(opacity: animation, child: child);
                       },
                 ),
-              );
+              ).then((_) {
+                // Accepting a patient on the Patients page moves them into
+                // No Schedule Patients here. The patients realtime channel
+                // usually catches that, but it only fires if Realtime is
+                // enabled for the table -- reloading on return makes the
+                // list correct either way.
+                if (!mounted) return;
+                _loadData();
+              });
             }
           },
           borderRadius: BorderRadius.circular(10),
@@ -1284,7 +1297,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
 
   Widget _buildDonationCard() {
     final latestAmount = latestDonation?['amount'] ?? 0;
-    final latestDate = latestDonation?['distribution_date'];
+    final latestDate = latestDonation?['received_at'];
     final remarks = latestDonation?['remarks']?.toString();
 
     final totalSpent = purchaseLogs.fold<num>(
