@@ -8,12 +8,20 @@ class CenterDonationHistoryEntry {
   final String status;
   final DateTime date;
 
+  /// Donor identity, sourced from the existing donations.name / donations.email
+  /// columns. Null when the donation is anonymous or predates contact capture.
+  /// Search-only -- not shown as a column in the history table.
+  final String? donorName;
+  final String? donorEmail;
+
   CenterDonationHistoryEntry({
     required this.donationId,
     required this.amount,
     required this.allocationType,
     required this.status,
     required this.date,
+    this.donorName,
+    this.donorEmail,
   });
 
   String get allocationLabel {

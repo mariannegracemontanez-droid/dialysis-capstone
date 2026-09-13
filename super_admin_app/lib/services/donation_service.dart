@@ -38,20 +38,6 @@ class DonationService {
         .toList();
   }
 
-  /// Approves a donation via the approve_donation RPC: atomically flips its
-  /// status, refuses to run if it isn't still pending (prevents a double
-  /// click from double-processing it), and writes the audit trail -- all in
-  /// one backend transaction rather than separate client-side requests.
-  Future<void> approveDonation(String donationId) async {
-    await _supabase.rpc('approve_donation', params: {'p_donation_id': donationId});
-  }
-
-  /// Rejects a donation via the reject_donation RPC. Same idempotency
-  /// guard and audit trail as [approveDonation].
-  Future<void> rejectDonation(String donationId) async {
-    await _supabase.rpc('reject_donation', params: {'p_donation_id': donationId});
-  }
-
   /// A single center's donation history: every specific/random donation
   /// sent directly to it, plus its share of every equal-distribution
   /// donation -- normalized into one list for the Center Donation History
@@ -61,13 +47,13 @@ class DonationService {
   ) async {
     final direct = await _supabase
         .from('donations')
-        .select('id, amount, allocation_type, status, created_at')
+        .select('id, amount, allocation_type, status, created_at, name, email')
         .eq('clinic_id', clinicId)
         .order('created_at', ascending: false);
 
     final shares = await _supabase
         .from('donation_allocations')
-        .select('donation_id, amount, created_at, donations(status)')
+        .select('donation_id, amount, created_at, donations(status, name, email)')
         .eq('clinic_id', clinicId)
         .order('created_at', ascending: false);
 
@@ -79,6 +65,8 @@ class DonationService {
           allocationType: item['allocation_type']?.toString() ?? 'specific_center',
           status: item['status']?.toString() ?? 'pending',
           date: DateTime.tryParse(item['created_at'].toString()) ?? DateTime.now(),
+          donorName: item['name']?.toString(),
+          donorEmail: item['email']?.toString(),
         ),
       for (final item in (shares as List<dynamic>))
         CenterDonationHistoryEntry(
@@ -90,6 +78,12 @@ class DonationService {
                   : null) ??
               'pending',
           date: DateTime.tryParse(item['created_at'].toString()) ?? DateTime.now(),
+          donorName: item['donations'] is Map
+              ? item['donations']['name']?.toString()
+              : null,
+          donorEmail: item['donations'] is Map
+              ? item['donations']['email']?.toString()
+              : null,
         ),
     ];
 
@@ -198,9 +192,5 @@ class DonationService {
       'status': status,
       'created_at': DateTime.now().toIso8601String(),
     });
-  }
-
-  Future<void> deleteDonation(String donationId) async {
-    await _supabase.from('donations').delete().eq('id', donationId);
   }
 }

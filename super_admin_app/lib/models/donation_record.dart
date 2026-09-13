@@ -7,6 +7,12 @@ class DonationRecord {
   final String? paymentMethod;
   final DateTime createdAt;
 
+  /// Donor email, sourced from the existing donations.email column. Null for
+  /// anonymous donations (see [isAnonymous]) or donations without one on file.
+  /// Used by the Super Admin's Overall Donation History for display/search
+  /// only -- it does not affect how the donation is created or processed.
+  final String? email;
+
   /// One of 'specific_center', 'random_center', 'equal_distribution', or
   /// null for donations recorded before this was tracked.
   final String? allocationType;
@@ -32,6 +38,7 @@ class DonationRecord {
     this.clinicId,
     this.clinicName,
     this.isAnonymous = false,
+    this.email,
   });
 
   String get allocationLabel {
@@ -74,6 +81,7 @@ class DonationRecord {
       clinicId: json['clinic_id']?.toString(),
       clinicName: clinicName,
       isAnonymous: anonymous,
+      email: anonymous ? null : email,
     );
   }
 }

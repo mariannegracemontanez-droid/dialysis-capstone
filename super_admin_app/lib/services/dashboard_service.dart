@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import '../models/center_model.dart';
@@ -11,6 +13,57 @@ class DashboardService {
     if (availableSlots == 0) return 'full';
     if (availableSlots <= 2) return 'busy';
     return 'open';
+  }
+
+  /// Patient statuses that count as "accepted/reserved" at a clinic for the
+  /// Super Admin capacity ESTIMATE (see calculateAvailableSlotsEstimate) --
+  /// this mirrors the one existing definition of that concept already in
+  /// the codebase, mobile-app's PatientService._activeStatuses (used by
+  /// getActivePatientRow/hasPatientAccess): 'no_sched' (accepted by the
+  /// Center Admin, no recurring schedule assigned yet) and 'active' (has
+  /// an active recurring schedule). 'approved' is included defensively for
+  /// the same reason mobile-app includes it there -- nothing in the current
+  /// codebase writes that value, but it costs nothing to also treat it as
+  /// reserved in case older data ever has it.
+  static const List<String> _reservedPatientStatuses = [
+    'no_sched',
+    'active',
+    'approved',
+  ];
+
+  /// Counts patients reserved/accepted at one clinic, for the Super Admin
+  /// capacity estimate only. A plain read of the existing `patients` table
+  /// -- no schema change, no new table, no RPC -- and never writes
+  /// anything back. Deliberately lets a failure propagate (rather than
+  /// swallowing it and returning 0) so a caller can tell "zero reserved
+  /// patients" apart from "the count could not be fetched" and never
+  /// mistakes the latter for the former.
+  Future<int> getReservedPatientCount(String clinicId) async {
+    final response = await _supabase
+        .from('patients')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .inFilter('status', _reservedPatientStatuses);
+
+    return (response as List).length;
+  }
+
+  /// The Super Admin's own live capacity ESTIMATE: total theoretical
+  /// capacity (machines x 2 shifts) minus how many patients are currently
+  /// reserved/accepted at this clinic (see getReservedPatientCount).
+  ///
+  /// This is deliberately separate from, and never written into,
+  /// clinics.slots_available -- it is NOT the authoritative day/shift
+  /// scheduling capacity (that remains CenterScheduleService's
+  /// getCapacitySnapshot() in admin_panel, untouched by this), just a
+  /// coarser, at-a-glance headcount estimate for Super Admin. Never
+  /// negative -- clamped to 0 if reserved patients exceed capacity.
+  int calculateAvailableSlotsEstimate({
+    required int machines,
+    required int reservedPatients,
+  }) {
+    final totalCapacity = machines * 2;
+    return math.max(0, totalCapacity - reservedPatients);
   }
 
   List<String> _parseRequirements(String requirements) {

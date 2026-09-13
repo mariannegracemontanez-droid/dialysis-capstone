@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'login_page.dart';
-import 'proof_page.dart';
 
 class DonationPage extends StatefulWidget {
   const DonationPage({
@@ -123,13 +122,6 @@ class _DonationPageState extends State<DonationPage>
     _customAmountController.dispose();
     _animationController.dispose();
     super.dispose();
-  }
-
-  void _selectAmount(String amount) {
-    setState(() {
-      _customAmountController.text = amount.replaceAll('P', '');
-      _errorMessage = null;
-    });
   }
 
   void _selectPaymentChannel(String channel) {
@@ -684,43 +676,6 @@ class _DonationPageState extends State<DonationPage>
     );
   }
 
-  Widget _buildAmountButton(String label) {
-    final isSelected =
-        _customAmountController.text.trim() == label.replaceAll('P', '');
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: () => _selectAmount(label),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 17),
-        decoration: BoxDecoration(
-          color: isSelected ? _darkTeal : Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isSelected ? _darkTeal : const Color(0xFFD5E4EA),
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: _darkTeal.withOpacity(0.14),
-                    blurRadius: 14,
-                    offset: const Offset(0, 8),
-                  ),
-                ]
-              : [],
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : _darkTeal,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _paymentButton({
     required String method,
     required IconData icon,
@@ -1090,8 +1045,7 @@ class _DonationPageState extends State<DonationPage>
           _sectionLabel(
             icon: Icons.volunteer_activism_rounded,
             title: 'Donation Amount',
-            subtitle:
-                'Choose a suggested amount or enter a custom contribution.',
+            subtitle: 'Enter the amount you would like to contribute.',
           ),
           const SizedBox(height: 18),
 
@@ -1113,10 +1067,6 @@ class _DonationPageState extends State<DonationPage>
                   ),
                 ),
               ),
-              _buildAmountButton('P50'),
-              _buildAmountButton('P100'),
-              _buildAmountButton('P500'),
-              _buildAmountButton('P1000'),
             ],
           ),
 
@@ -1520,7 +1470,7 @@ Future<void> _handleDonate() async {
           'email': widget.isAnonymous ? null : donorEmail,
           'amount': amount,
           'payment_method': _selectedPaymentChannel,
-          'status': 'pending',
+          'status': 'verified',
           'clinic_id': isEqualDistribution ? null : _selectedCenterId,
           'allocation_type': allocationType,
         })
@@ -1550,15 +1500,30 @@ Future<void> _handleDonate() async {
       _isLoading = false;
     });
 
-    // Continue to proof upload.
-    Navigator.of(context).push(
-  MaterialPageRoute(
-    builder: (_) => ProofUploadPage(
-      donationId: donationId,
-      paymentMethod: _selectedPaymentChannel!,
-    ),
-  ),
-);
+    // Donations are voluntary and no longer require a payment receipt or any
+    // review before they count -- the donation (and its center routing,
+    // above) is already fully recorded at this point, so we just confirm
+    // that to the donor instead of asking for proof of payment.
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Thank You!'),
+          content: const Text(
+            'Your donation has been recorded successfully. We truly appreciate your generosity.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).pop();
+              },
+              child: const Text('Back to Home'),
+            ),
+          ],
+        );
+      },
+    );
   } catch (e) {
     if (!mounted) return;
 
