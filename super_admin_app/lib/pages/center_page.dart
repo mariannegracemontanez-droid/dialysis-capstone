@@ -8,6 +8,7 @@ import '../models/center_model.dart';
 import '../services/dashboard_service.dart';
 import '../config/supabase_config.dart';
 import '../services/profile_service.dart';
+import '../theme/app_theme.dart';
 import 'dart:ui';
 
 bool isCenterOpenByOperatingHours(String? operatingHours) {
@@ -330,6 +331,12 @@ class _ClinicsPageState extends State<ClinicsPage> {
 
   /// Unique, non-empty city names from the loaded center list, sorted
   /// alphabetically -- generated from data, never hardcoded.
+  ///
+  /// The All Cities dropdown was removed from the Centers UI, but the
+  /// city-filter capability itself is deliberately kept intact (this getter,
+  /// [_cityFilter], and the filter step in [_filteredClinics]) so nothing
+  /// downstream loses the ability to filter by city.
+  // ignore: unused_element
   List<String> get _availableCities {
     final cities = _clinics
         .map((clinic) => clinic.city.trim())
@@ -503,13 +510,19 @@ class _ClinicsPageState extends State<ClinicsPage> {
       (sum, clinic) => sum + clinic.machines,
     );
 
+    final pagePadding = AppTheme.pagePadding(
+      MediaQuery.of(context).size.width,
+    );
+
     return Container(
       width: double.infinity,
       height: double.infinity,
       color: pageBg,
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.all(1),
+        // Padding lives inside the scroll view so the scrollbar sits on the
+        // viewport edge rather than floating inside the content.
+        padding: EdgeInsets.all(pagePadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.start,
@@ -549,6 +562,8 @@ class _ClinicsPageState extends State<ClinicsPage> {
                     label: 'Open Centers',
                     value: openCount.toString(),
                     description: 'Currently marked as open',
+                    accent: AppTheme.accentGreen,
+                    accentSoft: AppTheme.accentGreenSoft,
                   ),
 
                   _DashboardStatCard(
@@ -556,6 +571,8 @@ class _ClinicsPageState extends State<ClinicsPage> {
                     label: 'Available Slots',
                     value: totalSlots.toString(),
                     description: 'Total remaining capacity',
+                    accent: AppTheme.accentOrange,
+                    accentSoft: AppTheme.accentOrangeSoft,
                   ),
 
                   _DashboardStatCard(
@@ -563,6 +580,8 @@ class _ClinicsPageState extends State<ClinicsPage> {
                     label: 'Machines',
                     value: totalMachines.toString(),
                     description: 'Total available machines',
+                    accent: AppTheme.accentTeal,
+                    accentSoft: AppTheme.accentTealSoft,
                   ),
                 ];
 
@@ -592,8 +611,11 @@ class _ClinicsPageState extends State<ClinicsPage> {
               },
             ),
 
-            const SizedBox(height: 22),
+            const SizedBox(height: AppTheme.gapLg),
 
+            // Search/filters and the centers list share one surface so the
+            // page reads as a single working area rather than two stacked
+            // cards.
             TweenAnimationBuilder<double>(
               tween: Tween(begin: 0, end: 1),
               duration: const Duration(milliseconds: 520),
@@ -607,7 +629,7 @@ class _ClinicsPageState extends State<ClinicsPage> {
                   ),
                 );
               },
-              child: _SearchAndRefreshBar(
+              child: _CentersPanel(
                 searchText: _searchText,
                 onSearchChanged: (value) {
                   setState(() => _searchText = value);
@@ -617,45 +639,24 @@ class _ClinicsPageState extends State<ClinicsPage> {
                 onStatusChanged: (value) {
                   setState(() => _statusFilter = value);
                 },
-                cityFilter: _cityFilter,
-                availableCities: _availableCities,
-                onCityChanged: (value) {
-                  setState(() => _cityFilter = value);
-                },
                 sortOption: _sortOption,
                 onSortChanged: (value) {
                   setState(() => _sortOption = value);
                 },
                 hasActiveFilters: _hasActiveCenterFilters,
                 onClearFilters: _clearCenterFilters,
+                isLoading: _isLoading,
+                clinics: clinics,
+                // Centers exist but none match the current search/filters,
+                // vs. there being no centers at all -- different situations
+                // with different messaging and a different call to action.
+                hasAnyCenters: _clinics.isNotEmpty,
+                formatDate: _formatDate,
+                onAdd: () => _showClinicDialog(),
+                onEdit: _showClinicDialog,
+                onDelete: _deleteClinic,
+                capacityEstimateFor: _capacityEstimateFor,
               ),
-            ),
-
-            const SizedBox(height: 22),
-
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              child: _isLoading
-                  ? const _LoadingPanel()
-                  : clinics.isEmpty
-                  ? _EmptyPanel(
-                      // Centers exist but none match the current
-                      // search/filters, vs. there being no centers at all --
-                      // these are different situations with different
-                      // messaging and a different call to action.
-                      hasAnyCenters: _clinics.isNotEmpty,
-                      onAdd: () => _showClinicDialog(),
-                      onClearFilters: _clearCenterFilters,
-                    )
-                  : _CentersTableCard(
-                      clinics: clinics,
-                      formatDate: _formatDate,
-                      onEdit: _showClinicDialog,
-                      onDelete: _deleteClinic,
-                      capacityEstimateFor: _capacityEstimateFor,
-                    ),
             ),
           ],
         ),
@@ -1823,65 +1824,78 @@ class _HeaderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
         gradient: const LinearGradient(
-          colors: [Color(0xFF0F719F), Color(0xFF0F3A55)],
+          colors: [AppTheme.white, AppTheme.headerTint],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
+        borderRadius: BorderRadius.circular(AppTheme.rXl),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.shadowSm,
       ),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(18),
+            width: 48,
+            height: 48,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.16),
-              borderRadius: BorderRadius.circular(22),
+              color: AppTheme.accentBlueSoft,
+              borderRadius: BorderRadius.circular(AppTheme.rLg),
+              border: Border.all(color: AppTheme.borderStrong),
             ),
             child: const Icon(
               Icons.local_hospital_rounded,
-              color: Colors.white,
-              size: 34,
+              color: AppTheme.blue1,
+              size: 24,
             ),
           ),
-          const SizedBox(width: 18),
-          Expanded(
+          const SizedBox(width: 16),
+          const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Centers Management',
                   style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
+                    fontSize: 22,
+                    height: 1.25,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.3,
+                    color: AppTheme.blue3,
                   ),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: 6),
                 Text(
                   'Manage dialysis centers, operating details, capacity, and map locations in one organized workspace.',
                   style: TextStyle(
-                    fontSize: 15,
-                    height: 1.4,
-                    color: Colors.white.withOpacity(0.84),
+                    fontSize: 13.5,
+                    height: 1.45,
+                    color: AppTheme.textSecondary,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 16),
-          FilledButton.icon(
-            onPressed: onAdd,
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('New Center'),
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: const Color(0xFF0F719F),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+          const SizedBox(width: 24),
+          SizedBox(
+            height: 40,
+            child: FilledButton.icon(
+              onPressed: onAdd,
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('New Center'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppTheme.blue1,
+                foregroundColor: AppTheme.white,
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                textStyle: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppTheme.rMd),
+                ),
               ),
             ),
           ),
@@ -1896,60 +1910,70 @@ class _DashboardStatCard extends StatelessWidget {
   final String label;
   final String value;
   final String description;
+  final Color accent;
+  final Color accentSoft;
 
   const _DashboardStatCard({
     required this.icon,
     required this.label,
     required this.value,
     required this.description,
+    this.accent = AppTheme.blue1,
+    this.accentSoft = AppTheme.accentBlueSoft,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE8F0F5)),
-      ),
+      padding: const EdgeInsets.all(18),
+      decoration: AppTheme.card(),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(13),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF8FC),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Icon(icon, color: const Color(0xFF0F719F)),
+            width: 38,
+            height: 38,
+            decoration: AppTheme.iconBox(accentSoft),
+            child: Icon(icon, color: accent, size: 19),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 13),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F3A55),
+                    fontSize: 22,
+                    height: 1.25,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.4,
+                    color: AppTheme.blue3,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF263B4A),
+                    fontSize: 12.5,
+                    height: 1.3,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 3),
                 Text(
                   description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Color(0xFF647583),
-                    fontSize: 12,
+                    color: AppTheme.textMuted,
+                    fontSize: 11.5,
+                    height: 1.3,
                   ),
                 ),
               ],
@@ -1961,7 +1985,13 @@ class _DashboardStatCard extends StatelessWidget {
   }
 }
 
-class _SearchAndRefreshBar extends StatefulWidget {
+/// Search, filters and the centers list on one surface.
+///
+/// This replaces the two stacked cards that used to hold them. Every callback
+/// is passed straight through to the same state handlers as before, so search,
+/// status filtering, sorting, refresh, edit and delete all behave exactly as
+/// they did.
+class _CentersPanel extends StatefulWidget {
   final String searchText;
   final ValueChanged<String> onSearchChanged;
   final VoidCallback onRefresh;
@@ -1969,36 +1999,47 @@ class _SearchAndRefreshBar extends StatefulWidget {
   final String? statusFilter;
   final ValueChanged<String?> onStatusChanged;
 
-  final String? cityFilter;
-  final List<String> availableCities;
-  final ValueChanged<String?> onCityChanged;
-
   final _CenterSortOption sortOption;
   final ValueChanged<_CenterSortOption> onSortChanged;
 
   final bool hasActiveFilters;
   final VoidCallback onClearFilters;
 
-  const _SearchAndRefreshBar({
+  final bool isLoading;
+  final List<CenterModel> clinics;
+  final bool hasAnyCenters;
+
+  final String Function(DateTime date) formatDate;
+  final VoidCallback onAdd;
+  final void Function(CenterModel clinic) onEdit;
+  final void Function(CenterModel clinic) onDelete;
+  final _CapacityEstimate Function(CenterModel clinic) capacityEstimateFor;
+
+  const _CentersPanel({
     required this.searchText,
     required this.onSearchChanged,
     required this.onRefresh,
     required this.statusFilter,
     required this.onStatusChanged,
-    required this.cityFilter,
-    required this.availableCities,
-    required this.onCityChanged,
     required this.sortOption,
     required this.onSortChanged,
     required this.hasActiveFilters,
     required this.onClearFilters,
+    required this.isLoading,
+    required this.clinics,
+    required this.hasAnyCenters,
+    required this.formatDate,
+    required this.onAdd,
+    required this.onEdit,
+    required this.onDelete,
+    required this.capacityEstimateFor,
   });
 
   @override
-  State<_SearchAndRefreshBar> createState() => _SearchAndRefreshBarState();
+  State<_CentersPanel> createState() => _CentersPanelState();
 }
 
-class _SearchAndRefreshBarState extends State<_SearchAndRefreshBar> {
+class _CentersPanelState extends State<_CentersPanel> {
   late final TextEditingController _controller;
 
   @override
@@ -2008,11 +2049,14 @@ class _SearchAndRefreshBarState extends State<_SearchAndRefreshBar> {
   }
 
   @override
-  void didUpdateWidget(covariant _SearchAndRefreshBar oldWidget) {
+  void didUpdateWidget(covariant _CentersPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.searchText != widget.searchText &&
-        _controller.text != widget.searchText) {
+
+    if (widget.searchText != _controller.text) {
       _controller.text = widget.searchText;
+      _controller.selection = TextSelection.fromPosition(
+        TextPosition(offset: _controller.text.length),
+      );
     }
   }
 
@@ -2022,12 +2066,10 @@ class _SearchAndRefreshBarState extends State<_SearchAndRefreshBar> {
     super.dispose();
   }
 
-  // Compact dropdown styled to match the search field above it (filled,
-  // rounded, borderless). Keyed on the current value so an external reset
-  // (e.g. Clear Filters) reliably resyncs the dropdown -- DropdownButtonFormField
-  // only reads `initialValue` once per widget identity, the same reason the
-  // Center Donation History center-picker in donations_page.dart is keyed.
-  Widget _buildFilterDropdown<T>({
+  // Keyed on the current value so an external reset (e.g. Clear Filters)
+  // reliably resyncs the dropdown -- DropdownButtonFormField only reads
+  // `initialValue` once per widget identity.
+  Widget _filterDropdown<T>({
     required String keyPrefix,
     required IconData icon,
     required T value,
@@ -2035,96 +2077,173 @@ class _SearchAndRefreshBarState extends State<_SearchAndRefreshBar> {
     required ValueChanged<T?> onChanged,
   }) {
     return SizedBox(
-      width: 190,
-      child: DropdownButtonFormField<T>(
-        key: ValueKey('$keyPrefix-$value'),
-        initialValue: value,
-        isExpanded: true,
-        icon: const Icon(Icons.expand_more_rounded, size: 18),
-        decoration: InputDecoration(
-          isDense: true,
-          prefixIcon: Icon(
-            icon,
+      width: 200,
+      child: AppMenuTheme(
+        child: DropdownButtonFormField<T>(
+          key: ValueKey('$keyPrefix-$value'),
+          initialValue: value,
+          isExpanded: true,
+          style: AppTheme.fieldTextStyle,
+          icon: const Icon(
+            Icons.expand_more_rounded,
             size: 18,
-            color: const Color(0xFF0F719F),
+            color: AppTheme.iconMuted,
           ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 10,
+          dropdownColor: AppTheme.surface,
+          elevation: 2,
+          borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+          decoration: AppTheme.field(
+            dense: true,
+            prefixIcon: Icon(icon, size: 17, color: AppTheme.blue1),
           ),
-          filled: true,
-          fillColor: const Color(0xFFF6FBFF),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
+          items: items,
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionLabel({
+    required IconData icon,
+    required Color accent,
+    required Color accentSoft,
+    required String title,
+    required String subtitle,
+    Widget? trailing,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: AppTheme.iconBox(accentSoft),
+          child: Icon(icon, color: accent, size: 18),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 15,
+                  height: 1.3,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.blue3,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  color: AppTheme.textMuted,
+                  fontSize: 12.5,
+                  height: 1.35,
+                ),
+              ),
+            ],
           ),
         ),
-        items: items,
-        onChanged: onChanged,
-      ),
+        ?trailing,
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE8F0F5)),
-      ),
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: AppTheme.card(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _sectionLabel(
+            icon: Icons.filter_alt_outlined,
+            accent: AppTheme.blue1,
+            accentSoft: AppTheme.accentBlueSoft,
+            title: 'Search & Filters',
+            subtitle: 'Narrow the list by name, status, or order.',
+            trailing: widget.hasActiveFilters
+                ? TextButton.icon(
+                    onPressed: widget.onClearFilters,
+                    icon: const Icon(Icons.clear_all_rounded, size: 17),
+                    label: const Text('Clear Filters'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.blue1,
+                      textStyle: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  )
+                : null,
+          ),
+
+          const SizedBox(height: 16),
+
           Row(
             children: [
               Expanded(
                 child: TextFormField(
                   controller: _controller,
                   onChanged: widget.onSearchChanged,
-                  decoration: InputDecoration(
+                  style: AppTheme.fieldTextStyle,
+                  decoration: AppTheme.field(
                     hintText:
                         'Search by center name, city, address, or contact number...',
-                    prefixIcon: const Icon(Icons.search_rounded),
+                    prefixIcon: const Icon(
+                      Icons.search_rounded,
+                      size: 19,
+                      color: AppTheme.iconMuted,
+                    ),
                     suffixIcon: _controller.text.isEmpty
                         ? null
                         : IconButton(
+                            tooltip: 'Clear search',
                             onPressed: () {
                               _controller.clear();
                               widget.onSearchChanged('');
                               setState(() {});
                             },
-                            icon: const Icon(Icons.close_rounded),
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              size: 18,
+                              color: AppTheme.iconMuted,
+                            ),
                           ),
-                    filled: true,
-                    fillColor: const Color(0xFFF6FBFF),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
-                      borderSide: BorderSide.none,
-                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 12),
-              IconButton.filled(
-                onPressed: widget.onRefresh,
-                icon: const Icon(Icons.refresh_rounded),
-                style: IconButton.styleFrom(
-                  backgroundColor: const Color(0xFFEFF8FC),
-                  foregroundColor: const Color(0xFF0F719F),
-                  padding: const EdgeInsets.all(16),
+              SizedBox(
+                width: 48,
+                height: 48,
+                child: IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: widget.onRefresh,
+                  icon: const Icon(Icons.refresh_rounded, size: 20),
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppTheme.accentBlueSoft,
+                    foregroundColor: AppTheme.blue1,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.rMd),
+                    ),
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+
+          const SizedBox(height: 12),
+
           Wrap(
             spacing: 12,
             runSpacing: 12,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              _buildFilterDropdown<String?>(
+              _filterDropdown<String?>(
                 keyPrefix: 'status',
                 icon: Icons.tune_rounded,
                 value: widget.statusFilter,
@@ -2133,40 +2252,13 @@ class _SearchAndRefreshBarState extends State<_SearchAndRefreshBar> {
                     value: null,
                     child: Text('All Statuses'),
                   ),
-                  DropdownMenuItem<String?>(
-                    value: 'open',
-                    child: Text('Open'),
-                  ),
-                  DropdownMenuItem<String?>(
-                    value: 'busy',
-                    child: Text('Busy'),
-                  ),
-                  DropdownMenuItem<String?>(
-                    value: 'full',
-                    child: Text('Full'),
-                  ),
+                  DropdownMenuItem<String?>(value: 'open', child: Text('Open')),
+                  DropdownMenuItem<String?>(value: 'busy', child: Text('Busy')),
+                  DropdownMenuItem<String?>(value: 'full', child: Text('Full')),
                 ],
                 onChanged: widget.onStatusChanged,
               ),
-              _buildFilterDropdown<String?>(
-                keyPrefix: 'city',
-                icon: Icons.location_city_rounded,
-                value: widget.cityFilter,
-                items: [
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text('All Cities'),
-                  ),
-                  ...widget.availableCities.map(
-                    (city) => DropdownMenuItem<String?>(
-                      value: city,
-                      child: Text(city, overflow: TextOverflow.ellipsis),
-                    ),
-                  ),
-                ],
-                onChanged: widget.onCityChanged,
-              ),
-              _buildFilterDropdown<_CenterSortOption>(
+              _filterDropdown<_CenterSortOption>(
                 keyPrefix: 'sort',
                 icon: Icons.sort_rounded,
                 value: widget.sortOption,
@@ -2185,13 +2277,55 @@ class _SearchAndRefreshBarState extends State<_SearchAndRefreshBar> {
                   if (value != null) widget.onSortChanged(value);
                 },
               ),
-              if (widget.hasActiveFilters)
-                TextButton.icon(
-                  onPressed: widget.onClearFilters,
-                  icon: const Icon(Icons.clear_all_rounded),
-                  label: const Text('Clear Filters'),
-                ),
             ],
+          ),
+
+          const SizedBox(height: 20),
+          const Divider(height: 1, thickness: 1, color: AppTheme.border),
+          const SizedBox(height: 20),
+
+          _sectionLabel(
+            icon: Icons.view_list_rounded,
+            accent: AppTheme.accentTeal,
+            accentSoft: AppTheme.accentTealSoft,
+            title: 'Centers List',
+            subtitle:
+                'Review center details quickly and use actions to update or remove records.',
+            trailing: widget.isLoading || widget.clinics.isEmpty
+                ? null
+                : Text(
+                    widget.clinics.length == 1
+                        ? '1 center'
+                        : '${widget.clinics.length} centers',
+                    style: const TextStyle(
+                      color: AppTheme.textMuted,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+          ),
+
+          const SizedBox(height: 16),
+
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            child: widget.isLoading
+                ? const _LoadingPanel()
+                : widget.clinics.isEmpty
+                ? _EmptyPanel(
+                    hasAnyCenters: widget.hasAnyCenters,
+                    onAdd: widget.onAdd,
+                    onClearFilters: widget.onClearFilters,
+                  )
+                : _CentersTable(
+                    clinics: widget.clinics,
+                    formatDate: widget.formatDate,
+                    onEdit: widget.onEdit,
+                    onDelete: widget.onDelete,
+                    capacityEstimateFor: widget.capacityEstimateFor,
+                  ),
           ),
         ],
       ),
@@ -2199,14 +2333,16 @@ class _SearchAndRefreshBarState extends State<_SearchAndRefreshBar> {
   }
 }
 
-class _CentersTableCard extends StatelessWidget {
+/// The centers table itself. Same columns, same data, same row actions as
+/// before -- only the spacing, type scale and pill treatment changed.
+class _CentersTable extends StatelessWidget {
   final List<CenterModel> clinics;
   final String Function(DateTime date) formatDate;
   final void Function(CenterModel clinic) onEdit;
   final void Function(CenterModel clinic) onDelete;
   final _CapacityEstimate Function(CenterModel clinic) capacityEstimateFor;
 
-  const _CentersTableCard({
+  const _CentersTable({
     required this.clinics,
     required this.formatDate,
     required this.onEdit,
@@ -2214,276 +2350,272 @@ class _CentersTableCard extends StatelessWidget {
     required this.capacityEstimateFor,
   });
 
+  static const TextStyle _headingStyle = TextStyle(
+    color: AppTheme.textMuted,
+    fontSize: 11.5,
+    height: 1.2,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 0.3,
+  );
+
+  static const TextStyle _bodyStyle = TextStyle(
+    color: AppTheme.textSecondary,
+    fontSize: 12.5,
+    fontWeight: FontWeight.w500,
+  );
+
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return LayoutBuilder(
       key: const ValueKey('centers-table'),
-      width: double.infinity,
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0xFFE8F0F5)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF8FC),
-                  borderRadius: BorderRadius.circular(16),
+      builder: (context, constraints) {
+        return Scrollbar(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: DataTable(
+                headingRowColor: WidgetStateProperty.all(AppTheme.surfaceTint),
+                headingRowHeight: 44,
+                headingTextStyle: _headingStyle,
+                dataTextStyle: _bodyStyle,
+                dataRowMinHeight: 64,
+                dataRowMaxHeight: 72,
+                columnSpacing: 28,
+                horizontalMargin: 16,
+                dividerThickness: 1,
+                border: const TableBorder(
+                  horizontalInside: BorderSide(color: AppTheme.border),
                 ),
-                child: const Icon(
-                  Icons.view_list_rounded,
-                  color: Color(0xFF0F719F),
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Centers List',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF0F3A55),
-                      ),
+                columns: [
+                  const DataColumn(label: Text('CENTER')),
+                  const DataColumn(label: Text('CITY')),
+                  const DataColumn(label: Text('SLOTS')),
+                  const DataColumn(label: Text('MACHINES')),
+                  const DataColumn(label: Text('TOTAL CAPACITY')),
+                  DataColumn(
+                    label: Tooltip(
+                      message:
+                          'Patients accepted/reserved at this center '
+                          '(status: no_sched or active), counted live '
+                          'from the patients table.',
+                      child: Text('RESERVED'),
                     ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Review center details quickly and use actions to update or remove records.',
-                      style: TextStyle(color: Color(0xFF647583)),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                  child: DataTable(
-                    headingRowColor: WidgetStateProperty.all(
-                      const Color(0xFFF6FBFF),
-                    ),
-                    dataRowMinHeight: 68,
-                    dataRowMaxHeight: 76,
-                    columnSpacing: 34,
-                    border: TableBorder(
-                      horizontalInside: BorderSide(color: Colors.grey.shade100),
-                    ),
-                    columns: [
-                      const DataColumn(label: Text('Center')),
-                      const DataColumn(label: Text('City')),
-                      const DataColumn(label: Text('Slots')),
-                      const DataColumn(label: Text('Machines')),
-                      const DataColumn(label: Text('Total Capacity')),
-                      DataColumn(
-                        label: Tooltip(
-                          message:
-                              'Patients accepted/reserved at this center '
-                              '(status: no_sched or active), counted live '
-                              'from the patients table.',
-                          child: Text('Reserved'),
-                        ),
-                      ),
-                      DataColumn(
-                        label: Tooltip(
-                          message:
-                              'Super Admin estimate only: Total Capacity '
-                              'minus Reserved. Not the Center Admin\'s '
-                              'authoritative day/shift schedule.',
-                          child: Text('Available (Est.)'),
-                        ),
-                      ),
-                      const DataColumn(label: Text('Status')),
-                      const DataColumn(label: Text('Created')),
-                      const DataColumn(label: Text('Actions')),
-                    ],
-                    rows: clinics.map((clinic) {
-                      final estimate = capacityEstimateFor(clinic);
-
-                      return DataRow(
-                        cells: [
-                          DataCell(
-                            SizedBox(
-                              width: 300,
-                              child: Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFEFF8FC),
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                    child: const Icon(
-                                      Icons.local_hospital_rounded,
-                                      color: Color(0xFF0F719F),
-                                      size: 20,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          clinic.name,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            color: Color(0xFF263B4A),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          clinic.address,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            color: Color(0xFF647583),
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          DataCell(Text(clinic.city)),
-                          DataCell(
-                            _MiniPill(
-                              text: clinic.availableSlots.toString(),
-                              icon: Icons.event_available_rounded,
-                            ),
-                          ),
-                          DataCell(
-                            _MiniPill(
-                              text: clinic.machines.toString(),
-                              icon: Icons.precision_manufacturing_rounded,
-                            ),
-                          ),
-                          DataCell(
-                            _MiniPill(
-                              text: estimate.totalCapacity.toString(),
-                              icon: Icons.dashboard_customize_rounded,
-                            ),
-                          ),
-                          DataCell(
-                            estimate.reserved == null
-                                ? const _MiniPill(
-                                    text: '—',
-                                    icon: Icons.groups_rounded,
-                                    background: Color(0xFFF3F4F6),
-                                    foreground: Color(0xFF8A93A0),
-                                  )
-                                : _MiniPill(
-                                    text: estimate.reserved.toString(),
-                                    icon: Icons.groups_rounded,
-                                  ),
-                          ),
-                          DataCell(
-                            estimate.available == null
-                                ? const _MiniPill(
-                                    text: '—',
-                                    icon: Icons.calculate_outlined,
-                                    background: Color(0xFFF3F4F6),
-                                    foreground: Color(0xFF8A93A0),
-                                  )
-                                : _MiniPill(
-                                    text: estimate.capacityExceeded
-                                        ? '${estimate.available} · Capacity exceeded'
-                                        : estimate.available.toString(),
-                                    icon: Icons.calculate_outlined,
-                                    background: estimate.capacityExceeded
-                                        ? const Color(0xFFFDF1DC)
-                                        : null,
-                                    foreground: estimate.capacityExceeded
-                                        ? const Color(0xFFC7861B)
-                                        : null,
-                                  ),
-                          ),
-                          DataCell(
-                            _StatusPill(
-                              isOpen: isCenterOpenByOperatingHours(
-                                clinic.operatingHours,
-                              ),
-                            ),
-                          ),
-                          DataCell(Text(formatDate(clinic.createdAt))),
-                          DataCell(
-                            Row(
-                              children: [
-                                _ActionIconButton(
-                                  icon: Icons.edit_rounded,
-                                  color: const Color(0xFF174E71),
-                                  onTap: () => onEdit(clinic),
-                                ),
-                                const SizedBox(width: 8),
-                                _ActionIconButton(
-                                  icon: Icons.delete_rounded,
-                                  color: const Color(0xFFEA5353),
-                                  onTap: () => onDelete(clinic),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    }).toList(),
                   ),
-                ),
-              );
-            },
+                  DataColumn(
+                    label: Tooltip(
+                      message:
+                          'Super Admin estimate only: Total Capacity '
+                          'minus Reserved. Not the Center Admin\'s '
+                          'authoritative day/shift schedule.',
+                      child: Text('AVAILABLE (EST.)'),
+                    ),
+                  ),
+                  const DataColumn(label: Text('STATUS')),
+                  const DataColumn(label: Text('CREATED')),
+                  const DataColumn(label: Text('ACTIONS')),
+                ],
+                rows: clinics.map((clinic) {
+                  final estimate = capacityEstimateFor(clinic);
+
+                  return DataRow(
+                    cells: [
+                      DataCell(
+                        SizedBox(
+                          width: 290,
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 34,
+                                height: 34,
+                                decoration: AppTheme.iconBox(
+                                  AppTheme.accentBlueSoft,
+                                ),
+                                child: const Icon(
+                                  Icons.local_hospital_rounded,
+                                  color: AppTheme.blue1,
+                                  size: 17,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      clinic.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 13.5,
+                                        height: 1.25,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppTheme.blue3,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      clinic.address,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: AppTheme.textMuted,
+                                        fontSize: 11.5,
+                                        height: 1.25,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          clinic.city,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      DataCell(
+                        _MiniPill(
+                          text: clinic.availableSlots.toString(),
+                          icon: Icons.event_available_rounded,
+                          background: AppTheme.accentGreenSoft,
+                          foreground: AppTheme.accentGreen,
+                        ),
+                      ),
+                      DataCell(
+                        _MiniPill(
+                          text: clinic.machines.toString(),
+                          icon: Icons.precision_manufacturing_rounded,
+                          background: AppTheme.accentTealSoft,
+                          foreground: AppTheme.accentTeal,
+                        ),
+                      ),
+                      DataCell(
+                        _MiniPill(
+                          text: estimate.totalCapacity.toString(),
+                          icon: Icons.dashboard_customize_rounded,
+                        ),
+                      ),
+                      DataCell(
+                        estimate.reserved == null
+                            ? const _MiniPill(
+                                text: '—',
+                                icon: Icons.groups_rounded,
+                                background: Color(0xFFF1F3F5),
+                                foreground: AppTheme.textMuted,
+                              )
+                            : _MiniPill(
+                                text: estimate.reserved.toString(),
+                                icon: Icons.groups_rounded,
+                              ),
+                      ),
+                      DataCell(
+                        estimate.available == null
+                            ? const _MiniPill(
+                                text: '—',
+                                icon: Icons.calculate_outlined,
+                                background: Color(0xFFF1F3F5),
+                                foreground: AppTheme.textMuted,
+                              )
+                            : _MiniPill(
+                                text: estimate.capacityExceeded
+                                    ? '${estimate.available} · Capacity exceeded'
+                                    : estimate.available.toString(),
+                                icon: Icons.calculate_outlined,
+                                background: estimate.capacityExceeded
+                                    ? AppTheme.accentOrangeSoft
+                                    : null,
+                                foreground: estimate.capacityExceeded
+                                    ? AppTheme.accentOrange
+                                    : null,
+                              ),
+                      ),
+                      DataCell(
+                        _StatusPill(
+                          isOpen: isCenterOpenByOperatingHours(
+                            clinic.operatingHours,
+                          ),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          formatDate(clinic.createdAt),
+                          style: const TextStyle(
+                            color: AppTheme.textMuted,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ),
+                      DataCell(
+                        Row(
+                          children: [
+                            _ActionIconButton(
+                              icon: Icons.edit_rounded,
+                              color: AppTheme.blue1,
+                              tooltip: 'Edit center',
+                              onTap: () => onEdit(clinic),
+                            ),
+                            const SizedBox(width: 8),
+                            _ActionIconButton(
+                              icon: Icons.delete_outline_rounded,
+                              color: AppTheme.danger,
+                              tooltip: 'Delete center',
+                              onTap: () => onDelete(clinic),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
 
+
 class _ActionIconButton extends StatelessWidget {
   final IconData icon;
   final Color color;
+  final String? tooltip;
   final VoidCallback onTap;
 
   const _ActionIconButton({
     required this.icon,
     required this.color,
     required this.onTap,
+    this.tooltip,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: color.withOpacity(0.08),
-      borderRadius: BorderRadius.circular(12),
+    final button = Material(
+      color: color.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(AppTheme.rSm),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        hoverColor: color.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(AppTheme.rSm),
+        hoverColor: color.withValues(alpha: 0.14),
         onTap: onTap,
         child: SizedBox(
-          width: 38,
-          height: 38,
-          child: Icon(icon, color: color, size: 20),
+          width: 34,
+          height: 34,
+          child: Icon(icon, color: color, size: 18),
         ),
       ),
     );
+
+    final label = tooltip;
+    if (label == null) return button;
+    return Tooltip(message: label, child: button);
   }
 }
 
@@ -2495,26 +2627,31 @@ class _StatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: isOpen ? const Color(0xFFE9F8EF) : const Color(0xFFFFEEF0),
-        borderRadius: BorderRadius.circular(99),
+        color: isOpen ? AppTheme.accentGreenSoft : AppTheme.dangerSoft,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: (isOpen ? AppTheme.accentGreen : AppTheme.danger)
+              .withValues(alpha: 0.20),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             isOpen ? Icons.check_circle_rounded : Icons.cancel_rounded,
-            size: 15,
-            color: isOpen ? const Color(0xFF2E9E5B) : const Color(0xFFEA5353),
+            size: 13,
+            color: isOpen ? AppTheme.accentGreen : AppTheme.danger,
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 5),
           Text(
             isOpen ? 'Open' : 'Closed',
             style: TextStyle(
-              color: isOpen ? const Color(0xFF2E9E5B) : const Color(0xFFEA5353),
-              fontWeight: FontWeight.w800,
-              fontSize: 12,
+              color: isOpen ? AppTheme.accentGreen : AppTheme.danger,
+              fontWeight: FontWeight.w600,
+              height: 1.2,
+              fontSize: 11,
             ),
           ),
         ],
@@ -2558,24 +2695,26 @@ class _MiniPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fg = foreground ?? const Color(0xFF0F719F);
+    final fg = foreground ?? AppTheme.blue1;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: background ?? const Color(0xFFF3FAFC),
-        borderRadius: BorderRadius.circular(12),
+        color: background ?? AppTheme.accentBlueSoft,
+        borderRadius: BorderRadius.circular(AppTheme.rSm),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 15, color: fg),
+          Icon(icon, size: 13, color: fg),
           const SizedBox(width: 6),
           Text(
             text,
             style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: foreground ?? const Color(0xFF0F3A55),
+              fontWeight: FontWeight.w600,
+              fontSize: 12.5,
+              height: 1.2,
+              color: foreground ?? AppTheme.blue3,
             ),
           ),
         ],
@@ -2592,20 +2731,24 @@ class _LoadingPanel extends StatelessWidget {
     return Container(
       key: const ValueKey('loading'),
       width: double.infinity,
-      padding: const EdgeInsets.all(50),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 48),
       child: const Column(
         children: [
-          CircularProgressIndicator(),
-          SizedBox(height: 16),
+          SizedBox(
+            width: 26,
+            height: 26,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.6,
+              color: AppTheme.blue1,
+            ),
+          ),
+          SizedBox(height: 14),
           Text(
             'Loading centers...',
             style: TextStyle(
-              color: Color(0xFF647583),
-              fontWeight: FontWeight.w600,
+              color: AppTheme.textMuted,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
@@ -2633,68 +2776,79 @@ class _EmptyPanel extends StatelessWidget {
     return Container(
       key: const ValueKey('empty'),
       width: double.infinity,
-      padding: const EdgeInsets.all(42),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0xFFE8F0F5)),
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 44, horizontal: 24),
       child: Column(
         children: [
           Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF8FC),
-              borderRadius: BorderRadius.circular(24),
+            width: 48,
+            height: 48,
+            decoration: AppTheme.iconBox(
+              AppTheme.accentBlueSoft,
+              radius: AppTheme.rLg,
             ),
             child: Icon(
-              hasAnyCenters
-                  ? Icons.search_off_rounded
-                  : Icons.business_rounded,
-              color: const Color(0xFF0F719F),
-              size: 38,
+              hasAnyCenters ? Icons.search_off_rounded : Icons.business_rounded,
+              color: AppTheme.blue1,
+              size: 22,
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           Text(
             hasAnyCenters
                 ? 'No centers match your search or filters.'
                 : 'No centers available yet',
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF0F3A55),
+              fontSize: 15.5,
+              height: 1.3,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.blue3,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             hasAnyCenters
-                ? 'Try a different search term, or adjust the status/city filters.'
+                ? 'Try a different search term, or adjust the status filter.'
                 : 'Create your first dialysis center to start managing capacity and operations.',
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Color(0xFF647583), height: 1.4),
+            style: const TextStyle(
+              color: AppTheme.textMuted,
+              fontSize: 12.5,
+              height: 1.4,
+            ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
           if (hasAnyCenters)
             TextButton.icon(
               onPressed: onClearFilters,
-              icon: const Icon(Icons.clear_all_rounded),
+              icon: const Icon(Icons.clear_all_rounded, size: 17),
               label: const Text('Clear Filters'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppTheme.blue1,
+                textStyle: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             )
           else
-            FilledButton.icon(
-              onPressed: onAdd,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Add Center'),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF0F719F),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 14,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+            SizedBox(
+              height: 40,
+              child: FilledButton.icon(
+                onPressed: onAdd,
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('Add Center'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppTheme.blue1,
+                  foregroundColor: AppTheme.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  textStyle: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppTheme.rMd),
+                  ),
                 ),
               ),
             ),

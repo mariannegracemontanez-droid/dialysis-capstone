@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/profile_service.dart';
 import '../config/supabase_config.dart';
+import '../theme/app_theme.dart';
 
 /// Limits a phone-style field to at most [maxDigits] digits while still
 /// letting the existing supported formatting characters (spaces, +, -,
@@ -316,18 +317,7 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE5EEF4)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0F000000),
-            blurRadius: 24,
-            offset: Offset(0, 12),
-          ),
-        ],
-      ),
+      decoration: AppTheme.card(radius: AppTheme.rLg),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isCompact = constraints.maxWidth < 760;
@@ -404,14 +394,18 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                       icon: const Icon(Icons.restart_alt_rounded, size: 18),
                       label: const Text('Reactivate'),
                       style: FilledButton.styleFrom(
-                        backgroundColor: _primary,
-                        foregroundColor: Colors.white,
+                        backgroundColor: AppTheme.blue1,
+                        foregroundColor: AppTheme.white,
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 15,
+                          horizontal: 16,
+                          vertical: 13,
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
                         ),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(AppTheme.rMd),
                         ),
                       ),
                     ),
@@ -422,14 +416,18 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                       icon: const Icon(Icons.edit_outlined, size: 18),
                       label: const Text('Edit'),
                       style: FilledButton.styleFrom(
-                        backgroundColor: _primary,
-                        foregroundColor: Colors.white,
+                        backgroundColor: AppTheme.blue1,
+                        foregroundColor: AppTheme.white,
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 15,
+                          horizontal: 16,
+                          vertical: 13,
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
                         ),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(AppTheme.rMd),
                         ),
                       ),
                     ),
@@ -438,14 +436,18 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                       icon: const Icon(Icons.delete_outline_rounded, size: 18),
                       label: const Text('Deactivate'),
                       style: FilledButton.styleFrom(
-                        backgroundColor: _danger,
-                        foregroundColor: Colors.white,
+                        backgroundColor: AppTheme.danger,
+                        foregroundColor: AppTheme.white,
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 15,
+                          horizontal: 16,
+                          vertical: 13,
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
                         ),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(AppTheme.rMd),
                         ),
                       ),
                     ),
@@ -482,20 +484,22 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE5EEF4)),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.rLg),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _primary.withAlpha(22),
-              borderRadius: BorderRadius.circular(16),
+            width: 38,
+            height: 38,
+            decoration: AppTheme.iconBox(AppTheme.accentOrangeSoft),
+            child: const Icon(
+              Icons.history_rounded,
+              color: AppTheme.accentOrange,
+              size: 19,
             ),
-            child: const Icon(Icons.history_rounded, color: _primary),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -542,21 +546,16 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
   Widget _buildHeader() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF0F719F), Color(0xFF0F3A55)],
+          colors: [AppTheme.white, AppTheme.headerTint],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(30),
-        boxShadow: [
-          BoxShadow(
-            color: _primary.withAlpha(40),
-            blurRadius: 26,
-            offset: const Offset(0, 14),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(AppTheme.rXl),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.shadowSm,
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -573,64 +572,73 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(30),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: Colors.white.withAlpha(45)),
-                      ),
-                      child: const Text(
-                        'Head Nurse Access Control',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                          letterSpacing: 0.3,
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: AppTheme.accentBlueSoft,
+                            borderRadius: BorderRadius.circular(AppTheme.rLg),
+                            border: Border.all(color: AppTheme.borderStrong),
+                          ),
+                          child: const Icon(
+                            Icons.manage_accounts_rounded,
+                            color: AppTheme.blue1,
+                            size: 24,
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Account Management',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 34,
-                        fontWeight: FontWeight.w900,
-                        height: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Manage clinic head nurse accounts, update account details, and review head nurse activity history.',
-                      style: TextStyle(
-                        color: Colors.white.withAlpha(220),
-                        fontSize: 15,
-                        height: 1.5,
-                      ),
+                        const SizedBox(width: 16),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Account Management',
+                                style: TextStyle(
+                                  color: AppTheme.blue3,
+                                  fontSize: 22,
+                                  height: 1.25,
+                                  letterSpacing: -0.3,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              SizedBox(height: 6),
+                              Text(
+                                'Manage clinic head nurse accounts, update account details, and review head nurse activity history.',
+                                style: TextStyle(
+                                  color: AppTheme.textSecondary,
+                                  fontSize: 13.5,
+                                  height: 1.45,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-              if (isCompact) const SizedBox(height: 22),
-              FilledButton.icon(
-                onPressed: _openCreateAdmin,
-                icon: const Icon(Icons.person_add_alt_1_rounded),
-                label: const Text('Add Account'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: _primary,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 22,
-                    vertical: 18,
+              if (isCompact) const SizedBox(height: 18) else const SizedBox(width: 24),
+              SizedBox(
+                height: 40,
+                child: FilledButton.icon(
+                  onPressed: _openCreateAdmin,
+                  icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+                  label: const Text('Add Account'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.blue1,
+                    foregroundColor: AppTheme.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.rMd),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  textStyle: const TextStyle(fontWeight: FontWeight.w900),
                 ),
               ),
             ],
@@ -654,21 +662,10 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildHeader(),
-        const SizedBox(height: 24),
+        const SizedBox(height: AppTheme.gapLg),
         Container(
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(26),
-            border: Border.all(color: const Color(0xFFE5EEF4)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x0F000000),
-                blurRadius: 24,
-                offset: Offset(0, 14),
-              ),
-            ],
-          ),
+          padding: const EdgeInsets.all(20),
+          decoration: AppTheme.card(),
           child: Column(
             children: [
               Row(
@@ -676,11 +673,15 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                   ChoiceChip(
                     label: const Text('Accounts'),
                     selected: !_showLogs,
-                    selectedColor: _primary.withAlpha(28),
-                    checkmarkColor: _primary,
+                    selectedColor: AppTheme.accentBlueSoft,
+                    backgroundColor: AppTheme.surface,
+                    checkmarkColor: AppTheme.blue1,
+                    side: const BorderSide(color: AppTheme.border),
+                    shape: const StadiumBorder(),
                     labelStyle: TextStyle(
-                      color: !_showLogs ? _primary : _muted,
-                      fontWeight: FontWeight.w800,
+                      color: !_showLogs ? AppTheme.blue1 : AppTheme.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
                     onSelected: (selected) {
                       if (selected) {
@@ -695,11 +696,15 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                   ChoiceChip(
                     label: const Text('Audit Trail'),
                     selected: _showLogs,
-                    selectedColor: _primary.withAlpha(28),
-                    checkmarkColor: _primary,
+                    selectedColor: AppTheme.accentBlueSoft,
+                    backgroundColor: AppTheme.surface,
+                    checkmarkColor: AppTheme.blue1,
+                    side: const BorderSide(color: AppTheme.border),
+                    shape: const StadiumBorder(),
                     labelStyle: TextStyle(
-                      color: _showLogs ? _primary : _muted,
-                      fontWeight: FontWeight.w800,
+                      color: _showLogs ? AppTheme.blue1 : AppTheme.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
                     onSelected: (selected) {
                       if (selected) {
@@ -711,10 +716,21 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                     },
                   ),
                   const Spacer(),
-                  IconButton.filledTonal(
-                    onPressed: _refresh,
-                    icon: const Icon(Icons.refresh_rounded),
-                    tooltip: 'Refresh',
+                  SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: IconButton(
+                      onPressed: _refresh,
+                      icon: const Icon(Icons.refresh_rounded, size: 19),
+                      tooltip: 'Refresh',
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppTheme.accentBlueSoft,
+                        foregroundColor: AppTheme.blue1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppTheme.rMd),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -761,24 +777,28 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
         TextFormField(
           controller: _searchController,
           onChanged: (value) => setState(() => _searchText = value),
-          decoration: InputDecoration(
+          style: AppTheme.fieldTextStyle,
+          decoration: AppTheme.field(
             hintText: 'Search accounts...',
-            prefixIcon: const Icon(Icons.search_rounded),
+            prefixIcon: const Icon(
+              Icons.search_rounded,
+              size: 19,
+              color: AppTheme.iconMuted,
+            ),
             suffixIcon: _searchText.isEmpty
                 ? null
                 : IconButton(
+                    tooltip: 'Clear search',
                     onPressed: () {
                       _searchController.clear();
                       setState(() => _searchText = '');
                     },
-                    icon: const Icon(Icons.close_rounded),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: AppTheme.iconMuted,
+                    ),
                   ),
-            filled: true,
-            fillColor: const Color(0xFFF6FBFF),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(18),
-              borderSide: BorderSide.none,
-            ),
           ),
         ),
         const SizedBox(height: 12),
@@ -826,8 +846,15 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
             if (_hasActiveAccountFilters)
               TextButton.icon(
                 onPressed: _clearAccountFilters,
-                icon: const Icon(Icons.clear_all_rounded),
+                icon: const Icon(Icons.clear_all_rounded, size: 17),
                 label: const Text('Clear Filters'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppTheme.blue1,
+                  textStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
           ],
         ),
@@ -848,25 +875,23 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
     required ValueChanged<T?> onChanged,
   }) {
     return SizedBox(
-      width: 170,
+      width: 190,
       child: DropdownButtonFormField<T>(
         key: ValueKey('$keyPrefix-$value'),
         initialValue: value,
         isExpanded: true,
-        icon: const Icon(Icons.expand_more_rounded, size: 18),
-        decoration: InputDecoration(
-          isDense: true,
-          prefixIcon: Icon(icon, size: 18, color: _primary),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 10,
-          ),
-          filled: true,
-          fillColor: const Color(0xFFF6FBFF),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
+        style: AppTheme.fieldTextStyle,
+        icon: const Icon(
+          Icons.expand_more_rounded,
+          size: 18,
+          color: AppTheme.iconMuted,
+        ),
+        dropdownColor: AppTheme.surface,
+        elevation: 2,
+        borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+        decoration: AppTheme.field(
+          dense: true,
+          prefixIcon: Icon(icon, size: 17, color: AppTheme.blue1),
         ),
         items: items,
         onChanged: onChanged,
@@ -978,15 +1003,22 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
 
   @override
   Widget build(BuildContext context) {
+    final pagePadding = AppTheme.pagePadding(
+      MediaQuery.of(context).size.width,
+    );
+
     return Container(
       color: _bg,
-      child: RefreshIndicator(
+      child: AppMenuTheme(
+        child: RefreshIndicator(
         onRefresh: _refresh,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
-          padding: const EdgeInsets.all(28),
+          // Padded inside the scroll view so the scrollbar rides the
+          // viewport edge instead of floating inset from it.
+          padding: EdgeInsets.all(pagePadding),
           child: FutureBuilder<List<Map<String, dynamic>>>(
             future: _showLogs ? _logsFuture : _adminsFuture,
             builder: (context, snapshot) {
@@ -1015,6 +1047,7 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
             },
           ),
         ),
+      ),
       ),
     );
   }
@@ -1052,7 +1085,6 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
   static const Color _primary = Color(0xFF0F719F);
   static const Color _dark = Color(0xFF0F3A55);
   static const Color _muted = Color(0xFF647583);
-  static const Color _danger = Color(0xFFDE4D4D);
 
   @override
   void initState() {
@@ -1204,8 +1236,8 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
     return Stack(
       children: [
         BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-          child: Container(color: const Color(0x880F3A55)),
+          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: Container(color: const Color(0x4D1F2D3D)),
         ),
         Center(
           child: Material(
@@ -1213,20 +1245,14 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: Container(
-                width: 620,
-                constraints: const BoxConstraints(maxWidth: 620),
+                width: 560,
+                constraints: const BoxConstraints(maxWidth: 560),
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FBFD),
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: Colors.white.withAlpha(180)),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x33000000),
-                      blurRadius: 35,
-                      offset: Offset(0, 18),
-                    ),
-                  ],
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(AppTheme.rXl),
+                  border: Border.all(color: AppTheme.border),
+                  boxShadow: AppTheme.shadowMd,
                 ),
                 child: Form(
                   key: _formKey,
@@ -1235,65 +1261,38 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: _primary.withAlpha(22),
-                              borderRadius: BorderRadius.circular(16),
+                            width: 40,
+                            height: 40,
+                            decoration: AppTheme.iconBox(
+                              AppTheme.accentBlueSoft,
                             ),
                             child: const Icon(
                               Icons.manage_accounts_outlined,
-                              color: _primary,
+                              color: AppTheme.blue1,
+                              size: 20,
                             ),
                           ),
-                          const SizedBox(width: 14),
-                          Expanded(
+                          const SizedBox(width: 12),
+                          const Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
+                                Text(
                                   'Edit Head Nurse Account',
                                   style: TextStyle(
-                                    color: _dark,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w900,
+                                    color: AppTheme.blue3,
+                                    fontSize: 17,
+                                    height: 1.3,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                                const SizedBox(height: 4),
-                                const Text(
+                                SizedBox(height: 2),
+                                Text(
                                   'Update account details and password settings.',
-                                  style: TextStyle(color: _muted, fontSize: 13),
-                                ),
-                                const SizedBox(height: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF3FAFC),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(
-                                        Icons.edit_note_rounded,
-                                        size: 15,
-                                        color: _primary,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Flexible(
-                                        child: Text(
-                                          'Editing: $editingLabel',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            color: _dark,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                  style: TextStyle(
+                                    color: AppTheme.textMuted,
+                                    fontSize: 12.5,
+                                    height: 1.35,
                                   ),
                                 ),
                               ],
@@ -1303,32 +1302,102 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                             onPressed: _isSaving
                                 ? null
                                 : () => Navigator.of(context).pop(false),
-                            icon: const Icon(Icons.close_rounded),
-                            color: _dark,
+                            icon: const Icon(Icons.close_rounded, size: 19),
+                            color: AppTheme.iconMuted,
                             tooltip: 'Close',
                           ),
                         ],
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 16),
+                      const Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: AppTheme.border,
+                      ),
+                      const SizedBox(height: 16),
+                      // Which account is being edited - kept on its own row so
+                      // the header reads the same as the Create modal's.
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceTint,
+                          borderRadius: BorderRadius.circular(AppTheme.rMd),
+                          border: Border.all(color: AppTheme.border),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.edit_note_rounded,
+                              size: 18,
+                              color: AppTheme.blue1,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Editing: $editingLabel',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 12.5,
+                                  height: 1.35,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       if (_errorMessage != null)
                         Container(
                           width: double.infinity,
                           margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.all(14),
+                          padding: const EdgeInsets.all(13),
                           decoration: BoxDecoration(
-                            color: _danger.withAlpha(22),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: _danger.withAlpha(40)),
-                          ),
-                          child: Text(
-                            _errorMessage!,
-                            style: const TextStyle(
-                              color: _danger,
-                              fontWeight: FontWeight.w700,
+                            color: AppTheme.dangerSoft,
+                            borderRadius: BorderRadius.circular(AppTheme.rMd),
+                            border: Border.all(
+                              color: AppTheme.danger.withValues(alpha: 0.25),
                             ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.error_outline_rounded,
+                                size: 18,
+                                color: AppTheme.danger,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _errorMessage!,
+                                  style: const TextStyle(
+                                    color: AppTheme.danger,
+                                    fontSize: 12.5,
+                                    height: 1.35,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       DropdownButtonFormField<String?>(
+                        // Long clinic names ellipsize instead of overflowing the field.
+                        isExpanded: true,
+                        dropdownColor: AppTheme.surface,
+                        elevation: 2,
+                        borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+                        icon: const Icon(
+                          Icons.expand_more_rounded,
+                          size: 18,
+                          color: AppTheme.iconMuted,
+                        ),
                         decoration: _inputDecoration(
                           label: 'Assigned Clinic',
                           icon: Icons.local_hospital_outlined,
@@ -1478,6 +1547,17 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                             onPressed: _isSaving
                                 ? null
                                 : () => Navigator.of(context).pop(false),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppTheme.textSecondary,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 18,
+                                vertical: 15,
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             child: const Text('Cancel'),
                           ),
                           const SizedBox(width: 10),
@@ -1497,17 +1577,20 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                               _isSaving ? 'Updating...' : 'Update Account',
                             ),
                             style: FilledButton.styleFrom(
-                              backgroundColor: _primary,
-                              foregroundColor: Colors.white,
+                              backgroundColor: AppTheme.blue1,
+                              foregroundColor: AppTheme.white,
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 22,
-                                vertical: 17,
+                                horizontal: 20,
+                                vertical: 15,
                               ),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.rMd,
+                                ),
                               ),
                               textStyle: const TextStyle(
-                                fontWeight: FontWeight.w900,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
@@ -1550,7 +1633,6 @@ class _BlurredAdminReactivateModalState
   static const Color _primary = Color(0xFF0F719F);
   static const Color _dark = Color(0xFF0F3A55);
   static const Color _muted = Color(0xFF647583);
-  static const Color _danger = Color(0xFFDE4D4D);
 
   @override
   void initState() {
@@ -1687,8 +1769,8 @@ class _BlurredAdminReactivateModalState
     return Stack(
       children: [
         BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-          child: Container(color: const Color(0x880F3A55)),
+          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: Container(color: const Color(0x4D1F2D3D)),
         ),
         Center(
           child: Material(
@@ -1700,16 +1782,10 @@ class _BlurredAdminReactivateModalState
                 constraints: const BoxConstraints(maxWidth: 560),
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FBFD),
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: Colors.white.withAlpha(180)),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x33000000),
-                      blurRadius: 35,
-                      offset: Offset(0, 18),
-                    ),
-                  ],
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(AppTheme.rXl),
+                  border: Border.all(color: AppTheme.border),
+                  boxShadow: AppTheme.shadowMd,
                 ),
                 child: Form(
                   key: _formKey,
@@ -1803,18 +1879,34 @@ class _BlurredAdminReactivateModalState
                         Container(
                           width: double.infinity,
                           margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.all(14),
+                          padding: const EdgeInsets.all(13),
                           decoration: BoxDecoration(
-                            color: _danger.withAlpha(22),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: _danger.withAlpha(40)),
-                          ),
-                          child: Text(
-                            _errorMessage!,
-                            style: const TextStyle(
-                              color: _danger,
-                              fontWeight: FontWeight.w700,
+                            color: AppTheme.dangerSoft,
+                            borderRadius: BorderRadius.circular(AppTheme.rMd),
+                            border: Border.all(
+                              color: AppTheme.danger.withValues(alpha: 0.25),
                             ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.error_outline_rounded,
+                                size: 18,
+                                color: AppTheme.danger,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _errorMessage!,
+                                  style: const TextStyle(
+                                    color: AppTheme.danger,
+                                    fontSize: 12.5,
+                                    height: 1.35,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       Align(
@@ -1847,6 +1939,16 @@ class _BlurredAdminReactivateModalState
                         )
                       else
                         DropdownButtonFormField<String>(
+                          // Long clinic names ellipsize instead of overflowing the field.
+                          isExpanded: true,
+                          dropdownColor: AppTheme.surface,
+                          elevation: 2,
+                          borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+                          icon: const Icon(
+                            Icons.expand_more_rounded,
+                            size: 18,
+                            color: AppTheme.iconMuted,
+                          ),
                           decoration: _inputDecoration(
                             label: 'Choose a clinic',
                             icon: Icons.local_hospital_outlined,
@@ -1882,6 +1984,17 @@ class _BlurredAdminReactivateModalState
                             onPressed: _isSubmitting
                                 ? null
                                 : () => Navigator.of(context).pop(false),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppTheme.textSecondary,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 18,
+                                vertical: 15,
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             child: const Text('Cancel'),
                           ),
                           const SizedBox(width: 10),
@@ -1903,17 +2016,20 @@ class _BlurredAdminReactivateModalState
                               _isSubmitting ? 'Reactivating...' : 'Reactivate',
                             ),
                             style: FilledButton.styleFrom(
-                              backgroundColor: _primary,
-                              foregroundColor: Colors.white,
+                              backgroundColor: AppTheme.blue1,
+                              foregroundColor: AppTheme.white,
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 22,
-                                vertical: 17,
+                                horizontal: 20,
+                                vertical: 15,
                               ),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.rMd,
+                                ),
                               ),
                               textStyle: const TextStyle(
-                                fontWeight: FontWeight.w900,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
@@ -1957,10 +2073,6 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
   Set<String> _clinicsWithAdmin = {};
   String? selectedClinicId;
 
-  static const Color _primary = Color(0xFF0F719F);
-  static const Color _dark = Color(0xFF0F3A55);
-  static const Color _muted = Color(0xFF647583);
-  static const Color _danger = Color(0xFFDE4D4D);
 
   @override
   void initState() {
@@ -2087,29 +2199,10 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
     required IconData icon,
     String? hint,
   }) {
-    return InputDecoration(
+    return AppTheme.field(
       labelText: label,
       hintText: hint,
-      prefixIcon: Icon(icon, color: _primary),
-      filled: true,
-      fillColor: const Color(0xFFF6FBFF),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Color(0xFFDCEAF2)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: _primary, width: 1.5),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: _danger),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: _danger, width: 1.5),
-      ),
+      prefixIcon: Icon(icon, size: 18, color: AppTheme.blue1),
     );
   }
 
@@ -2189,8 +2282,8 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
     return Stack(
       children: [
         BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-          child: Container(color: const Color(0x880F3A55)),
+          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: Container(color: const Color(0x4D1F2D3D)),
         ),
         Center(
           child: Material(
@@ -2198,20 +2291,14 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: Container(
-                width: 620,
-                constraints: const BoxConstraints(maxWidth: 620),
+                width: 560,
+                constraints: const BoxConstraints(maxWidth: 560),
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FBFD),
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: Colors.white.withAlpha(180)),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x33000000),
-                      blurRadius: 35,
-                      offset: Offset(0, 18),
-                    ),
-                  ],
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(AppTheme.rXl),
+                  border: Border.all(color: AppTheme.border),
+                  boxShadow: AppTheme.shadowMd,
                 ),
                 child: Form(
                   key: _formKey,
@@ -2220,17 +2307,18 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: _primary.withAlpha(22),
-                              borderRadius: BorderRadius.circular(16),
+                            width: 40,
+                            height: 40,
+                            decoration: AppTheme.iconBox(
+                              AppTheme.accentBlueSoft,
                             ),
                             child: const Icon(
                               Icons.person_add_alt_1_rounded,
-                              color: _primary,
+                              color: AppTheme.blue1,
+                              size: 20,
                             ),
                           ),
-                          const SizedBox(width: 14),
+                          const SizedBox(width: 12),
                           const Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2238,15 +2326,20 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                                 Text(
                                   'Create Head Nurse Account',
                                   style: TextStyle(
-                                    color: _dark,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w900,
+                                    color: AppTheme.blue3,
+                                    fontSize: 17,
+                                    height: 1.3,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                                SizedBox(height: 4),
+                                SizedBox(height: 2),
                                 Text(
                                   'Assign clinic\'s head nurse and create login access.',
-                                  style: TextStyle(color: _muted, fontSize: 13),
+                                  style: TextStyle(
+                                    color: AppTheme.textMuted,
+                                    fontSize: 12.5,
+                                    height: 1.35,
+                                  ),
                                 ),
                               ],
                             ),
@@ -2255,62 +2348,95 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                             onPressed: _isSubmitting
                                 ? null
                                 : () => Navigator.of(context).pop(false),
-                            icon: const Icon(Icons.close_rounded),
-                            color: _dark,
+                            icon: const Icon(Icons.close_rounded, size: 19),
+                            color: AppTheme.iconMuted,
                             tooltip: 'Close',
                           ),
                         ],
                       ),
+                      const SizedBox(height: 16),
+                      const Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: AppTheme.border,
+                      ),
                       const SizedBox(height: 18),
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.all(14),
+                        padding: const EdgeInsets.all(13),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: const Color(0xFFE2EDF4)),
+                          color: AppTheme.surfaceTint,
+                          borderRadius: BorderRadius.circular(AppTheme.rMd),
+                          border: Border.all(color: AppTheme.border),
                         ),
                         child: const Row(
                           children: [
                             Icon(
                               Icons.info_outline_rounded,
-                              size: 20,
-                              color: _primary,
+                              size: 18,
+                              color: AppTheme.blue1,
                             ),
                             SizedBox(width: 10),
                             Expanded(
                               child: Text(
                                 'Only clinics without an existing head nurse account can be selected.',
                                 style: TextStyle(
-                                  color: _muted,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.textSecondary,
+                                  fontSize: 12.5,
+                                  height: 1.35,
+                                  fontWeight: FontWeight.w400,
                                 ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 16),
                       if (_errorMessage != null)
                         Container(
                           width: double.infinity,
                           margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.all(14),
+                          padding: const EdgeInsets.all(13),
                           decoration: BoxDecoration(
-                            color: _danger.withAlpha(22),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: _danger.withAlpha(40)),
-                          ),
-                          child: Text(
-                            _errorMessage!,
-                            style: const TextStyle(
-                              color: _danger,
-                              fontWeight: FontWeight.w700,
+                            color: AppTheme.dangerSoft,
+                            borderRadius: BorderRadius.circular(AppTheme.rMd),
+                            border: Border.all(
+                              color: AppTheme.danger.withValues(alpha: 0.25),
                             ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.error_outline_rounded,
+                                size: 18,
+                                color: AppTheme.danger,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _errorMessage!,
+                                  style: const TextStyle(
+                                    color: AppTheme.danger,
+                                    fontSize: 12.5,
+                                    height: 1.35,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       DropdownButtonFormField<String>(
+                        // Long clinic names ellipsize instead of overflowing the field.
+                        isExpanded: true,
+                        dropdownColor: AppTheme.surface,
+                        elevation: 2,
+                        borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+                        icon: const Icon(
+                          Icons.expand_more_rounded,
+                          size: 18,
+                          color: AppTheme.iconMuted,
+                        ),
                         decoration: _inputDecoration(
                           label: 'Assigned Clinic',
                           icon: Icons.local_hospital_outlined,
@@ -2434,6 +2560,17 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                             onPressed: _isSubmitting
                                 ? null
                                 : () => Navigator.of(context).pop(false),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppTheme.textSecondary,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 18,
+                                vertical: 15,
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             child: const Text('Cancel'),
                           ),
                           const SizedBox(width: 10),
@@ -2453,17 +2590,20 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                               _isSubmitting ? 'Creating...' : 'Create Account',
                             ),
                             style: FilledButton.styleFrom(
-                              backgroundColor: _primary,
-                              foregroundColor: Colors.white,
+                              backgroundColor: AppTheme.blue1,
+                              foregroundColor: AppTheme.white,
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 22,
-                                vertical: 17,
+                                horizontal: 20,
+                                vertical: 15,
                               ),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.rMd,
+                                ),
                               ),
                               textStyle: const TextStyle(
-                                fontWeight: FontWeight.w900,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),

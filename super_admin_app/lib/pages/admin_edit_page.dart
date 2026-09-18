@@ -121,7 +121,9 @@ class _AdminEditPageState extends State<AdminEditPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Edit Admin Account'),
-        backgroundColor: const Color(0xFF174E71),
+        backgroundColor: const Color(0xFFFEFFFE),
+        foregroundColor: const Color(0xFF17435C),
+        surfaceTintColor: Colors.transparent,
       ),
       body: Center(
         child: SingleChildScrollView(

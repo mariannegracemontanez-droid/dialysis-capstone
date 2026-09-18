@@ -4,6 +4,7 @@ import '../models/center_donation_history_entry.dart';
 import '../models/donation_record.dart';
 import '../models/fund_distribution.dart';
 import 'package:super_admin_app/services/donation_service.dart';
+import '../theme/app_theme.dart';
 
 int verifiedCount = 0;
 
@@ -281,19 +282,33 @@ class _DonationsPageState extends State<DonationsPage> {
     final verifiedRecords = verifiedCount;
     final distributionCount = _fundDistributions.length;
 
+    // Both derived from lists already in memory -- no extra query, no new
+    // backend surface, just more useful context under the same three figures.
+    final pendingRecords = _donations
+        .where((d) => d.status.toLowerCase().trim() != 'verified')
+        .length;
+    final centersFunded = centerTotals.keys.length;
+
     final double maxY = centerTotals.isNotEmpty
         ? centerTotals.values.reduce((a, b) => a > b ? a : b) + 1000.0
         : 1000.0;
 
+    final pagePadding = AppTheme.pagePadding(
+      MediaQuery.of(context).size.width,
+    );
+
     return Container(
       color: _bg,
-      child: RefreshIndicator(
+      child: AppMenuTheme(
+        child: RefreshIndicator(
         onRefresh: _loadDonations,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
-          padding: const EdgeInsets.all(28),
+          // Padded inside the scroll view so the scrollbar rides the
+          // viewport edge instead of floating inset from it.
+          padding: EdgeInsets.all(pagePadding),
           child: LayoutBuilder(
             builder: (context, constraints) {
               final isWide = constraints.maxWidth >= 1150;
@@ -307,7 +322,7 @@ class _DonationsPageState extends State<DonationsPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildHeader(),
-                  const SizedBox(height: 26),
+                  const SizedBox(height: AppTheme.gapLg),
                   Wrap(
                     spacing: 16,
                     runSpacing: 16,
@@ -320,8 +335,11 @@ class _DonationsPageState extends State<DonationsPage> {
                           value: _formatCompactCurrency(
                             _totalVerifiedDonations,
                           ),
-                          subtitle: '$verifiedRecords verified donation(s)',
-                          color: _primary,
+                          subtitle: pendingRecords > 0
+                              ? '$verifiedRecords verified · $pendingRecords awaiting review'
+                              : '$verifiedRecords verified donation(s)',
+                          color: AppTheme.accentPink,
+                          softColor: AppTheme.accentPinkSoft,
                         ),
                       ),
                       SizedBox(
@@ -331,7 +349,8 @@ class _DonationsPageState extends State<DonationsPage> {
                           label: 'Available Funds',
                           value: _formatCompactCurrency(_availableFunds),
                           subtitle: 'Verified funds minus distributed amount',
-                          color: _success,
+                          color: AppTheme.accentGreen,
+                          softColor: AppTheme.accentGreenSoft,
                         ),
                       ),
                       SizedBox(
@@ -340,13 +359,16 @@ class _DonationsPageState extends State<DonationsPage> {
                           icon: Icons.send_time_extension_outlined,
                           label: 'Distributed',
                           value: _formatCompactCurrency(_totalDistributedFunds),
-                          subtitle: '$distributionCount distribution logs',
-                          color: _warning,
+                          subtitle: centersFunded > 0
+                              ? '$distributionCount logs across $centersFunded center(s)'
+                              : '$distributionCount distribution logs',
+                          color: AppTheme.accentOrange,
+                          softColor: AppTheme.accentOrangeSoft,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 26),
+                  const SizedBox(height: AppTheme.gapLg),
                   Wrap(
                     spacing: 20,
                     runSpacing: 20,
@@ -354,10 +376,12 @@ class _DonationsPageState extends State<DonationsPage> {
                       SizedBox(
                         width: constraints.maxWidth,
                         child: _SectionCard(
-                          title: 'Distribution Per Center',
+                          title: 'Donations Per Center',
                           subtitle:
                               'Compare how much funding each center has received.',
                           icon: Icons.bar_chart_rounded,
+                          accent: AppTheme.blue1,
+                          accentSoft: AppTheme.accentBlueSoft,
                           child: SizedBox(
                             height: 330,
                             child: centerTotals.isEmpty
@@ -378,7 +402,7 @@ class _DonationsPageState extends State<DonationsPage> {
                                         horizontalInterval: maxY / 4,
                                         getDrawingHorizontalLine: (value) =>
                                             const FlLine(
-                                              color: Color(0xFFE8EEF3),
+                                              color: AppTheme.border,
                                               strokeWidth: 1,
                                             ),
                                       ),
@@ -459,17 +483,22 @@ class _DonationsPageState extends State<DonationsPage> {
                                               barRods: [
                                                 BarChartRodData(
                                                   toY: item.value.toDouble(),
-                                                  width: 30,
+                                                  width: 28,
                                                   borderRadius:
-                                                      BorderRadius.circular(18),
-                                                  color: _primary,
+                                                      BorderRadius.circular(6),
+                                                  // One blue per center, from
+                                                  // the shared brand scale, so
+                                                  // bars stay distinguishable
+                                                  // without leaving the palette.
+                                                  color: AppTheme.chartBlue(
+                                                    index,
+                                                  ),
                                                   backDrawRodData:
                                                       BackgroundBarChartRodData(
                                                         show: true,
                                                         toY: maxY,
-                                                        color: const Color(
-                                                          0xFFEFF6FA,
-                                                        ),
+                                                        color: AppTheme
+                                                            .surfaceTint,
                                                       ),
                                                 ),
                                               ],
@@ -483,28 +512,34 @@ class _DonationsPageState extends State<DonationsPage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 26),
+                  const SizedBox(height: AppTheme.gapLg),
                   _SectionCard(
                     title: 'Distribution Audit Log',
                     subtitle:
                         'Track fund allocation history, remarks, dates, and distribution status.',
                     icon: Icons.history_rounded,
+                    accent: AppTheme.accentOrange,
+                    accentSoft: AppTheme.accentOrangeSoft,
                     child: _buildAuditLog(),
                   ),
-                  const SizedBox(height: 26),
+                  const SizedBox(height: AppTheme.gapLg),
                   _SectionCard(
                     title: 'Center Donation History',
                     subtitle:
                         'Review one center\'s full donation record -- specific, random, and equal-share allocations.',
                     icon: Icons.local_hospital_outlined,
+                    accent: AppTheme.accentTeal,
+                    accentSoft: AppTheme.accentTealSoft,
                     child: _buildCenterHistory(),
                   ),
-                  const SizedBox(height: 26),
+                  const SizedBox(height: AppTheme.gapLg),
                   _SectionCard(
                     title: 'Overall Donation History',
                     subtitle:
                         'Read-only oversight of donation records across every center -- search, filter by center and date, no approval actions.',
                     icon: Icons.fact_check_outlined,
+                    accent: AppTheme.accentGreen,
+                    accentSoft: AppTheme.accentGreenSoft,
                     child: _buildOverallHistory(),
                   ),
                 ],
@@ -513,27 +548,23 @@ class _DonationsPageState extends State<DonationsPage> {
           ),
         ),
       ),
+      ),
     );
   }
 
   Widget _buildHeader() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF0F719F), Color(0xFF0F3A55)],
+          colors: [AppTheme.white, AppTheme.headerTint],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(30),
-        boxShadow: [
-          BoxShadow(
-            color: _primary.withAlpha(45),
-            blurRadius: 28,
-            offset: const Offset(0, 16),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(AppTheme.rXl),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.shadowSm,
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -550,44 +581,50 @@ class _DonationsPageState extends State<DonationsPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(30),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: Colors.white.withAlpha(40)),
-                      ),
-                      child: const Text(
-                        'Donation Management',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                          letterSpacing: 0.3,
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: AppTheme.accentPinkSoft,
+                            borderRadius: BorderRadius.circular(AppTheme.rLg),
+                            border: Border.all(color: AppTheme.borderStrong),
+                          ),
+                          child: const Icon(
+                            Icons.volunteer_activism_rounded,
+                            color: AppTheme.accentPink,
+                            size: 24,
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Distribute Donation Funds',
-                      style: TextStyle(
-                        fontSize: 34,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        height: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Allocate verified donations to centers and keep every distribution transparent.',
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: Colors.white.withAlpha(215),
-                        height: 1.5,
-                      ),
+                        const SizedBox(width: 16),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Distribute Donation Funds',
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  height: 1.25,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.3,
+                                  color: AppTheme.blue3,
+                                ),
+                              ),
+                              SizedBox(height: 6),
+                              Text(
+                                'Allocate verified donations to centers and keep every distribution transparent.',
+                                style: TextStyle(
+                                  fontSize: 13.5,
+                                  height: 1.45,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -878,6 +915,14 @@ class _DonationsPageState extends State<DonationsPage> {
     // `items`, crashing the page. An id string survives that because
     // '6ec...' == '6ec...' regardless of which fetch produced it.
     return DropdownButtonFormField<String>(
+      dropdownColor: AppTheme.surface,
+      elevation: 2,
+      borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+      icon: const Icon(
+        Icons.expand_more_rounded,
+        size: 18,
+        color: AppTheme.iconMuted,
+      ),
       key: ValueKey(_historyCenterId),
       initialValue: _historyCenterId,
       items: _centers.map((center) {
@@ -1141,6 +1186,14 @@ class _DonationsPageState extends State<DonationsPage> {
         SizedBox(
           width: 170,
           child: DropdownButtonFormField<_HistoryDateRange>(
+            dropdownColor: AppTheme.surface,
+            elevation: 2,
+            borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+            icon: const Icon(
+              Icons.expand_more_rounded,
+              size: 18,
+              color: AppTheme.iconMuted,
+            ),
             initialValue: _historyRange,
             isExpanded: true,
             decoration:
@@ -1337,6 +1390,14 @@ class _DonationsPageState extends State<DonationsPage> {
     final centerDropdown = SizedBox(
       width: isMobile ? double.infinity : 200,
       child: DropdownButtonFormField<String?>(
+        dropdownColor: AppTheme.surface,
+        elevation: 2,
+        borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+        icon: const Icon(
+          Icons.expand_more_rounded,
+          size: 18,
+          color: AppTheme.iconMuted,
+        ),
         initialValue: _overallCenterId,
         isExpanded: true,
         decoration: _inputDecoration('Center', Icons.local_hospital_outlined),
@@ -1385,6 +1446,14 @@ class _DonationsPageState extends State<DonationsPage> {
     final rangeDropdown = SizedBox(
       width: isMobile ? double.infinity : 170,
       child: DropdownButtonFormField<_HistoryDateRange>(
+        dropdownColor: AppTheme.surface,
+        elevation: 2,
+        borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+        icon: const Icon(
+          Icons.expand_more_rounded,
+          size: 18,
+          color: AppTheme.iconMuted,
+        ),
         initialValue: _overallRange,
         isExpanded: true,
         decoration: _inputDecoration('Date Range', Icons.date_range_rounded),
@@ -1559,20 +1628,10 @@ class _DonationsPageState extends State<DonationsPage> {
   }
 
   InputDecoration _inputDecoration(String label, IconData icon) {
-    return InputDecoration(
+    return AppTheme.field(
       labelText: label,
-      prefixIcon: Icon(icon, color: _primary),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Color(0xFFDCEAF2)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: _primary, width: 1.6),
-      ),
-      filled: true,
-      fillColor: const Color(0xFFF6FBFF),
+      dense: true,
+      prefixIcon: Icon(icon, size: 18, color: AppTheme.blue1),
     );
   }
 }
@@ -1633,6 +1692,8 @@ class _SectionCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final IconData icon;
+  final Color accent;
+  final Color accentSoft;
   final Widget child;
 
   const _SectionCard({
@@ -1640,40 +1701,28 @@ class _SectionCard extends StatelessWidget {
     required this.subtitle,
     required this.icon,
     required this.child,
+    this.accent = AppTheme.blue1,
+    this.accentSoft = AppTheme.accentBlueSoft,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: const Color(0xFFE7EFF5)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0F000000),
-            blurRadius: 24,
-            offset: Offset(0, 14),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.all(20),
+      decoration: AppTheme.card(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF8FC),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(icon, color: const Color(0xFF0F719F)),
+                width: 40,
+                height: 40,
+                decoration: AppTheme.iconBox(accentSoft),
+                child: Icon(icon, color: accent, size: 20),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1681,18 +1730,20 @@ class _SectionCard extends StatelessWidget {
                     Text(
                       title,
                       style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF0F3A55),
+                        fontSize: 16.5,
+                        height: 1.3,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
+                        color: AppTheme.blue3,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 3),
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFF647583),
-                        height: 1.5,
+                        fontSize: 12.5,
+                        height: 1.4,
+                        color: AppTheme.textMuted,
                       ),
                     ),
                   ],
@@ -1700,7 +1751,7 @@ class _SectionCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 18),
           child,
         ],
       ),
@@ -1714,6 +1765,7 @@ class _InfoCard extends StatelessWidget {
   final String value;
   final String subtitle;
   final Color color;
+  final Color softColor;
 
   const _InfoCard({
     required this.icon,
@@ -1721,78 +1773,69 @@ class _InfoCard extends StatelessWidget {
     required this.value,
     required this.subtitle,
     required this.color,
+    this.softColor = AppTheme.accentBlueSoft,
   });
 
   @override
   Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.96, end: 1),
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeOutCubic,
-      builder: (context, scale, child) {
-        return Transform.scale(scale: scale, child: child);
-      },
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: const Color(0xFFE7EFF5)),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x0F000000),
-              blurRadius: 22,
-              offset: Offset(0, 12),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: color.withAlpha(24),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Icon(icon, color: color, size: 26),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      color: Color(0xFF647583),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: AppTheme.card(),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: AppTheme.iconBox(softColor),
+            child: Icon(icon, color: color, size: 19),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppTheme.textMuted,
+                    fontSize: 11.5,
+                    height: 1.3,
+                    fontWeight: FontWeight.w500,
                   ),
-                  const SizedBox(height: 6),
-                  Text(
+                ),
+                const SizedBox(height: 4),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
                     value,
                     style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF0F3A55),
+                      fontSize: 22,
+                      height: 1.25,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.4,
+                      color: AppTheme.blue3,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF8A98A5),
-                      fontSize: 12,
-                    ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppTheme.textMuted,
+                    fontSize: 11.5,
+                    height: 1.3,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
