@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../theme/brand.dart';
 import '../widgets/decor.dart';
@@ -49,11 +50,26 @@ class _DonationOptionPageState extends State<DonationOptionPage> {
         ),
       );
     } else if (_selectedOption == 'registered') {
+      // Only ask for a login when there isn't one already. Signing up or
+      // logging in from the navigation bar leaves a live Supabase session,
+      // and sending that donor back through the login form would make them
+      // authenticate a second time for no reason.
+      //
+      // This deliberately reads the same thing DonationPage itself checks
+      // on arrival (a null currentUser is what makes it show "Please log in
+      // to donate"), so the two can never disagree about whether a login
+      // step is still needed.
+      final isAuthenticated =
+          Supabase.instance.client.auth.currentUser != null;
+
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => const LoginPage(
-            fromDonation: true,
-          ),
+          builder: (_) => isAuthenticated
+              // Registered donation on the account already signed in.
+              ? const DonationPage()
+              : const LoginPage(
+                  fromDonation: true,
+                ),
         ),
       );
     }

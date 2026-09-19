@@ -8,6 +8,7 @@ import '../widgets/decor.dart';
 import '../widgets/donation_steps.dart';
 import '../widgets/motion.dart';
 import '../widgets/ui.dart';
+import 'landing_page.dart';
 import 'login_page.dart';
 
 /// Step two of the donation journey: amount, destination and payment
@@ -63,9 +64,14 @@ class _DonationPageState extends State<DonationPage>
   void initState() {
     super.initState();
 
+    // Prefilled for a registered donation only. An anonymous donation must
+    // not pick up the signed-in account's details just because a session
+    // happens to exist -- choosing "Donate Anonymously" while logged in
+    // stays anonymous, and none of the account's information is prefilled,
+    // shown or submitted.
     final user = Supabase.instance.client.auth.currentUser;
 
-    if (user != null) {
+    if (!widget.isAnonymous && user != null) {
       _emailController.text = user.email ?? '';
     }
 
@@ -246,6 +252,23 @@ class _DonationPageState extends State<DonationPage>
     return double.tryParse(value);
   }
 
+  /// Returns to the landing page and clears the whole donation journey from
+  /// the navigation stack.
+  ///
+  /// Used both when a donation has been completed and when this page is the
+  /// only route left (see [_buildHeader]). Replacing the stack rather than
+  /// popping a fixed number of routes is what keeps this correct no matter
+  /// how the donor arrived -- straight from the landing page, by way of the
+  /// details page, or through the login step, which leaves this page as the
+  /// sole route. It also means Back can never re-enter a finished or
+  /// abandoned donation.
+  void _goToLandingPage() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LandingPage()),
+      (route) => false,
+    );
+  }
+
   // ------------------------------------------------------- presentation
 
   PreferredSizeWidget _buildHeader() {
@@ -258,7 +281,19 @@ class _DonationPageState extends State<DonationPage>
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_rounded, color: Brand.brandDeep),
         tooltip: 'Back',
-        onPressed: () => Navigator.pop(context),
+        // Normal back behaviour whenever there is a route to go back to.
+        // When there is not -- signing in mid-donation replaces the stack,
+        // so this page can be the only route -- popping would leave the app
+        // with no route at all, so fall back to the landing page instead.
+        onPressed: () {
+          final navigator = Navigator.of(context);
+
+          if (navigator.canPop()) {
+            navigator.pop();
+          } else {
+            _goToLandingPage();
+          }
+        },
       ),
       titleSpacing: 0,
       title: Row(
@@ -1099,7 +1134,22 @@ class _DonationPageState extends State<DonationPage>
             .eq('id', user.id)
             .maybeSingle();
 
-        donorName = (profile?['full_name'] as String?)?.trim() ?? '';
+        // What the donor actually typed into Full Name / Organization wins.
+        // The field is editable and asks them to "Enter your name", so a
+        // value entered there is the name this donation is recorded under --
+        // it lets a donor give under an organisation's name, or a different
+        // spelling, without altering their account.
+        //
+        // Left blank, this falls back to exactly the chain it always used:
+        // the account's profile name, then the account email, then a generic
+        // label -- so a donor who ignores the field is recorded as before.
+        // Account identification (donor_id) and the donor's email are taken
+        // from the authenticated account either way, and are untouched here.
+        final enteredName = _nameController.text.trim();
+
+        donorName = enteredName.isNotEmpty
+            ? enteredName
+            : (profile?['full_name'] as String?)?.trim() ?? '';
 
         if (donorName.isEmpty) {
           donorName = user.email ?? 'Registered Donor';
@@ -1174,9 +1224,14 @@ class _DonationPageState extends State<DonationPage>
       // review before they count -- the donation (and its center routing,
       // above) is already fully recorded at this point, so we just confirm
       // that to the donor instead of asking for proof of payment.
+      // Not dismissible on purpose: closing this by tapping the barrier or
+      // pressing Escape used to drop the donor back onto a still-filled form
+      // that could be submitted a second time. "Back to Home" below is the
+      // only way out of it.
       await showDialog(
         context: context,
-        builder: (context) {
+        barrierDismissible: false,
+        builder: (dialogContext) {
           return AlertDialog(
             title: const Text('Thank You!'),
             content: const Text(
@@ -1184,16 +1239,21 @@ class _DonationPageState extends State<DonationPage>
             ),
             actions: [
               TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  Navigator.of(context).pop();
-                },
+                onPressed: () => Navigator.of(dialogContext).pop(),
                 child: const Text('Back to Home'),
               ),
             ],
           );
         },
       );
+
+      if (!mounted) return;
+
+      // The donation is fully recorded by this point; all that is left is to
+      // put the donor back on the landing page. This runs once the dialog has
+      // actually closed and -- because the dialog is not dismissible -- only
+      // ever by way of the "Back to Home" button above.
+      _goToLandingPage();
     } catch (e) {
       if (!mounted) return;
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../theme/brand.dart';
@@ -108,7 +109,21 @@ class _SignupPageState extends State<SignupPage>
   Future<void> _signup() async {
     final fullName = _fullNameController.text.trim();
     final email = _emailController.text.trim();
-    final phone = _phoneController.text.trim();
+
+    // The field holds only the 10-digit subscriber number, grouped for
+    // readability ("917 123 4567"); the "+63" is a fixed prefix on the
+    // field itself, not part of the value. Strip the grouping back out
+    // before validating or saving, so the spaces can never make a valid
+    // number fail.
+    final phoneDigits = _phoneController.text.replaceAll(RegExp(r'\D'), '');
+
+    // Saved in the same 11-digit local form CureNurture already stores for
+    // profiles.phone / donors.phone ("09XXXXXXXXX"). Only how the number is
+    // typed and displayed changes here -- the stored representation stays as
+    // it was, so existing records and everything that reads this column are
+    // unaffected.
+    final phone = phoneDigits.isEmpty ? '' : '0$phoneDigits';
+
     final password = _passwordController.text;
     final confirmPassword = _confirmPasswordController.text;
 
@@ -121,11 +136,20 @@ class _SignupPageState extends State<SignupPage>
       _confirmPasswordError = null;
     });
 
-    if (fullName.isEmpty || email.isEmpty || phone.isEmpty) {
+    if (fullName.isEmpty || email.isEmpty || phoneDigits.isEmpty) {
       setState(() {
         _fullNameError = fullName.isEmpty ? 'Full name is required' : null;
         _emailError = email.isEmpty ? 'Email is required' : null;
-        _phoneError = phone.isEmpty ? 'Phone number is required' : null;
+        _phoneError = phoneDigits.isEmpty ? 'Phone number is required' : null;
+      });
+      return;
+    }
+
+    // Philippine mobile numbers are ten digits after +63 and always start
+    // with 9.
+    if (phoneDigits.length != 10 || !phoneDigits.startsWith('9')) {
+      setState(() {
+        _phoneError = 'Enter a 10-digit mobile number, e.g. 917 123 4567';
       });
       return;
     }
@@ -510,11 +534,13 @@ class _SignupPageState extends State<SignupPage>
             delay: 150,
             child: _buildField(
               controller: _phoneController,
-              label: 'Phone Number',
-              hint: 'Enter your contact number',
+              label: 'Mobile Number',
+              hint: '917 123 4567',
               icon: Icons.phone_outlined,
               error: _phoneError,
               keyboardType: TextInputType.phone,
+              prefixText: '+63 ',
+              inputFormatters: const [_PhMobileInputFormatter()],
             ),
           ),
           const SizedBox(height: 14),
@@ -730,10 +756,13 @@ class _SignupPageState extends State<SignupPage>
     required IconData icon,
     String? error,
     TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
+    String? prefixText,
   }) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
       style: const TextStyle(
         color: secondaryColor,
         fontWeight: FontWeight.w600,
@@ -743,6 +772,11 @@ class _SignupPageState extends State<SignupPage>
         hintText: hint,
         errorText: error,
         prefixIcon: Icon(icon, color: primaryColor),
+        prefixText: prefixText,
+        prefixStyle: const TextStyle(
+          color: secondaryColor,
+          fontWeight: FontWeight.w700,
+        ),
         filled: true,
         fillColor: surfaceColor,
         contentPadding: const EdgeInsets.symmetric(
@@ -890,5 +924,76 @@ class _SignupPageState extends State<SignupPage>
         ],
       ),
     );
+  }
+}
+
+/// Formats the Philippine mobile number typed after the field's fixed "+63 "
+/// prefix.
+///
+/// The donor types only the 10-digit subscriber number; this groups it as
+/// `917 123 4567` and stops accepting digits at ten, so an unbounded run of
+/// digits can no longer be entered. A pasted `0917...`, `63917...` or
+/// `+63917...` is reduced to the same ten digits rather than rejected.
+///
+/// The caret is re-anchored by counting digits rather than characters, so
+/// typing, editing and backspacing inside the number behave the way they would
+/// in an unformatted field.
+class _PhMobileInputFormatter extends TextInputFormatter {
+  const _PhMobileInputFormatter();
+
+  static const int _subscriberDigits = 10;
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final text = newValue.text;
+    final caret = newValue.selection.baseOffset;
+
+    // How many digits sit before the caret, so it can be put back in the
+    // right place once the number has been regrouped.
+    var digitsBeforeCaret = 0;
+    for (var i = 0; i < caret && i < text.length; i++) {
+      if (_isDigit(text[i])) digitsBeforeCaret++;
+    }
+
+    var digits = text.replaceAll(RegExp(r'\D'), '');
+
+    // A pasted number may still carry the country code or the local trunk
+    // "0"; both mean the same subscriber number here.
+    if (digits.startsWith('63')) {
+      digits = digits.substring(2);
+      digitsBeforeCaret -= 2;
+    } else if (digits.startsWith('0')) {
+      digits = digits.substring(1);
+      digitsBeforeCaret -= 1;
+    }
+
+    if (digits.length > _subscriberDigits) {
+      digits = digits.substring(0, _subscriberDigits);
+    }
+
+    if (digitsBeforeCaret < 0) digitsBeforeCaret = 0;
+    if (digitsBeforeCaret > digits.length) digitsBeforeCaret = digits.length;
+
+    final buffer = StringBuffer();
+    var offset = 0;
+
+    for (var i = 0; i < digits.length; i++) {
+      if (i == 3 || i == 6) buffer.write(' ');
+      buffer.write(digits[i]);
+      if (i < digitsBeforeCaret) offset = buffer.length;
+    }
+
+    return TextEditingValue(
+      text: buffer.toString(),
+      selection: TextSelection.collapsed(offset: offset),
+    );
+  }
+
+  static bool _isDigit(String character) {
+    final code = character.codeUnitAt(0);
+    return code >= 0x30 && code <= 0x39;
   }
 }
