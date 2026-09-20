@@ -1,7 +1,54 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/profile_service.dart';
 import '../config/supabase_config.dart';
+import '../theme/app_theme.dart';
+
+/// Limits a phone-style field to at most [maxDigits] digits while still
+/// letting the existing supported formatting characters (spaces, +, -,
+/// parentheses) through -- counts by digits, not raw string length, so a
+/// nicely formatted number isn't penalized for its own formatting
+/// characters. Never touches text it isn't given interactively: setting a
+/// controller's initial `text` (e.g. when opening Edit) does not go through
+/// input formatters at all, so an existing stored value is never truncated
+/// by this -- it only blocks typing/pasting a value whose digit count would
+/// exceed the limit. Equivalent to (and kept in sync with the intent of)
+/// _MaxDigitsTextInputFormatter in center_page.dart's Contact Number field;
+/// duplicated here rather than imported since that class is private to
+/// center_page.dart.
+class _MaxDigitsTextInputFormatter extends TextInputFormatter {
+  final int maxDigits;
+
+  const _MaxDigitsTextInputFormatter(this.maxDigits);
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digitCount = newValue.text.replaceAll(RegExp(r'[^0-9]'), '').length;
+
+    if (digitCount > maxDigits) {
+      return oldValue;
+    }
+
+    return newValue;
+  }
+}
+
+/// User-controlled sort options for the account list. Sorting only reorders
+/// the already-loaded/filtered list -- it never changes the database query.
+enum _AccountSortOption {
+  newest('Newest'),
+  oldest('Oldest'),
+  nameAsc('Name A-Z'),
+  nameDesc('Name Z-A');
+
+  const _AccountSortOption(this.label);
+
+  final String label;
+}
 
 class AccountManagementPage extends StatefulWidget {
   const AccountManagementPage({super.key});
@@ -18,6 +65,13 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
 
   bool _showLogs = false;
 
+  // Account list search/filter/sort -- all client-side, applied on top of
+  // the already-loaded account data. Does not affect the Audit Trail tab.
+  final TextEditingController _searchController = TextEditingController();
+  String _searchText = '';
+  String? _statusFilter; // null = All, otherwise 'active' or 'inactive'
+  _AccountSortOption _sortOption = _AccountSortOption.newest;
+
   static const Color _primary = Color(0xFF0F719F);
   static const Color _dark = Color(0xFF0F3A55);
   static const Color _muted = Color(0xFF647583);
@@ -30,6 +84,12 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
     super.initState();
     _loadAdmins();
     _loadLogs();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _loadAdmins() {
@@ -75,6 +135,14 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
 
     if (created == true) {
       await _refresh();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Head nurse account created successfully.'),
+        ),
+      );
     }
   }
 
@@ -108,6 +176,53 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
 
     if (updated == true) {
       await _refresh();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Head nurse account updated successfully.'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _openReactivateAdmin(Map<String, dynamic> admin) async {
+    final reactivated = await showGeneralDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Reactivate Head Nurse Account',
+      barrierColor: Colors.black.withAlpha(70),
+      transitionDuration: const Duration(milliseconds: 260),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return _BlurredAdminReactivateModal(admin: admin);
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
+
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+
+    if (reactivated == true) {
+      await _refresh();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Head nurse account reactivated successfully.'),
+        ),
+      );
     }
   }
 
@@ -116,9 +231,11 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('Delete head nurse account'),
+        title: const Text('Deactivate head nurse account'),
         content: Text(
-          'Delete ${admin['full_name'] ?? admin['email']} permanently?',
+          'Deactivate ${admin['full_name'] ?? admin['email']}? '
+          'The account will become inactive and lose its active clinic access. '
+          'It can be reactivated later by assigning a clinic again.',
         ),
         actions: [
           TextButton(
@@ -128,7 +245,7 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
             style: FilledButton.styleFrom(backgroundColor: _danger),
-            child: const Text('Delete'),
+            child: const Text('Deactivate'),
           ),
         ],
       ),
@@ -163,29 +280,44 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
     }
   }
 
+  /// Display-only translation of the stored role value -- never interprets
+  /// or changes what the role actually grants. Unknown/unexpected values are
+  /// shown readably rather than crashing or being treated as a known role.
+  String _roleLabel(String? role) {
+    final normalized = role?.trim() ?? '';
+
+    if (normalized.isEmpty) return 'Role not assigned';
+
+    switch (normalized.toLowerCase()) {
+      case 'admin':
+        return 'Head Nurse';
+      case 'superadmin':
+        return 'Super Admin';
+      default:
+        final words = normalized.replaceAll('_', ' ').split(' ');
+        final readable = words
+            .where((word) => word.isNotEmpty)
+            .map((word) => word[0].toUpperCase() + word.substring(1))
+            .join(' ');
+        // Keeps an unexpected role string from ever growing large enough to
+        // look out of place in a compact pill.
+        return readable.length > 24 ? '${readable.substring(0, 24)}…' : readable;
+    }
+  }
+
   Widget _adminCard(Map<String, dynamic> admin) {
     final fullName = admin['full_name'] as String? ?? 'Unknown';
     final email = admin['email'] as String? ?? 'No email';
     final phone = admin['phone'] as String? ?? 'No phone';
     final status = admin['status'] ?? 'active';
+    final roleLabel = _roleLabel(admin['role'] as String?);
     final clinicName = admin['clinics']?['name'];
     final isInactive = status == 'inactive';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE5EEF4)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0F000000),
-            blurRadius: 24,
-            offset: Offset(0, 12),
-          ),
-        ],
-      ),
+      decoration: AppTheme.card(radius: AppTheme.rLg),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isCompact = constraints.maxWidth < 760;
@@ -229,6 +361,7 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                           label: isInactive ? 'Inactive' : 'Active',
                           color: isInactive ? _danger : _success,
                         ),
+                        _StatusPill(label: roleLabel, color: _primary),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -248,45 +381,77 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
             ],
           );
 
+          // Inactive accounts can only be reactivated -- they can no longer
+          // be edited or deactivated again from here.
           final actions = Wrap(
             spacing: 10,
             runSpacing: 10,
             alignment: isCompact ? WrapAlignment.start : WrapAlignment.end,
-            children: [
-              FilledButton.icon(
-                onPressed: isInactive ? null : () => _openEditAdmin(admin),
-                icon: const Icon(Icons.edit_outlined, size: 18),
-                label: const Text('Edit'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _primary,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: Colors.grey.shade300,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 15,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-              FilledButton.icon(
-                onPressed: () => _deleteAdmin(admin),
-                icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                label: const Text('Delete'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _danger,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 15,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-            ],
+            children: isInactive
+                ? [
+                    FilledButton.icon(
+                      onPressed: () => _openReactivateAdmin(admin),
+                      icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                      label: const Text('Reactivate'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppTheme.blue1,
+                        foregroundColor: AppTheme.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 13,
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppTheme.rMd),
+                        ),
+                      ),
+                    ),
+                  ]
+                : [
+                    FilledButton.icon(
+                      onPressed: () => _openEditAdmin(admin),
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: const Text('Edit'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppTheme.blue1,
+                        foregroundColor: AppTheme.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 13,
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppTheme.rMd),
+                        ),
+                      ),
+                    ),
+                    FilledButton.icon(
+                      onPressed: () => _deleteAdmin(admin),
+                      icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                      label: const Text('Deactivate'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppTheme.danger,
+                        foregroundColor: AppTheme.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 13,
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppTheme.rMd),
+                        ),
+                      ),
+                    ),
+                  ],
           );
 
           if (isCompact) {
@@ -319,20 +484,22 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE5EEF4)),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.rLg),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _primary.withAlpha(22),
-              borderRadius: BorderRadius.circular(16),
+            width: 38,
+            height: 38,
+            decoration: AppTheme.iconBox(AppTheme.accentOrangeSoft),
+            child: const Icon(
+              Icons.history_rounded,
+              color: AppTheme.accentOrange,
+              size: 19,
             ),
-            child: const Icon(Icons.history_rounded, color: _primary),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -379,21 +546,16 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
   Widget _buildHeader() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF0F719F), Color(0xFF0F3A55)],
+          colors: [AppTheme.white, AppTheme.headerTint],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(30),
-        boxShadow: [
-          BoxShadow(
-            color: _primary.withAlpha(40),
-            blurRadius: 26,
-            offset: const Offset(0, 14),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(AppTheme.rXl),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.shadowSm,
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -410,64 +572,73 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(30),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: Colors.white.withAlpha(45)),
-                      ),
-                      child: const Text(
-                        'Head Nurse Access Control',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                          letterSpacing: 0.3,
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: AppTheme.accentBlueSoft,
+                            borderRadius: BorderRadius.circular(AppTheme.rLg),
+                            border: Border.all(color: AppTheme.borderStrong),
+                          ),
+                          child: const Icon(
+                            Icons.manage_accounts_rounded,
+                            color: AppTheme.blue1,
+                            size: 24,
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Account Management',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 34,
-                        fontWeight: FontWeight.w900,
-                        height: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Manage clinic head nurse accounts, update account details, and review head nurse activity history.',
-                      style: TextStyle(
-                        color: Colors.white.withAlpha(220),
-                        fontSize: 15,
-                        height: 1.5,
-                      ),
+                        const SizedBox(width: 16),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Account Management',
+                                style: TextStyle(
+                                  color: AppTheme.blue3,
+                                  fontSize: 22,
+                                  height: 1.25,
+                                  letterSpacing: -0.3,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              SizedBox(height: 6),
+                              Text(
+                                'Manage clinic head nurse accounts, update account details, and review head nurse activity history.',
+                                style: TextStyle(
+                                  color: AppTheme.textSecondary,
+                                  fontSize: 13.5,
+                                  height: 1.45,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-              if (isCompact) const SizedBox(height: 22),
-              FilledButton.icon(
-                onPressed: _openCreateAdmin,
-                icon: const Icon(Icons.person_add_alt_1_rounded),
-                label: const Text('Add Account'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: _primary,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 22,
-                    vertical: 18,
+              if (isCompact) const SizedBox(height: 18) else const SizedBox(width: 24),
+              SizedBox(
+                height: 40,
+                child: FilledButton.icon(
+                  onPressed: _openCreateAdmin,
+                  icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+                  label: const Text('Add Account'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.blue1,
+                    foregroundColor: AppTheme.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.rMd),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  textStyle: const TextStyle(fontWeight: FontWeight.w900),
                 ),
               ),
             ],
@@ -477,26 +648,24 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
     );
   }
 
-  Widget _buildContent(List<Map<String, dynamic>> items) {
+  Widget _buildContent({
+    required List<Map<String, dynamic>> rawItems,
+    required List<Map<String, dynamic>> visibleItems,
+  }) {
+    // Distinguishes "no accounts exist at all" from "accounts exist, but the
+    // current search/filters matched none of them" -- only relevant to the
+    // Accounts tab, since the Audit Trail tab has no filters applied to it.
+    final isFilteredEmpty =
+        !_showLogs && rawItems.isNotEmpty && visibleItems.isEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildHeader(),
-        const SizedBox(height: 24),
+        const SizedBox(height: AppTheme.gapLg),
         Container(
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(26),
-            border: Border.all(color: const Color(0xFFE5EEF4)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x0F000000),
-                blurRadius: 24,
-                offset: Offset(0, 14),
-              ),
-            ],
-          ),
+          padding: const EdgeInsets.all(20),
+          decoration: AppTheme.card(),
           child: Column(
             children: [
               Row(
@@ -504,11 +673,15 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                   ChoiceChip(
                     label: const Text('Accounts'),
                     selected: !_showLogs,
-                    selectedColor: _primary.withAlpha(28),
-                    checkmarkColor: _primary,
+                    selectedColor: AppTheme.accentBlueSoft,
+                    backgroundColor: AppTheme.surface,
+                    checkmarkColor: AppTheme.blue1,
+                    side: const BorderSide(color: AppTheme.border),
+                    shape: const StadiumBorder(),
                     labelStyle: TextStyle(
-                      color: !_showLogs ? _primary : _muted,
-                      fontWeight: FontWeight.w800,
+                      color: !_showLogs ? AppTheme.blue1 : AppTheme.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
                     onSelected: (selected) {
                       if (selected) {
@@ -523,11 +696,15 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                   ChoiceChip(
                     label: const Text('Audit Trail'),
                     selected: _showLogs,
-                    selectedColor: _primary.withAlpha(28),
-                    checkmarkColor: _primary,
+                    selectedColor: AppTheme.accentBlueSoft,
+                    backgroundColor: AppTheme.surface,
+                    checkmarkColor: AppTheme.blue1,
+                    side: const BorderSide(color: AppTheme.border),
+                    shape: const StadiumBorder(),
                     labelStyle: TextStyle(
-                      color: _showLogs ? _primary : _muted,
-                      fontWeight: FontWeight.w800,
+                      color: _showLogs ? AppTheme.blue1 : AppTheme.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
                     onSelected: (selected) {
                       if (selected) {
@@ -539,34 +716,186 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                     },
                   ),
                   const Spacer(),
-                  IconButton.filledTonal(
-                    onPressed: _refresh,
-                    icon: const Icon(Icons.refresh_rounded),
-                    tooltip: 'Refresh',
+                  SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: IconButton(
+                      onPressed: _refresh,
+                      icon: const Icon(Icons.refresh_rounded, size: 19),
+                      tooltip: 'Refresh',
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppTheme.accentBlueSoft,
+                        foregroundColor: AppTheme.blue1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppTheme.rMd),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
+              if (!_showLogs) ...[
+                const SizedBox(height: 18),
+                _buildAccountFilters(),
+              ],
               const SizedBox(height: 22),
-              if (items.isEmpty)
+              if (visibleItems.isEmpty)
                 _EmptyState(
-                  icon: _showLogs
-                      ? Icons.manage_search_rounded
-                      : Icons.admin_panel_settings_outlined,
-                  title: _showLogs
-                      ? 'No audit logs found'
-                      : 'No head nurse accounts',
-                  message: _showLogs
-                      ? 'Head nurse activity history will appear here.'
-                      : 'Create head nurse account to assign access to a clinic.',
+                  icon: isFilteredEmpty
+                      ? Icons.search_off_rounded
+                      : (_showLogs
+                            ? Icons.manage_search_rounded
+                            : Icons.admin_panel_settings_outlined),
+                  title: isFilteredEmpty
+                      ? 'No accounts match your search or filters.'
+                      : (_showLogs
+                            ? 'No audit logs found'
+                            : 'No head nurse accounts'),
+                  message: isFilteredEmpty
+                      ? 'Try a different search term or adjust your filters.'
+                      : (_showLogs
+                            ? 'Head nurse activity history will appear here.'
+                            : 'Create head nurse account to assign access to a clinic.'),
+                  actionLabel: isFilteredEmpty ? 'Clear Filters' : null,
+                  onAction: isFilteredEmpty ? _clearAccountFilters : null,
                 )
               else if (_showLogs)
-                Column(children: items.map(_buildLogsCard).toList())
+                Column(children: visibleItems.map(_buildLogsCard).toList())
               else
-                Column(children: items.map(_adminCard).toList()),
+                Column(children: visibleItems.map(_adminCard).toList()),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildAccountFilters() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextFormField(
+          controller: _searchController,
+          onChanged: (value) => setState(() => _searchText = value),
+          style: AppTheme.fieldTextStyle,
+          decoration: AppTheme.field(
+            hintText: 'Search accounts...',
+            prefixIcon: const Icon(
+              Icons.search_rounded,
+              size: 19,
+              color: AppTheme.iconMuted,
+            ),
+            suffixIcon: _searchText.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear search',
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _searchText = '');
+                    },
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: AppTheme.iconMuted,
+                    ),
+                  ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _buildCompactAccountDropdown<String?>(
+              keyPrefix: 'account-status',
+              icon: Icons.tune_rounded,
+              value: _statusFilter,
+              items: const [
+                DropdownMenuItem<String?>(value: null, child: Text('All')),
+                DropdownMenuItem<String?>(
+                  value: 'active',
+                  child: Text('Active'),
+                ),
+                DropdownMenuItem<String?>(
+                  value: 'inactive',
+                  child: Text('Inactive'),
+                ),
+              ],
+              onChanged: (value) => setState(() => _statusFilter = value),
+            ),
+            _buildCompactAccountDropdown<_AccountSortOption>(
+              keyPrefix: 'account-sort',
+              icon: Icons.sort_rounded,
+              value: _sortOption,
+              items: _AccountSortOption.values
+                  .map(
+                    (option) => DropdownMenuItem<_AccountSortOption>(
+                      value: option,
+                      child: Text(
+                        option.label,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value != null) setState(() => _sortOption = value);
+              },
+            ),
+            if (_hasActiveAccountFilters)
+              TextButton.icon(
+                onPressed: _clearAccountFilters,
+                icon: const Icon(Icons.clear_all_rounded, size: 17),
+                label: const Text('Clear Filters'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppTheme.blue1,
+                  textStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // Compact dropdown matching the search field's style (filled, rounded,
+  // borderless). Keyed on the current value so an external reset (e.g. Clear
+  // Filters) reliably resyncs the dropdown -- DropdownButtonFormField only
+  // reads `initialValue` once per widget identity, same reason the Centers
+  // page's filter dropdowns are keyed.
+  Widget _buildCompactAccountDropdown<T>({
+    required String keyPrefix,
+    required IconData icon,
+    required T value,
+    required List<DropdownMenuItem<T>> items,
+    required ValueChanged<T?> onChanged,
+  }) {
+    return SizedBox(
+      width: 190,
+      child: DropdownButtonFormField<T>(
+        key: ValueKey('$keyPrefix-$value'),
+        initialValue: value,
+        isExpanded: true,
+        style: AppTheme.fieldTextStyle,
+        icon: const Icon(
+          Icons.expand_more_rounded,
+          size: 18,
+          color: AppTheme.iconMuted,
+        ),
+        dropdownColor: AppTheme.surface,
+        elevation: 2,
+        borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+        decoration: AppTheme.field(
+          dense: true,
+          prefixIcon: Icon(icon, size: 17, color: AppTheme.blue1),
+        ),
+        items: items,
+        onChanged: onChanged,
+      ),
     );
   }
 
@@ -596,17 +925,100 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
     return sortedItems;
   }
 
+  String _accountSortName(Map<String, dynamic> admin) {
+    final name = admin['full_name'] as String?;
+    return (name ?? '').trim().toLowerCase();
+  }
+
+  /// Search -> Status filter -> Sort, applied in that order on top of the
+  /// already-loaded account list for the current tab. Nothing here touches
+  /// the database query or the underlying list passed in -- a new filtered
+  /// list is returned each time.
+  List<Map<String, dynamic>> _applyAccountFilters(
+    List<Map<String, dynamic>> items,
+  ) {
+    Iterable<Map<String, dynamic>> result = items;
+
+    final query = _searchText.trim().toLowerCase();
+    if (query.isNotEmpty) {
+      result = result.where((admin) {
+        final name = (admin['full_name'] as String? ?? '').toLowerCase();
+        final email = (admin['email'] as String? ?? '').toLowerCase();
+        final phone = (admin['phone'] as String? ?? '').toLowerCase();
+        final clinicName =
+            (admin['clinics']?['name'] as String? ?? '').toLowerCase();
+
+        return name.contains(query) ||
+            email.contains(query) ||
+            phone.contains(query) ||
+            clinicName.contains(query);
+      });
+    }
+
+    final statusFilter = _statusFilter;
+    if (statusFilter != null) {
+      result = result.where((admin) {
+        // Same "missing status defaults to active" convention _adminCard
+        // already uses below, so filtering and display never disagree.
+        final status = (admin['status'] as String?) ?? 'active';
+        return status.toLowerCase() == statusFilter;
+      });
+    }
+
+    final filtered = result.toList();
+
+    switch (_sortOption) {
+      case _AccountSortOption.newest:
+        return _sortAccountsByRecentCreated(filtered);
+      case _AccountSortOption.oldest:
+        filtered.sort(
+          (a, b) => _parseCreatedAt(a).compareTo(_parseCreatedAt(b)),
+        );
+      case _AccountSortOption.nameAsc:
+        filtered.sort(
+          (a, b) => _accountSortName(a).compareTo(_accountSortName(b)),
+        );
+      case _AccountSortOption.nameDesc:
+        filtered.sort(
+          (a, b) => _accountSortName(b).compareTo(_accountSortName(a)),
+        );
+    }
+
+    return filtered;
+  }
+
+  bool get _hasActiveAccountFilters =>
+      _searchText.trim().isNotEmpty ||
+      _statusFilter != null ||
+      _sortOption != _AccountSortOption.newest;
+
+  void _clearAccountFilters() {
+    _searchController.clear();
+    setState(() {
+      _searchText = '';
+      _statusFilter = null;
+      _sortOption = _AccountSortOption.newest;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final pagePadding = AppTheme.pagePadding(
+      MediaQuery.of(context).size.width,
+    );
+
     return Container(
       color: _bg,
-      child: RefreshIndicator(
+      child: AppMenuTheme(
+        child: RefreshIndicator(
         onRefresh: _refresh,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
-          padding: const EdgeInsets.all(28),
+          // Padded inside the scroll view so the scrollbar rides the
+          // viewport edge instead of floating inset from it.
+          padding: EdgeInsets.all(pagePadding),
           child: FutureBuilder<List<Map<String, dynamic>>>(
             future: _showLogs ? _logsFuture : _adminsFuture,
             builder: (context, snapshot) {
@@ -624,14 +1036,18 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
               }
 
               final items = snapshot.data ?? [];
-              final sortedItems = _showLogs
+              final visibleItems = _showLogs
                   ? items
-                  : _sortAccountsByRecentCreated(items);
+                  : _applyAccountFilters(items);
 
-              return _buildContent(sortedItems);
+              return _buildContent(
+                rawItems: items,
+                visibleItems: visibleItems,
+              );
             },
           ),
         ),
+      ),
       ),
     );
   }
@@ -669,7 +1085,6 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
   static const Color _primary = Color(0xFF0F719F);
   static const Color _dark = Color(0xFF0F3A55);
   static const Color _muted = Color(0xFF647583);
-  static const Color _danger = Color(0xFFDE4D4D);
 
   @override
   void initState() {
@@ -726,6 +1141,12 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
   }
 
   Future<void> _saveChanges() async {
+    // Explicit re-entrancy guard: the onPressed: _isSaving ? null : ...
+    // gate on the button only takes effect once the modal rebuilds, so two
+    // very fast taps/submits could otherwise both reach this handler before
+    // that rebuild happens. This stops a second submission cold even then.
+    if (_isSaving) return;
+
     if (!_formKey.currentState!.validate()) return;
 
     final password = _passwordController.text.trim();
@@ -743,12 +1164,6 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
       _errorMessage = null;
     });
 
-    await ProfileService().logAction(
-      action: 'edit_admin',
-      targetId: widget.admin['id'],
-      targetName: _nameController.text.trim(),
-    );
-
     try {
       await _service.updateAdmin(
         adminId: widget.admin['id'],
@@ -756,6 +1171,16 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
         phone: _phoneController.text.trim(),
         password: _changePassword && password.isNotEmpty ? password : null,
         clinicId: selectedClinicId,
+      );
+
+      // Only record the audit entry once the update has actually succeeded --
+      // previously this was written before updateAdmin() was even attempted,
+      // so a failed update could still leave behind a successful-looking
+      // "edit_admin" log entry. Same action/target content as before.
+      await ProfileService().logAction(
+        action: 'edit_admin',
+        targetId: widget.admin['id'],
+        targetName: _nameController.text.trim(),
       );
 
       if (!mounted) return;
@@ -800,11 +1225,19 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
     final isInactive = widget.admin['status'] == 'inactive';
     final hasClinic = widget.admin['clinic_id'] != null;
 
+    // Makes it unmistakable which existing account is being edited, not just
+    // that this is "edit mode" -- same pattern used for the Center edit
+    // dialog in Feature 4.
+    final fullName = (widget.admin['full_name'] as String?)?.trim();
+    final editingLabel = (fullName != null && fullName.isNotEmpty)
+        ? fullName
+        : email.toString();
+
     return Stack(
       children: [
         BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-          child: Container(color: const Color(0x880F3A55)),
+          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: Container(color: const Color(0x4D1F2D3D)),
         ),
         Center(
           child: Material(
@@ -812,20 +1245,14 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: Container(
-                width: 620,
-                constraints: const BoxConstraints(maxWidth: 620),
+                width: 560,
+                constraints: const BoxConstraints(maxWidth: 560),
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FBFD),
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: Colors.white.withAlpha(180)),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x33000000),
-                      blurRadius: 35,
-                      offset: Offset(0, 18),
-                    ),
-                  ],
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(AppTheme.rXl),
+                  border: Border.all(color: AppTheme.border),
+                  boxShadow: AppTheme.shadowMd,
                 ),
                 child: Form(
                   key: _formKey,
@@ -834,17 +1261,18 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: _primary.withAlpha(22),
-                              borderRadius: BorderRadius.circular(16),
+                            width: 40,
+                            height: 40,
+                            decoration: AppTheme.iconBox(
+                              AppTheme.accentBlueSoft,
                             ),
                             child: const Icon(
                               Icons.manage_accounts_outlined,
-                              color: _primary,
+                              color: AppTheme.blue1,
+                              size: 20,
                             ),
                           ),
-                          const SizedBox(width: 14),
+                          const SizedBox(width: 12),
                           const Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -852,15 +1280,20 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                                 Text(
                                   'Edit Head Nurse Account',
                                   style: TextStyle(
-                                    color: _dark,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w900,
+                                    color: AppTheme.blue3,
+                                    fontSize: 17,
+                                    height: 1.3,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                                SizedBox(height: 4),
+                                SizedBox(height: 2),
                                 Text(
                                   'Update account details and password settings.',
-                                  style: TextStyle(color: _muted, fontSize: 13),
+                                  style: TextStyle(
+                                    color: AppTheme.textMuted,
+                                    fontSize: 12.5,
+                                    height: 1.35,
+                                  ),
                                 ),
                               ],
                             ),
@@ -869,32 +1302,102 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                             onPressed: _isSaving
                                 ? null
                                 : () => Navigator.of(context).pop(false),
-                            icon: const Icon(Icons.close_rounded),
-                            color: _dark,
+                            icon: const Icon(Icons.close_rounded, size: 19),
+                            color: AppTheme.iconMuted,
                             tooltip: 'Close',
                           ),
                         ],
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 16),
+                      const Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: AppTheme.border,
+                      ),
+                      const SizedBox(height: 16),
+                      // Which account is being edited - kept on its own row so
+                      // the header reads the same as the Create modal's.
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceTint,
+                          borderRadius: BorderRadius.circular(AppTheme.rMd),
+                          border: Border.all(color: AppTheme.border),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.edit_note_rounded,
+                              size: 18,
+                              color: AppTheme.blue1,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Editing: $editingLabel',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 12.5,
+                                  height: 1.35,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       if (_errorMessage != null)
                         Container(
                           width: double.infinity,
                           margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.all(14),
+                          padding: const EdgeInsets.all(13),
                           decoration: BoxDecoration(
-                            color: _danger.withAlpha(22),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: _danger.withAlpha(40)),
-                          ),
-                          child: Text(
-                            _errorMessage!,
-                            style: const TextStyle(
-                              color: _danger,
-                              fontWeight: FontWeight.w700,
+                            color: AppTheme.dangerSoft,
+                            borderRadius: BorderRadius.circular(AppTheme.rMd),
+                            border: Border.all(
+                              color: AppTheme.danger.withValues(alpha: 0.25),
                             ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.error_outline_rounded,
+                                size: 18,
+                                color: AppTheme.danger,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _errorMessage!,
+                                  style: const TextStyle(
+                                    color: AppTheme.danger,
+                                    fontSize: 12.5,
+                                    height: 1.35,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       DropdownButtonFormField<String?>(
+                        // Long clinic names ellipsize instead of overflowing the field.
+                        isExpanded: true,
+                        dropdownColor: AppTheme.surface,
+                        elevation: 2,
+                        borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+                        icon: const Icon(
+                          Icons.expand_more_rounded,
+                          size: 18,
+                          color: AppTheme.iconMuted,
+                        ),
                         decoration: _inputDecoration(
                           label: 'Assigned Clinic',
                           icon: Icons.local_hospital_outlined,
@@ -949,6 +1452,7 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                       const SizedBox(height: 14),
                       TextFormField(
                         controller: _phoneController,
+                        inputFormatters: [_MaxDigitsTextInputFormatter(11)],
                         decoration: _inputDecoration(
                           label: 'Phone',
                           icon: Icons.phone_outlined,
@@ -979,7 +1483,7 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                             style: TextStyle(color: _muted, fontSize: 12),
                           ),
                           value: _changePassword,
-                          activeColor: _primary,
+                          activeThumbColor: _primary,
                           onChanged: (val) {
                             setState(() {
                               _changePassword = val;
@@ -1043,6 +1547,17 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                             onPressed: _isSaving
                                 ? null
                                 : () => Navigator.of(context).pop(false),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppTheme.textSecondary,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 18,
+                                vertical: 15,
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             child: const Text('Cancel'),
                           ),
                           const SizedBox(width: 10),
@@ -1059,20 +1574,462 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                                   )
                                 : const Icon(Icons.save_outlined),
                             label: Text(
-                              _isSaving ? 'Saving...' : 'Save Changes',
+                              _isSaving ? 'Updating...' : 'Update Account',
                             ),
                             style: FilledButton.styleFrom(
-                              backgroundColor: _primary,
-                              foregroundColor: Colors.white,
+                              backgroundColor: AppTheme.blue1,
+                              foregroundColor: AppTheme.white,
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 22,
-                                vertical: 17,
+                                horizontal: 20,
+                                vertical: 15,
                               ),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.rMd,
+                                ),
                               ),
                               textStyle: const TextStyle(
-                                fontWeight: FontWeight.w900,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BlurredAdminReactivateModal extends StatefulWidget {
+  final Map<String, dynamic> admin;
+
+  const _BlurredAdminReactivateModal({required this.admin});
+
+  @override
+  State<_BlurredAdminReactivateModal> createState() =>
+      _BlurredAdminReactivateModalState();
+}
+
+class _BlurredAdminReactivateModalState
+    extends State<_BlurredAdminReactivateModal> {
+  final _formKey = GlobalKey<FormState>();
+  final ProfileService _service = ProfileService();
+
+  bool _isSubmitting = false;
+  String? _errorMessage;
+
+  List<Map<String, dynamic>> _clinics = [];
+  Set<String> _clinicsWithAdmin = {};
+  String? _selectedClinicId;
+
+  static const Color _primary = Color(0xFF0F719F);
+  static const Color _dark = Color(0xFF0F3A55);
+  static const Color _muted = Color(0xFF647583);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadClinics();
+    _loadAdmins();
+  }
+
+  // Same clinic query already used by the Create/Edit modals -- excludes
+  // closed centers, matching the existing pattern.
+  Future<void> _loadClinics() async {
+    final data = await SupabaseConfig.client
+        .from('clinics')
+        .select()
+        .or('status.is.null,status.neq.closed')
+        .order('name', ascending: true);
+
+    if (!mounted) return;
+
+    setState(() {
+      _clinics = List<Map<String, dynamic>>.from(data);
+    });
+  }
+
+  // Same "which clinics already have an active admin" query already used by
+  // the Create/Edit modals. status='active' + is_active=true here means an
+  // inactive admin's old clinic_id (already cleared to null by deleteAdmin
+  // anyway) never counts against availability.
+  Future<void> _loadAdmins() async {
+    final data = await SupabaseConfig.client
+        .from('profiles')
+        .select('clinic_id')
+        .eq('role', 'admin')
+        .eq('status', 'active')
+        .eq('is_active', true)
+        .not('clinic_id', 'is', null);
+
+    if (!mounted) return;
+
+    setState(() {
+      _clinicsWithAdmin = data
+          .map((e) => e['clinic_id']?.toString())
+          .whereType<String>()
+          .toSet();
+    });
+  }
+
+  bool get _hasAvailableClinics =>
+      _clinics.any((clinic) => !_clinicsWithAdmin.contains(clinic['id']));
+
+  Future<void> _reactivate() async {
+    // Explicit re-entrancy guard: the onPressed: _isSubmitting ? null : ...
+    // gate on the button only takes effect once the modal rebuilds, so two
+    // very fast taps/submits could otherwise both reach this handler before
+    // that rebuild happens. This stops a second submission cold even then.
+    if (_isSubmitting) return;
+
+    if (!_formKey.currentState!.validate()) return;
+
+    if (_selectedClinicId == null) {
+      setState(() {
+        _errorMessage = 'Please select a clinic.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await _service.reactivateAdmin(
+        adminId: widget.admin['id'] as String,
+        clinicId: _selectedClinicId!,
+      );
+
+      // Only record the audit entry once the update has actually succeeded,
+      // same principle applied to Edit in Subtask 3.
+      await ProfileService().logAction(
+        action: 'reactivate_admin',
+        targetId: widget.admin['id'],
+        targetName:
+            widget.admin['full_name'] ?? widget.admin['email'] ?? 'Unknown',
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _errorMessage = error.toString().replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  InputDecoration _inputDecoration({
+    required String label,
+    required IconData icon,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, color: _primary),
+      filled: true,
+      fillColor: const Color(0xFFF6FBFF),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Color(0xFFDCEAF2)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: _primary, width: 1.5),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fullName = (widget.admin['full_name'] as String?)?.trim();
+    final email = widget.admin['email'] as String? ?? '-';
+    final displayLabel = (fullName != null && fullName.isNotEmpty)
+        ? fullName
+        : email;
+    final hasAvailableClinics = _hasAvailableClinics;
+
+    return Stack(
+      children: [
+        BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: Container(color: const Color(0x4D1F2D3D)),
+        ),
+        Center(
+          child: Material(
+            color: Colors.transparent,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Container(
+                width: 560,
+                constraints: const BoxConstraints(maxWidth: 560),
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(AppTheme.rXl),
+                  border: Border.all(color: AppTheme.border),
+                  boxShadow: AppTheme.shadowMd,
+                ),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: _primary.withAlpha(22),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Icon(
+                              Icons.restart_alt_rounded,
+                              color: _primary,
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Reactivate Head Nurse Account',
+                                  style: TextStyle(
+                                    color: _dark,
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  displayLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: _muted,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: _isSubmitting
+                                ? null
+                                : () => Navigator.of(context).pop(false),
+                            icon: const Icon(Icons.close_rounded),
+                            color: _dark,
+                            tooltip: 'Close',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: const Color(0xFFE2EDF4)),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline_rounded,
+                              size: 20,
+                              color: _primary,
+                            ),
+                            SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'This account is currently inactive. Select a '
+                                'clinic to restore active access. The previous '
+                                'clinic assignment was not retained, so this '
+                                'is a new assignment.',
+                                style: TextStyle(
+                                  color: _muted,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      if (_errorMessage != null)
+                        Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(13),
+                          decoration: BoxDecoration(
+                            color: AppTheme.dangerSoft,
+                            borderRadius: BorderRadius.circular(AppTheme.rMd),
+                            border: Border.all(
+                              color: AppTheme.danger.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.error_outline_rounded,
+                                size: 18,
+                                color: AppTheme.danger,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _errorMessage!,
+                                  style: const TextStyle(
+                                    color: AppTheme.danger,
+                                    fontSize: 12.5,
+                                    height: 1.35,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Clinic Assignment',
+                          style: const TextStyle(
+                            color: _dark,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (!hasAvailableClinics)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF8E8),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: const Text(
+                            'No clinics are currently available for assignment.',
+                            style: TextStyle(
+                              color: Color(0xFF8A651C),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        )
+                      else
+                        DropdownButtonFormField<String>(
+                          // Long clinic names ellipsize instead of overflowing the field.
+                          isExpanded: true,
+                          dropdownColor: AppTheme.surface,
+                          elevation: 2,
+                          borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+                          icon: const Icon(
+                            Icons.expand_more_rounded,
+                            size: 18,
+                            color: AppTheme.iconMuted,
+                          ),
+                          decoration: _inputDecoration(
+                            label: 'Choose a clinic',
+                            icon: Icons.local_hospital_outlined,
+                          ),
+                          initialValue: _selectedClinicId,
+                          hint: const Text('Choose a clinic'),
+                          items: _clinics.map((clinic) {
+                            final clinicId = clinic['id'].toString();
+                            final hasAdmin = _clinicsWithAdmin.contains(
+                              clinicId,
+                            );
+
+                            return DropdownMenuItem<String>(
+                              value: clinicId,
+                              enabled: !hasAdmin,
+                              child: Text(
+                                '${clinic['name'] ?? 'Unnamed clinic'}'
+                                '${hasAdmin ? ' (Has Head Nurse Account)' : ''}',
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setState(() => _selectedClinicId = value);
+                          },
+                          validator: (value) =>
+                              value == null ? 'Please select a clinic.' : null,
+                        ),
+                      const SizedBox(height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: _isSubmitting
+                                ? null
+                                : () => Navigator.of(context).pop(false),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppTheme.textSecondary,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 18,
+                                vertical: 15,
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            child: const Text('Cancel'),
+                          ),
+                          const SizedBox(width: 10),
+                          FilledButton.icon(
+                            onPressed: (_isSubmitting || !hasAvailableClinics)
+                                ? null
+                                : _reactivate,
+                            icon: _isSubmitting
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.restart_alt_rounded),
+                            label: Text(
+                              _isSubmitting ? 'Reactivating...' : 'Reactivate',
+                            ),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppTheme.blue1,
+                              foregroundColor: AppTheme.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 15,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.rMd,
+                                ),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
@@ -1116,10 +2073,6 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
   Set<String> _clinicsWithAdmin = {};
   String? selectedClinicId;
 
-  static const Color _primary = Color(0xFF0F719F);
-  static const Color _dark = Color(0xFF0F3A55);
-  static const Color _muted = Color(0xFF647583);
-  static const Color _danger = Color(0xFFDE4D4D);
 
   @override
   void initState() {
@@ -1172,14 +2125,17 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
   }
 
   Future<void> _createAccount() async {
+    // Explicit re-entrancy guard: the onPressed: _isSubmitting ? null : ...
+    // gate on the button only takes effect once the modal rebuilds, so two
+    // very fast taps/submits could otherwise both reach this handler before
+    // that rebuild happens. This stops a second submission cold even then.
+    if (_isSubmitting) return;
+
     if (!_formKey.currentState!.validate()) return;
 
-    if (_passwordController.text != _confirmPasswordController.text) {
-      setState(() {
-        _errorMessage = 'Passwords do not match.';
-      });
-      return;
-    }
+    // Password match is already enforced by the Confirm Password field's own
+    // validator (_validateConfirmPassword) above, which the Form.validate()
+    // call just checked -- re-checking it here would be redundant.
 
     if (selectedClinicId == null) {
       setState(() {
@@ -1243,29 +2199,10 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
     required IconData icon,
     String? hint,
   }) {
-    return InputDecoration(
+    return AppTheme.field(
       labelText: label,
       hintText: hint,
-      prefixIcon: Icon(icon, color: _primary),
-      filled: true,
-      fillColor: const Color(0xFFF6FBFF),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Color(0xFFDCEAF2)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: _primary, width: 1.5),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: _danger),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: _danger, width: 1.5),
-      ),
+      prefixIcon: Icon(icon, size: 18, color: AppTheme.blue1),
     );
   }
 
@@ -1274,13 +2211,79 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
     return null;
   }
 
+  /// Reasonable, non-restrictive email format check: local-part@domain.tld,
+  /// no whitespace. Rejects obviously invalid input (missing "@", missing a
+  /// domain, missing a TLD) without imposing a stricter format than normal
+  /// email addresses actually use.
+  String? _validateEmail(String? value) {
+    final email = value?.trim() ?? '';
+
+    if (email.isEmpty) return 'Enter email address';
+
+    final emailPattern = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+    if (!emailPattern.hasMatch(email)) {
+      return 'Enter a valid email address';
+    }
+
+    return null;
+  }
+
+  /// Allows the characters normally found in a phone number (digits, spaces,
+  /// +, -, parentheses) and validates by digit count rather than one exact
+  /// formatting style -- same approach used for center Contact Number
+  /// validation elsewhere in this app.
+  String? _validatePhone(String? value) {
+    final phone = value?.trim() ?? '';
+
+    if (phone.isEmpty) return 'Enter phone number';
+
+    final allowedCharacters = RegExp(r'^[0-9+\-() ]+$');
+    if (!allowedCharacters.hasMatch(phone)) {
+      return 'Enter a valid phone number';
+    }
+
+    final digitsOnly = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digitsOnly.length < 7) {
+      return 'Enter a valid phone number';
+    }
+
+    return null;
+  }
+
+  /// Validates the same (trimmed) value that is actually sent to
+  /// Supabase Auth at submission time, so a password that passes here can
+  /// never fail length-wise once trimmed for signUp.
+  String? _validatePassword(String? value) {
+    final password = value?.trim() ?? '';
+
+    if (password.isEmpty) return 'Enter password';
+
+    if (password.length < 8) {
+      return 'Password must be at least 8 characters';
+    }
+
+    return null;
+  }
+
+  String? _validateConfirmPassword(String? value) {
+    final confirm = value?.trim() ?? '';
+
+    if (confirm.isEmpty) return 'Confirm your password';
+
+    if (confirm != _passwordController.text.trim()) {
+      return 'Passwords do not match';
+    }
+
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
         BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-          child: Container(color: const Color(0x880F3A55)),
+          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: Container(color: const Color(0x4D1F2D3D)),
         ),
         Center(
           child: Material(
@@ -1288,20 +2291,14 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: Container(
-                width: 620,
-                constraints: const BoxConstraints(maxWidth: 620),
+                width: 560,
+                constraints: const BoxConstraints(maxWidth: 560),
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FBFD),
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: Colors.white.withAlpha(180)),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x33000000),
-                      blurRadius: 35,
-                      offset: Offset(0, 18),
-                    ),
-                  ],
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(AppTheme.rXl),
+                  border: Border.all(color: AppTheme.border),
+                  boxShadow: AppTheme.shadowMd,
                 ),
                 child: Form(
                   key: _formKey,
@@ -1310,17 +2307,18 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: _primary.withAlpha(22),
-                              borderRadius: BorderRadius.circular(16),
+                            width: 40,
+                            height: 40,
+                            decoration: AppTheme.iconBox(
+                              AppTheme.accentBlueSoft,
                             ),
                             child: const Icon(
                               Icons.person_add_alt_1_rounded,
-                              color: _primary,
+                              color: AppTheme.blue1,
+                              size: 20,
                             ),
                           ),
-                          const SizedBox(width: 14),
+                          const SizedBox(width: 12),
                           const Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1328,15 +2326,20 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                                 Text(
                                   'Create Head Nurse Account',
                                   style: TextStyle(
-                                    color: _dark,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w900,
+                                    color: AppTheme.blue3,
+                                    fontSize: 17,
+                                    height: 1.3,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                                SizedBox(height: 4),
+                                SizedBox(height: 2),
                                 Text(
                                   'Assign clinic\'s head nurse and create login access.',
-                                  style: TextStyle(color: _muted, fontSize: 13),
+                                  style: TextStyle(
+                                    color: AppTheme.textMuted,
+                                    fontSize: 12.5,
+                                    height: 1.35,
+                                  ),
                                 ),
                               ],
                             ),
@@ -1345,62 +2348,95 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                             onPressed: _isSubmitting
                                 ? null
                                 : () => Navigator.of(context).pop(false),
-                            icon: const Icon(Icons.close_rounded),
-                            color: _dark,
+                            icon: const Icon(Icons.close_rounded, size: 19),
+                            color: AppTheme.iconMuted,
                             tooltip: 'Close',
                           ),
                         ],
                       ),
+                      const SizedBox(height: 16),
+                      const Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: AppTheme.border,
+                      ),
                       const SizedBox(height: 18),
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.all(14),
+                        padding: const EdgeInsets.all(13),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: const Color(0xFFE2EDF4)),
+                          color: AppTheme.surfaceTint,
+                          borderRadius: BorderRadius.circular(AppTheme.rMd),
+                          border: Border.all(color: AppTheme.border),
                         ),
                         child: const Row(
                           children: [
                             Icon(
                               Icons.info_outline_rounded,
-                              size: 20,
-                              color: _primary,
+                              size: 18,
+                              color: AppTheme.blue1,
                             ),
                             SizedBox(width: 10),
                             Expanded(
                               child: Text(
                                 'Only clinics without an existing head nurse account can be selected.',
                                 style: TextStyle(
-                                  color: _muted,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.textSecondary,
+                                  fontSize: 12.5,
+                                  height: 1.35,
+                                  fontWeight: FontWeight.w400,
                                 ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 16),
                       if (_errorMessage != null)
                         Container(
                           width: double.infinity,
                           margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.all(14),
+                          padding: const EdgeInsets.all(13),
                           decoration: BoxDecoration(
-                            color: _danger.withAlpha(22),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: _danger.withAlpha(40)),
-                          ),
-                          child: Text(
-                            _errorMessage!,
-                            style: const TextStyle(
-                              color: _danger,
-                              fontWeight: FontWeight.w700,
+                            color: AppTheme.dangerSoft,
+                            borderRadius: BorderRadius.circular(AppTheme.rMd),
+                            border: Border.all(
+                              color: AppTheme.danger.withValues(alpha: 0.25),
                             ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.error_outline_rounded,
+                                size: 18,
+                                color: AppTheme.danger,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _errorMessage!,
+                                  style: const TextStyle(
+                                    color: AppTheme.danger,
+                                    fontSize: 12.5,
+                                    height: 1.35,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       DropdownButtonFormField<String>(
+                        // Long clinic names ellipsize instead of overflowing the field.
+                        isExpanded: true,
+                        dropdownColor: AppTheme.surface,
+                        elevation: 2,
+                        borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+                        icon: const Icon(
+                          Icons.expand_more_rounded,
+                          size: 18,
+                          color: AppTheme.iconMuted,
+                        ),
                         decoration: _inputDecoration(
                           label: 'Assigned Clinic',
                           icon: Icons.local_hospital_outlined,
@@ -1450,25 +2486,20 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                           icon: Icons.email_outlined,
                           hint: 'Enter head nurse email',
                         ),
-                        validator: (value) {
-                          final email = value?.trim() ?? '';
-                          if (email.isEmpty) return 'Enter email address';
-                          if (!email.contains('@')) {
-                            return 'Enter a valid email address';
-                          }
-                          return null;
-                        },
+                        validator: _validateEmail,
                       ),
                       const SizedBox(height: 14),
                       TextFormField(
                         controller: _phoneController,
                         textInputAction: TextInputAction.next,
                         keyboardType: TextInputType.phone,
+                        inputFormatters: [_MaxDigitsTextInputFormatter(11)],
                         decoration: _inputDecoration(
                           label: 'Phone Number',
                           icon: Icons.phone_outlined,
                           hint: 'Enter phone number',
                         ),
+                        validator: _validatePhone,
                       ),
                       const SizedBox(height: 14),
                       TextFormField(
@@ -1480,6 +2511,7 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                               icon: Icons.lock_outline_rounded,
                               hint: 'Enter password',
                             ).copyWith(
+                              helperText: 'At least 8 characters',
                               suffixIcon: IconButton(
                                 icon: Icon(
                                   _obscurePassword
@@ -1493,8 +2525,7 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                                 },
                               ),
                             ),
-                        validator: (value) =>
-                            _requiredValidator(value, 'Enter password'),
+                        validator: _validatePassword,
                       ),
                       const SizedBox(height: 14),
                       TextFormField(
@@ -1519,15 +2550,7 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                                 },
                               ),
                             ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Confirm your password';
-                          }
-                          if (value != _passwordController.text) {
-                            return 'Passwords do not match';
-                          }
-                          return null;
-                        },
+                        validator: _validateConfirmPassword,
                       ),
                       const SizedBox(height: 24),
                       Row(
@@ -1537,6 +2560,17 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                             onPressed: _isSubmitting
                                 ? null
                                 : () => Navigator.of(context).pop(false),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppTheme.textSecondary,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 18,
+                                vertical: 15,
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             child: const Text('Cancel'),
                           ),
                           const SizedBox(width: 10),
@@ -1556,17 +2590,20 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                               _isSubmitting ? 'Creating...' : 'Create Account',
                             ),
                             style: FilledButton.styleFrom(
-                              backgroundColor: _primary,
-                              foregroundColor: Colors.white,
+                              backgroundColor: AppTheme.blue1,
+                              foregroundColor: AppTheme.white,
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 22,
-                                vertical: 17,
+                                horizontal: 20,
+                                vertical: 15,
                               ),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.rMd,
+                                ),
                               ),
                               textStyle: const TextStyle(
-                                fontWeight: FontWeight.w900,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
@@ -1647,11 +2684,15 @@ class _EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
   final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   const _EmptyState({
     required this.icon,
     required this.title,
     required this.message,
+    this.actionLabel,
+    this.onAction,
   });
 
   @override
@@ -1670,6 +2711,7 @@ class _EmptyState extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             title,
+            textAlign: TextAlign.center,
             style: const TextStyle(
               color: Color(0xFF0F3A55),
               fontWeight: FontWeight.w900,
@@ -1682,6 +2724,14 @@ class _EmptyState extends StatelessWidget {
             textAlign: TextAlign.center,
             style: const TextStyle(color: Color(0xFF647583), height: 1.4),
           ),
+          if (actionLabel != null && onAction != null) ...[
+            const SizedBox(height: 16),
+            TextButton.icon(
+              onPressed: onAction,
+              icon: const Icon(Icons.clear_all_rounded),
+              label: Text(actionLabel!),
+            ),
+          ],
         ],
       ),
     );

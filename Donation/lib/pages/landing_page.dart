@@ -1,14 +1,27 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'donation_page.dart';
+import '../theme/brand.dart';
+import '../widgets/decor.dart';
+import '../widgets/motion.dart';
+import '../widgets/ui.dart';
 import 'donation_option_page.dart';
 import 'login_page.dart';
 import 'more_details_page.dart';
 import 'signup_page.dart';
 
+/// The public face of CureNurture.
+///
+/// The page is written as a single argument, in order: what dialysis costs
+/// a patient, what a donation does about it, how giving actually works,
+/// and why the process can be trusted - with the donate action never more
+/// than a scroll away and permanently pinned in the navigation bar.
+///
+/// All of the auth handling, navigation targets and the verified-donation
+/// stream below are the ones this page has always used; only how they are
+/// presented has changed.
 class LandingPage extends StatefulWidget {
   const LandingPage({super.key});
 
@@ -25,13 +38,18 @@ class _LandingPageState extends State<LandingPage>
   late final Animation<double> _fadeAnimation;
   late final Animation<Offset> _slideAnimation;
 
-  final Color _brandBlue = const Color(0xFF0D6EFD);
-  final Color _darkTeal = const Color(0xFF164D66);
-  final Color _midTeal = const Color(0xFF1F6F8B);
-  final Color _accentTeal = const Color(0xFF2F8F9D);
-  final Color _softBlue = const Color(0xFFEAF7FB);
-  final Color _surface = const Color(0xFFF6FAFD);
-  final Color _ink = const Color(0xFF17324D);
+  final ScrollController _scrollController = ScrollController();
+
+  // Anchors for the navigation bar's in-page links.
+  final GlobalKey _whyKey = GlobalKey();
+  final GlobalKey _helpsKey = GlobalKey();
+  final GlobalKey _howKey = GlobalKey();
+  final GlobalKey _trustKey = GlobalKey();
+
+  /// Number of dialysis centres on record. Null until loaded, and left null
+  /// if the read fails - the tile is then hidden rather than showing a
+  /// figure that might be wrong.
+  int? _centerCount;
 
   @override
   void initState() {
@@ -61,12 +79,15 @@ class _LandingPageState extends State<LandingPage>
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
 
     _controller.forward();
+
+    _loadCenterCount();
   }
 
   @override
   void dispose() {
     _authSubscription.cancel();
     _controller.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -98,6 +119,26 @@ class _LandingPageState extends State<LandingPage>
     }
   }
 
+  /// Reads the dialysis centre list purely to show how many there are.
+  ///
+  /// Same table and filter the donation form already uses, so it needs no
+  /// access the site does not already have. A failure is swallowed on
+  /// purpose: the statistics band simply drops that one tile.
+  Future<void> _loadCenterCount() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('clinics')
+          .select('id')
+          .or('status.is.null,status.neq.closed');
+
+      if (!mounted) return;
+      setState(() => _centerCount = (response as List).length);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _centerCount = null);
+    }
+  }
+
   void _openLogin(BuildContext context) {
     Navigator.of(
       context,
@@ -111,14 +152,15 @@ class _LandingPageState extends State<LandingPage>
   }
 
   void _openDonation(BuildContext context) {
-  Navigator.of(
-    context,
-  ).push(
-    MaterialPageRoute(
-      builder: (_) => const DonationOptionPage(),
-    ),
-  );
-}
+    Navigator.of(
+      context,
+    ).push(
+      MaterialPageRoute(
+        builder: (_) => const DonationOptionPage(),
+      ),
+    );
+  }
+
   void _openMoreDetails(BuildContext context) {
     Navigator.of(
       context,
@@ -135,6 +177,21 @@ class _LandingPageState extends State<LandingPage>
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LandingPage()),
       (route) => false,
+    );
+  }
+
+  /// Smooth-scrolls to one of the in-page anchors.
+  void _scrollTo(GlobalKey key) {
+    final context = key.currentContext;
+    if (context == null) return;
+
+    Scrollable.ensureVisible(
+      context,
+      duration: Motion.reduced(this.context)
+          ? Duration.zero
+          : const Duration(milliseconds: 620),
+      curve: Curves.easeInOutCubic,
+      alignment: 0.04,
     );
   }
 
@@ -160,205 +217,99 @@ class _LandingPageState extends State<LandingPage>
         });
   }
 
-  bool _isMobile(double width) => width < 760;
-  bool _isTablet(double width) => width >= 760 && width < 1050;
+  /// The same verified records, reduced to the two totals shown in the
+  /// statistics band. Nothing is estimated or projected - it is a count and
+  /// a sum of rows that exist.
+  Stream<({int count, double total})> get _verifiedTotalsStream {
+    return Supabase.instance.client
+        .from('donations')
+        .stream(primaryKey: ['id'])
+        .eq('status', 'verified')
+        .map((data) {
+          double total = 0;
 
-  Widget _fadeSlide({required Widget child, int delay = 0}) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
-      duration: Duration(milliseconds: 650 + delay),
-      curve: Curves.easeOutCubic,
-      builder: (context, value, _) {
-        return Opacity(
-          opacity: value,
-          child: Transform.translate(
-            offset: Offset(0, 26 * (1 - value)),
-            child: child,
-          ),
-        );
-      },
-    );
+          for (final item in data) {
+            total +=
+                double.tryParse(item['amount']?.toString() ?? '0') ?? 0;
+          }
+
+          return (count: data.length, total: total);
+        });
   }
 
-  Widget _maxWidth({required Widget child}) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1180),
-        child: child,
+  bool _isMobile(double width) => Brand.isMobile(width);
+
+  // ------------------------------------------------------------------ nav
+
+  Widget _navLink(String label, GlobalKey target) {
+    return TextButton(
+      onPressed: () => _scrollTo(target),
+      style: ButtonStyle(
+        foregroundColor: const WidgetStatePropertyAll(Brand.brandDeep),
+        overlayColor: const WidgetStatePropertyAll(Brand.sky),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        ),
+        textStyle: const WidgetStatePropertyAll(
+          TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
+        ),
+        shape: WidgetStateProperty.resolveWith((states) {
+          return RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: states.contains(WidgetState.focused)
+                ? const BorderSide(color: Brand.brand, width: 2)
+                : BorderSide.none,
+          );
+        }),
       ),
+      child: Text(label),
     );
   }
 
-  Widget _sectionPadding({
-    required Widget child,
-    Color? color,
-    EdgeInsets? padding,
-  }) {
-    return Container(
-      width: double.infinity,
-      color: color,
-      padding:
-          padding ?? const EdgeInsets.symmetric(horizontal: 28, vertical: 86),
-      child: _maxWidth(child: child),
-    );
-  }
-
-  Widget _sectionHeader({
-    required String eyebrow,
-    required String title,
-    required String subtitle,
-    bool light = false,
-  }) {
-    return Column(
+  Widget _brandMark() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: light
-                ? Colors.white.withOpacity(0.14)
-                : _accentTeal.withOpacity(0.10),
-            borderRadius: BorderRadius.circular(100),
-            border: Border.all(
-              color: light
-                  ? Colors.white.withOpacity(0.18)
-                  : _accentTeal.withOpacity(0.16),
-            ),
-          ),
-          child: Text(
-            eyebrow.toUpperCase(),
-            style: TextStyle(
-              color: light ? Colors.white : _accentTeal,
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.4,
-            ),
+          height: 46,
+          width: 46,
+          padding: const EdgeInsets.all(5),
+          decoration: Brand.iconBox(Brand.sky, radius: 15),
+          child: Image.asset(
+            'lib/assets/image/CureNurture_logo.png',
+            fit: BoxFit.contain,
+            semanticLabel: 'CureNurture logo',
           ),
         ),
-        const SizedBox(height: 18),
-        Text(
-          title,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: light ? Colors.white : _ink,
-            fontSize: 34,
-            fontWeight: FontWeight.w900,
-            height: 1.15,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 14),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: light
-                  ? Colors.white.withOpacity(0.80)
-                  : Colors.blueGrey.shade700,
-              fontSize: 16,
-              height: 1.75,
+        const SizedBox(width: 11),
+        const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Cure',
+              style: TextStyle(
+                fontFamily: Brand.displayFont,
+                fontSize: 21,
+                fontWeight: FontWeight.w700,
+                color: Brand.teal,
+                height: 1,
+              ),
             ),
-          ),
+            Text(
+              'NURTURE',
+              style: TextStyle(
+                fontFamily: Brand.displayFont,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                color: Brand.brandDeep,
+                letterSpacing: 1.8,
+                height: 1.3,
+              ),
+            ),
+          ],
         ),
       ],
-    );
-  }
-
-  Widget _primaryButton({
-    required String text,
-    required VoidCallback onPressed,
-    IconData icon = Icons.favorite_rounded,
-    Color? backgroundColor,
-    Color? foregroundColor,
-  }) {
-    return ElevatedButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 19),
-      label: Text(text),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: backgroundColor ?? _accentTeal,
-        foregroundColor: foregroundColor ?? Colors.white,
-        elevation: 0,
-        padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 18),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        textStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
-      ),
-    );
-  }
-
-  Widget _secondaryButton({
-    required String text,
-    required VoidCallback onPressed,
-    IconData icon = Icons.info_outline_rounded,
-    bool light = false,
-  }) {
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 18),
-      label: Text(text),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: light ? Colors.white : _darkTeal,
-        side: BorderSide(
-          color: light ? Colors.white.withOpacity(0.7) : _darkTeal,
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        textStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
-      ),
-    );
-  }
-
-  Widget _glassBadge({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.14),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withOpacity(0.18)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            height: 46,
-            width: 46,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.18),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(icon, color: Colors.white, size: 24),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.74),
-                    fontSize: 12.5,
-                    height: 1.35,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -367,220 +318,260 @@ class _LandingPageState extends State<LandingPage>
       pinned: true,
       floating: false,
       elevation: 0,
-      backgroundColor: Colors.white.withOpacity(0.98),
+      scrolledUnderElevation: 0,
+      backgroundColor: Brand.white,
       surfaceTintColor: Colors.transparent,
-      toolbarHeight: 78,
-      titleSpacing: 24,
-      title: Row(
-        children: [
-          Container(
-            height: 48,
-            width: 48,
-            padding: const EdgeInsets.all(5),
-            decoration: BoxDecoration(
-              color: _softBlue,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Image.asset(
-              'lib/assets/image/CureNurture_logo.png',
-              fit: BoxFit.contain,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Cure',
-                style: TextStyle(
-                  fontFamily: 'Montserrat',
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
-                  color: _accentTeal,
-                  height: 1,
-                ),
-              ),
-              Text(
-                'NURTURE',
-                style: TextStyle(
-                  fontFamily: 'Montserrat',
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: _darkTeal,
-                  letterSpacing: 1.6,
-                ),
-              ),
-            ],
-          ),
-        ],
+      toolbarHeight: 76,
+      titleSpacing: 0,
+      automaticallyImplyLeading: false,
+      // A hairline keeps the pinned bar separated from the content that
+      // scrolls beneath it.
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(1),
+        child: Container(height: 1, color: Brand.border),
       ),
-      actions: [
-        Builder(
-          builder: (context) {
-            final width = MediaQuery.of(context).size.width;
+      title: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = MediaQuery.of(context).size.width;
+          final mobile = _isMobile(width);
+          final compact = width < 1180;
 
-            if (_isMobile(width)) {
-              return Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: PopupMenuButton<String>(
-                  icon: Icon(Icons.menu_rounded, color: _darkTeal),
-                  onSelected: (value) {
-                    if (value == 'login') _openLogin(context);
-                    if (value == 'signup') _openSignup(context);
-                    if (value == 'donate') _openDonation(context);
-                    if (value == 'logout') _logout(context);
-                  },
-                  itemBuilder: (_) {
-                    if (_displayName == null) {
-                      return const [
-                        PopupMenuItem(value: 'donate', child: Text('Donate')),
-                        PopupMenuItem(value: 'login', child: Text('Log In')),
-                        PopupMenuItem(value: 'signup', child: Text('Sign Up')),
-                      ];
-                    }
+          return Padding(
+            padding: EdgeInsets.symmetric(horizontal: Brand.gutter(width)),
+            child: Row(
+              children: [
+                _brandMark(),
+                const Spacer(),
 
-                    return const [
-                      PopupMenuItem(value: 'donate', child: Text('Donate')),
-                      PopupMenuItem(value: 'logout', child: Text('Logout')),
-                    ];
-                  },
-                ),
-              );
-            }
+                // In-page links disappear first when space runs short; the
+                // donate action never does.
+                if (!compact) ...[
+                  _navLink('Why it matters', _whyKey),
+                  _navLink('Your impact', _helpsKey),
+                  _navLink('How it works', _howKey),
+                  _navLink('Transparency', _trustKey),
+                  const SizedBox(width: 10),
+                ],
 
-            if (_displayName == null) {
-              return Padding(
-                padding: const EdgeInsets.only(right: 24),
-                child: Row(
-                  children: [
-                    TextButton(
-                      onPressed: () => _openLogin(context),
-                      style: TextButton.styleFrom(
-                        foregroundColor: _darkTeal,
-                        textStyle: const TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      child: const Text('Log In'),
+                if (mobile) ...[
+                  DonateButton(
+                    // Shortened on the narrowest phones so the brand mark,
+                    // donate action and menu always fit on one line.
+                    label: width < 430 ? 'Give' : 'Donate',
+                    onPressed: () => _openDonation(context),
+                    semanticLabel: 'Donate now',
+                  ),
+                  PopupMenuButton<String>(
+                    icon: const Icon(
+                      Icons.menu_rounded,
+                      color: Brand.brandDeep,
                     ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
+                    tooltip: 'Menu',
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    onSelected: (value) {
+                      if (value == 'login') _openLogin(context);
+                      if (value == 'signup') _openSignup(context);
+                      if (value == 'donate') _openDonation(context);
+                      if (value == 'logout') _logout(context);
+                      if (value == 'why') _scrollTo(_whyKey);
+                      if (value == 'helps') _scrollTo(_helpsKey);
+                      if (value == 'how') _scrollTo(_howKey);
+                      if (value == 'trust') _scrollTo(_trustKey);
+                    },
+                    itemBuilder: (_) {
+                      final links = <PopupMenuEntry<String>>[
+                        const PopupMenuItem(
+                          value: 'why',
+                          child: Text('Why it matters'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'helps',
+                          child: Text('Your impact'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'how',
+                          child: Text('How it works'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'trust',
+                          child: Text('Transparency'),
+                        ),
+                        const PopupMenuDivider(),
+                      ];
+
+                      if (_displayName == null) {
+                        return [
+                          ...links,
+                          const PopupMenuItem(
+                            value: 'donate',
+                            child: Text('Donate'),
+                          ),
+                          const PopupMenuItem(
+                            value: 'login',
+                            child: Text('Log In'),
+                          ),
+                          const PopupMenuItem(
+                            value: 'signup',
+                            child: Text('Sign Up'),
+                          ),
+                        ];
+                      }
+
+                      return [
+                        ...links,
+                        const PopupMenuItem(
+                          value: 'donate',
+                          child: Text('Donate'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'logout',
+                          child: Text('Logout'),
+                        ),
+                      ];
+                    },
+                  ),
+                ] else if (_displayName == null) ...[
+                  TextButton(
+                    onPressed: () => _openLogin(context),
+                    style: const ButtonStyle(
+                      foregroundColor: WidgetStatePropertyAll(
+                        Brand.brandDeep,
+                      ),
+                      overlayColor: WidgetStatePropertyAll(Brand.sky),
+                      textStyle: WidgetStatePropertyAll(
+                        TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
+                      ),
+                      padding: WidgetStatePropertyAll(
+                        EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      ),
+                    ),
+                    child: const Text('Log In'),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    height: 46,
+                    child: OutlinedButton(
                       onPressed: () => _openSignup(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _darkTeal,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 14,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Brand.brandDeep,
+                        side: BorderSide(
+                          color: Brand.brand.withValues(alpha: 0.45),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        textStyle: const TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w600,
                         ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      child: const Text(
-                        'Sign Up',
-                        style: TextStyle(fontWeight: FontWeight.w900),
+                      child: const Text('Sign Up'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  DonateButton(
+                    label: 'Donate Now',
+                    onPressed: () => _openDonation(context),
+                  ),
+                ] else ...[
+                  Flexible(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    _primaryButton(
-                      text: 'Donate',
-                      icon: Icons.favorite_rounded,
-                      onPressed: () => _openDonation(context),
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            return Padding(
-              padding: const EdgeInsets.only(right: 24),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _softBlue,
-                      borderRadius: BorderRadius.circular(100),
-                    ),
-                    child: Text(
-                      'Welcome, $_displayName',
-                      style: TextStyle(
-                        color: _darkTeal,
-                        fontWeight: FontWeight.w800,
+                      decoration: BoxDecoration(
+                        color: Brand.sky,
+                        borderRadius: BorderRadius.circular(100),
+                      ),
+                      child: Text(
+                        'Welcome, $_displayName',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Brand.label(14, color: Brand.brandDeep),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
                   IconButton(
                     tooltip: 'Logout',
-                    icon: Icon(Icons.logout_rounded, color: _darkTeal),
+                    icon: const Icon(
+                      Icons.logout_rounded,
+                      color: Brand.brandDeep,
+                    ),
                     onPressed: () => _logout(context),
                   ),
+                  const SizedBox(width: 10),
+                  DonateButton(
+                    label: 'Donate Now',
+                    onPressed: () => _openDonation(context),
+                  ),
                 ],
-              ),
-            );
-          },
-        ),
-      ],
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
+
+  // ----------------------------------------------------------------- hero
 
   Widget _buildHero() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final mobile = _isMobile(constraints.maxWidth);
+        final width = MediaQuery.of(context).size.width;
+        final mobile = _isMobile(width);
 
         return Container(
           width: double.infinity,
-          decoration: const BoxDecoration(
-            image: DecorationImage(
-              image: AssetImage('lib/assets/image/gradient_background.png'),
-              fit: BoxFit.cover,
-            ),
-          ),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: mobile ? 22 : 28,
-              vertical: mobile ? 62 : 88,
-            ),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  _darkTeal.withOpacity(0.96),
-                  _midTeal.withOpacity(0.86),
-                  _accentTeal.withOpacity(0.62),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+          decoration: const BoxDecoration(gradient: Brand.deepGradient),
+          child: Stack(
+            children: [
+              const Positioned.fill(child: FlowBackdrop()),
+              const Positioned.fill(
+                child: DriftField(color: Colors.white, count: 6),
               ),
-            ),
-            child: _maxWidth(
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: SlideTransition(
-                  position: _slideAnimation,
-                  child: mobile
-                      ? Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _heroText(mobile: true),
-                            const SizedBox(height: 32),
-                            _heroCard(),
-                          ],
-                        )
-                      : Row(
-                          children: [
-                            Expanded(flex: 6, child: _heroText()),
-                            const SizedBox(width: 48),
-                            Expanded(flex: 4, child: _heroCard()),
-                          ],
-                        ),
+              Padding(
+                padding: EdgeInsets.only(
+                  top: mobile ? 56 : 84,
+                  bottom: mobile ? 44 : 72,
+                ),
+                child: ContentColumn(
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: SlideTransition(
+                      position: _slideAnimation,
+                      child: mobile
+                          ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                _heroText(mobile: true),
+                                const SizedBox(height: 40),
+                                _heroCard(),
+                              ],
+                            )
+                          : Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Expanded(flex: 7, child: _heroText()),
+                                const SizedBox(width: 56),
+                                Expanded(flex: 5, child: _heroCard()),
+                              ],
+                            ),
+                    ),
+                  ),
                 ),
               ),
-            ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: PulseLine(height: mobile ? 30 : 42),
+              ),
+            ],
           ),
         );
       },
@@ -590,101 +581,442 @@ class _LandingPageState extends State<LandingPage>
   Widget _heroText({bool mobile = false}) {
     return Column(
       crossAxisAlignment: mobile
-          ? CrossAxisAlignment.center
+          ? CrossAxisAlignment.stretch
           : CrossAxisAlignment.start,
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.14),
-            borderRadius: BorderRadius.circular(100),
-            border: Border.all(color: Colors.white.withOpacity(0.22)),
-          ),
-          child: const Text(
-            'Compassion in Action',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.4,
+        Align(
+          alignment: mobile ? Alignment.centerLeft : Alignment.centerLeft,
+          child: const Eyebrow('Compassion in action', light: true),
+        ),
+        const SizedBox(height: 26),
+        Text(
+          'Help keep hope flowing.',
+          textAlign: TextAlign.left,
+          style: Brand.display(mobile ? 40 : 62, color: Colors.white),
+        ),
+        const SizedBox(height: 20),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 620),
+          child: Text(
+            'Dialysis does not stop. For the people who depend on it, treatment '
+            'is a part of every week — and so is the cost of getting there. '
+            'CureNurture lets you send support straight to the dialysis centres '
+            'that care for them.',
+            style: Brand.body(
+              mobile ? 15.5 : 17.5,
+              color: Colors.white.withValues(alpha: 0.86),
             ),
-          ),
-        ),
-        const SizedBox(height: 28),
-        Text(
-          'Help dialysis patients continue their fight for life.',
-          textAlign: mobile ? TextAlign.center : TextAlign.left,
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: mobile ? 38 : 58,
-            height: 1.04,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -1.4,
-          ),
-        ),
-        const SizedBox(height: 22),
-        Text(
-          'CureNurture connects generous donors with patients who need urgent support for dialysis treatment, medicines, transportation, and essential care.',
-          textAlign: mobile ? TextAlign.center : TextAlign.left,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.86),
-            fontSize: mobile ? 16 : 18,
-            height: 1.75,
           ),
         ),
         const SizedBox(height: 34),
-        Wrap(
-          alignment: mobile ? WrapAlignment.center : WrapAlignment.start,
-          spacing: 14,
-          runSpacing: 14,
+        if (mobile) ...[
+          DonateButton(
+            label: 'Donate Now',
+            onPressed: () => _openDonation(context),
+            expand: true,
+            large: true,
+          ),
+          const SizedBox(height: 12),
+          GhostButton(
+            label: 'Learn More',
+            icon: Icons.arrow_forward_rounded,
+            light: true,
+            expand: true,
+            onPressed: () => _openMoreDetails(context),
+          ),
+        ] else
+          Wrap(
+            spacing: 14,
+            runSpacing: 14,
+            children: [
+              DonateButton(
+                label: 'Donate Now',
+                onPressed: () => _openDonation(context),
+                large: true,
+              ),
+              GhostButton(
+                label: 'Learn More',
+                icon: Icons.arrow_forward_rounded,
+                light: true,
+                onPressed: () => _openMoreDetails(context),
+              ),
+            ],
+          ),
+        const SizedBox(height: 32),
+        const Wrap(
+          spacing: 10,
+          runSpacing: 10,
           children: [
-            _primaryButton(
-              text: 'Donate Now',
-              icon: Icons.volunteer_activism_rounded,
-              onPressed: () => _openDonation(context),
-              backgroundColor: Colors.white,
-              foregroundColor: _darkTeal,
-            ),
-            _secondaryButton(
-              text: 'Learn More',
-              icon: Icons.arrow_forward_rounded,
+            TrustPill(
+              icon: Icons.tune_rounded,
+              text: 'You choose where it goes',
               light: true,
-              onPressed: () => _openMoreDetails(context),
             ),
-          ],
-        ),
-        const SizedBox(height: 34),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            _trustPill(Icons.verified_rounded, 'Verified donations'),
-            _trustPill(Icons.lock_rounded, 'Secure giving'),
-            _trustPill(Icons.favorite_rounded, 'Patient-centered'),
+            TrustPill(
+              icon: Icons.verified_rounded,
+              text: 'Every gift is recorded',
+              light: true,
+            ),
+            TrustPill(
+              icon: Icons.visibility_off_rounded,
+              text: 'Give anonymously if you prefer',
+              light: true,
+            ),
           ],
         ),
       ],
     );
   }
 
-  Widget _trustPill(IconData icon, String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+  Widget _heroCard() {
+    final card = Container(
+      padding: const EdgeInsets.all(30),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.13),
-        borderRadius: BorderRadius.circular(100),
-        border: Border.all(color: Colors.white.withOpacity(0.18)),
+        color: Brand.white,
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: Brand.shadowLift,
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Column(
         children: [
-          Icon(icon, color: Colors.white, size: 17),
-          const SizedBox(width: 8),
+          const CareGlyph(size: 96),
+          const SizedBox(height: 22),
           Text(
-            text,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.88),
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
+            'Your donation becomes care.',
+            textAlign: TextAlign.center,
+            style: Brand.heading(25),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Every contribution helps ease the weight of ongoing treatment, and '
+            'tells a patient that someone they have never met decided to help.',
+            textAlign: TextAlign.center,
+            style: Brand.body(14.5),
+          ),
+          const SizedBox(height: 24),
+          DonateButton(
+            label: 'Donate Now',
+            onPressed: () => _openDonation(context),
+            expand: true,
+          ),
+        ],
+      ),
+    );
+
+    return Floating(
+      amplitude: 7,
+      seconds: 9,
+      child: card,
+    );
+  }
+
+  // ----------------------------------------------------------- statistics
+
+  /// Live figures drawn from verified donation records.
+  ///
+  /// Only ever renders what the database actually returns. When there are
+  /// no verified donations yet it says so plainly rather than displaying a
+  /// row of zeroes dressed up as achievements.
+  Widget _buildStats() {
+    return Transform.translate(
+      offset: const Offset(0, -34),
+      child: ContentColumn(
+        child: StreamBuilder<({int count, double total})>(
+          stream: _verifiedTotalsStream,
+          builder: (context, snapshot) {
+            final data = snapshot.data;
+            final waiting =
+                snapshot.connectionState == ConnectionState.waiting;
+
+            return Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 28,
+                vertical: 30,
+              ),
+              decoration: BoxDecoration(
+                color: Brand.white,
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(color: Brand.border),
+                boxShadow: Brand.shadowCard,
+              ),
+              child: Column(
+                children: [
+                  if (waiting)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: CircularProgressIndicator(color: Brand.teal),
+                    )
+                  else if (data == null || data.count == 0)
+                    _statsEmpty()
+                  else
+                    ResponsiveRow(
+                      breakpoint: 760,
+                      gap: 24,
+                      children: [
+                        _statTile(
+                          icon: Icons.verified_rounded,
+                          accent: Brand.mint,
+                          accentSoft: Brand.mintSoft,
+                          value: data.count,
+                          label: 'Verified donations recorded',
+                        ),
+                        _statTile(
+                          icon: Icons.favorite_rounded,
+                          accent: Brand.coral,
+                          accentSoft: Brand.coralSoft,
+                          value: data.total,
+                          prefix: '₱',
+                          label: 'Total contributed by donors',
+                        ),
+                        if (_centerCount != null)
+                          _statTile(
+                            icon: Icons.local_hospital_rounded,
+                            accent: Brand.brand,
+                            accentSoft: Brand.sky,
+                            value: _centerCount!,
+                            label: 'Dialysis centres you can support',
+                          ),
+                      ],
+                    ),
+                  const SizedBox(height: 22),
+                  Text(
+                    'These figures come directly from verified donation '
+                    'records in the CureNurture system, and update as new '
+                    'donations are recorded.',
+                    textAlign: TextAlign.center,
+                    style: Brand.body(12.5, color: Brand.textMuted),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _statsEmpty() {
+    return Column(
+      children: [
+        Container(
+          height: 56,
+          width: 56,
+          decoration: Brand.iconBox(Brand.coralSoft, radius: 18),
+          child: const Icon(
+            Icons.volunteer_activism_rounded,
+            color: Brand.coral,
+            size: 28,
+          ),
+        ),
+        const SizedBox(height: 18),
+        Text(
+          'No verified donations have been recorded yet.',
+          textAlign: TextAlign.center,
+          style: Brand.heading(21),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'Yours could be the first. Every donation recorded here helps a '
+          'dialysis centre support the patients in its care.',
+          textAlign: TextAlign.center,
+          style: Brand.body(14.5),
+        ),
+        const SizedBox(height: 20),
+        DonateButton(
+          label: 'Be the first to give',
+          onPressed: () => _openDonation(context),
+        ),
+      ],
+    );
+  }
+
+  Widget _statTile({
+    required IconData icon,
+    required Color accent,
+    required Color accentSoft,
+    required num value,
+    required String label,
+    String prefix = '',
+  }) {
+    final width = MediaQuery.of(context).size.width;
+
+    return Reveal(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            height: 50,
+            width: 50,
+            decoration: Brand.iconBox(accentSoft, radius: 16),
+            child: Icon(icon, color: accent, size: 25),
+          ),
+          const SizedBox(height: 14),
+          CountUp(
+            value: value,
+            prefix: prefix,
+            style: Brand.display(
+              Brand.isMobile(width) ? 30 : 36,
+              color: Brand.textStrong,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: Brand.body(13.5, color: Brand.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ------------------------------------------------------- why it matters
+
+  Widget _buildWhyItMatters() {
+    final width = MediaQuery.of(context).size.width;
+    final mobile = _isMobile(width);
+
+    return Container(
+      key: _whyKey,
+      color: Brand.white,
+      padding: EdgeInsets.symmetric(vertical: Brand.sectionGap(width)),
+      child: ContentColumn(
+        child: ResponsiveRow(
+          breakpoint: 960,
+          gap: 56,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Reveal(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Eyebrow('Why your support matters'),
+                  const SizedBox(height: 18),
+                  Text(
+                    'Dialysis is not a one-time treatment.',
+                    style: Brand.display(mobile ? 28 : 38),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'For people living with kidney failure, dialysis is an '
+                    'ongoing part of life — often several sessions every week, '
+                    'continuing for years. It keeps them alive, and it keeps '
+                    'going.',
+                    style: Brand.body(mobile ? 15 : 16.5),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'That rhythm carries a weight that reaches well beyond the '
+                    'treatment itself: the journeys to and from a centre, the '
+                    'medicines in between, the working hours given up, the '
+                    'strain carried by an entire family. For many households '
+                    'those costs build up faster than they can be met.',
+                    style: Brand.body(mobile ? 15 : 16.5),
+                  ),
+                  const SizedBox(height: 26),
+                  _checkLine('Treatment that repeats, week after week'),
+                  _checkLine('Costs that reach beyond the clinic door'),
+                  _checkLine('Families carrying the load together'),
+                  const SizedBox(height: 30),
+                  GhostButton(
+                    label: 'Read more about our mission',
+                    icon: Icons.arrow_forward_rounded,
+                    expand: mobile,
+                    onPressed: () => _openMoreDetails(context),
+                  ),
+                ],
+              ),
+            ),
+            Reveal(
+              delayMs: 140,
+              child: _whyVisual(mobile: mobile),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _checkLine(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 24,
+            width: 24,
+            margin: const EdgeInsets.only(top: 2),
+            decoration: const BoxDecoration(
+              color: Brand.mintSoft,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.check_rounded, size: 15, color: Brand.mint),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(text, style: Brand.label(15, color: Brand.textBody)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A quiet illustrative panel, so the argument above has something to sit
+  /// beside instead of running as an unbroken wall of text.
+  Widget _whyVisual({required bool mobile}) {
+    return Container(
+      padding: EdgeInsets.all(mobile ? 26 : 34),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Brand.sky, Brand.tealSoft],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: Brand.teal.withValues(alpha: 0.14)),
+      ),
+      child: Column(
+        children: [
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Floating(
+                amplitude: 6,
+                seconds: 8,
+                child: CareGlyph(size: 112),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const PulseLine(color: Brand.teal, height: 34),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: Brand.white.withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  '“Support does not have to be large to matter. It has to '
+                  'arrive.”',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: Brand.displayFont,
+                    fontSize: mobile ? 17 : 19,
+                    height: 1.5,
+                    fontWeight: FontWeight.w700,
+                    color: Brand.brandDeep,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'CureNurture — Compassion in Action',
+                  textAlign: TextAlign.center,
+                  style: Brand.body(12.5, color: Brand.textMuted),
+                ),
+              ],
             ),
           ),
         ],
@@ -692,559 +1024,215 @@ class _LandingPageState extends State<LandingPage>
     );
   }
 
-  Widget _heroCard() {
-    return _fadeSlide(
-      delay: 180,
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.14),
-          borderRadius: BorderRadius.circular(34),
-          border: Border.all(color: Colors.white.withOpacity(0.20)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.14),
-              blurRadius: 36,
-              offset: const Offset(0, 24),
+  // ------------------------------------------------- how your donation helps
+
+  Widget _buildHowItHelps() {
+    final width = MediaQuery.of(context).size.width;
+
+    return Container(
+      key: _helpsKey,
+      color: Brand.canvas,
+      padding: EdgeInsets.symmetric(vertical: Brand.sectionGap(width)),
+      child: ContentColumn(
+        child: Column(
+          children: [
+            const SectionHeading(
+              eyebrow: 'How your donation helps',
+              title: 'Four ways your gift supports dialysis care.',
+              subtitle:
+                  'These are the areas CureNurture directs donor support '
+                  'toward. Where a particular donation lands depends on the '
+                  'dialysis centre you choose when you give.',
+            ),
+            const SizedBox(height: 48),
+            const ResponsiveRow(
+              breakpoint: 900,
+              gap: 20,
+              stagger: true,
+              equalHeight: true,
+              children: [
+                InfoCard(
+                  icon: Icons.medical_services_rounded,
+                  title: 'Treatment Support',
+                  text:
+                      'Helping dialysis centres keep treatment available for '
+                      'the patients who rely on them.',
+                  accent: Brand.teal,
+                  accentSoft: Brand.tealSoft,
+                ),
+                InfoCard(
+                  icon: Icons.favorite_rounded,
+                  title: 'Patient Assistance',
+                  text:
+                      'Easing the treatment-related needs that surround care, '
+                      'from getting to a centre to what follows.',
+                  accent: Brand.coral,
+                  accentSoft: Brand.coralSoft,
+                  filled: true,
+                ),
+                InfoCard(
+                  icon: Icons.local_hospital_rounded,
+                  title: 'Dialysis Centre Support',
+                  text:
+                      'Strengthening the centres themselves, so access to '
+                      'dialysis care holds steady in the communities they serve.',
+                  accent: Brand.brand,
+                  accentSoft: Brand.sky,
+                ),
+                InfoCard(
+                  icon: Icons.groups_rounded,
+                  title: 'Community Care',
+                  text:
+                      'Standing alongside patients and their families, so no '
+                      'one faces long-term treatment feeling alone.',
+                  accent: Brand.lavender,
+                  accentSoft: Brand.lavenderSoft,
+                ),
+              ],
+            ),
+            const SizedBox(height: 44),
+            Reveal(
+              child: _inlineCta(
+                title: 'Ready to help someone keep going?',
+                text:
+                    'It takes a few minutes, and you decide exactly where your '
+                    'donation goes.',
+              ),
             ),
           ],
         ),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(28),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(30),
-              ),
+      ),
+    );
+  }
+
+  /// A quieter mid-page prompt. Deliberately lighter than the closing
+  /// banner so the page asks without nagging.
+  Widget _inlineCta({required String title, required String text}) {
+    final width = MediaQuery.of(context).size.width;
+    final mobile = _isMobile(width);
+
+    return Container(
+      padding: EdgeInsets.all(mobile ? 26 : 32),
+      decoration: BoxDecoration(
+        color: Brand.white,
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(color: Brand.coral.withValues(alpha: 0.22)),
+        boxShadow: Brand.shadowSoft,
+      ),
+      child: ResponsiveRow(
+        breakpoint: 760,
+        gap: 22,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: Brand.heading(mobile ? 20 : 23)),
+              const SizedBox(height: 8),
+              Text(text, style: Brand.body(14.5)),
+            ],
+          ),
+          Align(
+            alignment: mobile ? Alignment.centerLeft : Alignment.centerRight,
+            child: DonateButton(
+              label: 'Donate Now',
+              onPressed: () => _openDonation(context),
+              expand: mobile,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // -------------------------------------------------------- how it works
+
+  /// The four steps below describe the donation flow exactly as the site
+  /// performs it: pick anonymous or signed-in, fill in amount and payment
+  /// channel, choose the allocation, and the donation is written to the
+  /// donation records.
+  Widget _buildHowItWorks() {
+    final width = MediaQuery.of(context).size.width;
+
+    return Container(
+      key: _howKey,
+      decoration: const BoxDecoration(gradient: Brand.brandGradient),
+      child: Stack(
+        children: [
+          const Positioned.fill(child: FlowBackdrop(opacity: 0.7)),
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: Brand.sectionGap(width)),
+            child: ContentColumn(
               child: Column(
                 children: [
-                  Container(
-                    width: 74,
-                    height: 74,
-                    decoration: BoxDecoration(
-                      color: _softBlue,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Icon(
-                      Icons.health_and_safety_rounded,
-                      color: _accentTeal,
-                      size: 40,
-                    ),
+                  const SectionHeading(
+                    eyebrow: 'How it works',
+                    title: 'Giving takes four steps.',
+                    subtitle:
+                        'No account is required unless you want your donation '
+                        'recorded under your name.',
+                    light: true,
                   ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Your donation becomes care.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: _ink,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      height: 1.15,
-                    ),
+                  const SizedBox(height: 48),
+                  ResponsiveRow(
+                    breakpoint: 980,
+                    gap: 18,
+                    equalHeight: true,
+                    children: [
+                      _stepCard(
+                        number: '01',
+                        icon: Icons.how_to_reg_rounded,
+                        title: 'Choose how to give',
+                        text:
+                            'Donate anonymously, or sign in to your donor '
+                            'account so the gift is recorded under your name.',
+                        delay: 0,
+                      ),
+                      _stepCard(
+                        number: '02',
+                        icon: Icons.edit_note_rounded,
+                        title: 'Enter your details',
+                        text:
+                            'Set the amount you would like to give and pick '
+                            'your payment channel — GCash or bank transfer.',
+                        delay: 90,
+                      ),
+                      _stepCard(
+                        number: '03',
+                        icon: Icons.alt_route_rounded,
+                        title: 'Decide where it goes',
+                        text:
+                            'Send it to a specific dialysis centre, have one '
+                            'assigned at random, or split it equally across '
+                            'every centre.',
+                        delay: 180,
+                      ),
+                      _stepCard(
+                        number: '04',
+                        icon: Icons.verified_rounded,
+                        title: 'Your gift is recorded',
+                        text:
+                            'The donation is saved to CureNurture’s verified '
+                            'records and routed to the centre or centres you '
+                            'chose.',
+                        delay: 270,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Every contribution helps ease the financial burden of treatment and reminds patients that they are not alone.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.blueGrey.shade700,
-                      height: 1.65,
-                      fontSize: 15,
+                  const SizedBox(height: 44),
+                  Reveal(
+                    child: DonateButton(
+                      label: 'Start your donation',
+                      onPressed: () => _openDonation(context),
+                      large: true,
+                      expand: _isMobile(width),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-            _glassBadge(
-              icon: Icons.receipt_long_rounded,
-              title: 'Transparent activity',
-              subtitle: 'Verified donation records are shown below.',
-            ),
-            const SizedBox(height: 12),
-            _glassBadge(
-              icon: Icons.groups_rounded,
-              title: 'Community-powered',
-              subtitle: 'Support comes from people who choose to care.',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildImpactStrip() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 30, 28, 36),
-      child: _maxWidth(
-        child: Container(
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(30),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 30,
-                offset: const Offset(0, 18),
-              ),
-            ],
-          ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final mobile = _isMobile(constraints.maxWidth);
-
-              final cards = [
-                _impactMini(
-                  Icons.medical_services_rounded,
-                  'Treatment Support',
-                  'Helping patients continue dialysis care.',
-                ),
-                _impactMini(
-                  Icons.directions_car_rounded,
-                  'Transport Assistance',
-                  'Supporting hospital and clinic visits.',
-                ),
-                _impactMini(
-                  Icons.medication_rounded,
-                  'Medicine & Supplies',
-                  'Reducing the pressure of daily expenses.',
-                ),
-                _impactMini(
-                  Icons.favorite_rounded,
-                  'Hope & Dignity',
-                  'Reminding families that they are not alone.',
-                ),
-              ];
-
-              return mobile
-                  ? Column(
-                      children: cards
-                          .map(
-                            (card) => Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: card,
-                            ),
-                          )
-                          .toList(),
-                    )
-                  : Row(
-                      children: cards
-                          .map((card) => Expanded(child: card))
-                          .toList(),
-                    );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _impactMini(IconData icon, String title, String subtitle) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      child: Row(
-        children: [
-          Container(
-            height: 48,
-            width: 48,
-            decoration: BoxDecoration(
-              color: _softBlue,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(icon, color: _accentTeal),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: _ink,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: Colors.blueGrey.shade600,
-                    height: 1.35,
-                    fontSize: 12.5,
-                  ),
-                ),
-              ],
-            ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildWhoWeAre() {
-    return _sectionPadding(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(28, 42, 28, 90),
-      child: Column(
-        children: [
-          _sectionHeader(
-            eyebrow: 'Who We Are',
-            title: 'A donation platform designed around compassion and trust.',
-            subtitle:
-                'CureNurture supports dialysis patients facing the financial challenges of life-saving treatment by connecting them with donors who want to create meaningful impact.',
-          ),
-          const SizedBox(height: 46),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final mobile = _isMobile(constraints.maxWidth);
-
-              final cards = [
-                _featureCard(
-                  icon: Icons.health_and_safety_rounded,
-                  title: 'Patient-centered support',
-                  text:
-                      'The platform focuses on helping patients access care, comfort, and dignity while facing kidney failure.',
-                ),
-                _featureCard(
-                  icon: Icons.volunteer_activism_rounded,
-                  title: 'Meaningful giving',
-                  text:
-                      'Donors can contribute to a mission where every act of generosity helps reduce real-life treatment burdens.',
-                ),
-                _featureCard(
-                  icon: Icons.verified_user_rounded,
-                  title: 'Trust-driven experience',
-                  text:
-                      'Verified donation activity builds confidence and helps show that support is active and transparent.',
-                ),
-              ];
-
-              return mobile
-                  ? Column(
-                      children: cards
-                          .map(
-                            (card) => Padding(
-                              padding: const EdgeInsets.only(bottom: 18),
-                              child: card,
-                            ),
-                          )
-                          .toList(),
-                    )
-                  : Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: cards[0]),
-                        const SizedBox(width: 18),
-                        Expanded(child: cards[1]),
-                        const SizedBox(width: 18),
-                        Expanded(child: cards[2]),
-                      ],
-                    );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _featureCard({
-    required IconData icon,
-    required String title,
-    required String text,
-  }) {
-    return _fadeSlide(
-      child: Container(
-        padding: const EdgeInsets.all(28),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: const Color(0xFFE5EEF3)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.045),
-              blurRadius: 26,
-              offset: const Offset(0, 16),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              height: 58,
-              width: 58,
-              decoration: BoxDecoration(
-                color: _softBlue,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Icon(icon, color: _accentTeal, size: 30),
-            ),
-            const SizedBox(height: 22),
-            Text(
-              title,
-              style: TextStyle(
-                color: _ink,
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              text,
-              style: TextStyle(
-                color: Colors.blueGrey.shade700,
-                height: 1.7,
-                fontSize: 14.8,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPurpose() {
-    return _sectionPadding(
-      color: _surface,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final mobile = _isMobile(constraints.maxWidth);
-
-          final left = Container(
-            padding: const EdgeInsets.all(36),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [_darkTeal, _midTeal],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(34),
-              boxShadow: [
-                BoxShadow(
-                  color: _darkTeal.withOpacity(0.18),
-                  blurRadius: 30,
-                  offset: const Offset(0, 18),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: mobile
-                  ? CrossAxisAlignment.center
-                  : CrossAxisAlignment.start,
-              children: [
-                Container(
-                  height: 62,
-                  width: 62,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  child: const Icon(
-                    Icons.favorite_rounded,
-                    color: Colors.white,
-                    size: 34,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  'Why CureNurture exists',
-                  textAlign: TextAlign.left,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 32,
-                    height: 1.15,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Kidney failure is not only a medical condition. It is a continuous emotional, physical, and financial struggle. CureNurture was created to make support more accessible for patients and families who need help the most.',
-                  textAlign: mobile ? TextAlign.center : TextAlign.left,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.82),
-                    height: 1.75,
-                    fontSize: 15.5,
-                  ),
-                ),
-                const SizedBox(height: 26),
-                _secondaryButton(
-                  text: 'Understand the Mission',
-                  icon: Icons.arrow_forward_rounded,
-                  light: true,
-                  onPressed: () => _openMoreDetails(context),
-                ),
-              ],
-            ),
-          );
-
-          final right = Container(
-            padding: const EdgeInsets.all(34),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(34),
-              border: Border.all(color: const Color(0xFFE3EEF4)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 26,
-                  offset: const Offset(0, 16),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Your generosity can help with:',
-                  style: TextStyle(
-                    color: _ink,
-                    fontSize: 25,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 22),
-                _checkItem('Dialysis treatment sessions'),
-                _checkItem('Medical supplies and medications'),
-                _checkItem('Transportation for hospital visits'),
-                _checkItem('Emergency procedures'),
-                _checkItem('Daily living essentials'),
-                _checkItem('Family stability and hope'),
-              ],
-            ),
-          );
-
-          return mobile
-              ? Column(children: [left, const SizedBox(height: 20), right])
-              : Row(
-                  children: [
-                    Expanded(child: left),
-                    const SizedBox(width: 24),
-                    Expanded(child: right),
-                  ],
-                );
-        },
-      ),
-    );
-  }
-
-  Widget _checkItem(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 15),
-      child: Row(
-        children: [
-          Container(
-            height: 28,
-            width: 28,
-            decoration: BoxDecoration(
-              color: _accentTeal.withOpacity(0.10),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(Icons.check_rounded, color: _accentTeal, size: 18),
-          ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                color: Colors.blueGrey.shade800,
-                fontWeight: FontWeight.w800,
-                height: 1.45,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHowItWorks() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 90),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [_darkTeal, _midTeal, _accentTeal],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: _maxWidth(
-        child: Column(
-          children: [
-            _sectionHeader(
-              eyebrow: 'How It Works',
-              title: 'A simple journey from compassion to real support.',
-              subtitle:
-                  'The landing page guides visitors from awareness to action, making the donation experience feel trustworthy, purposeful, and emotionally clear.',
-              light: true,
-            ),
-            const SizedBox(height: 46),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final mobile = _isMobile(constraints.maxWidth);
-
-                final steps = [
-                  _stepCard(
-                    number: '01',
-                    icon: Icons.search_rounded,
-                    title: 'Learn the cause',
-                    text:
-                        'Visitors understand the challenges dialysis patients face and why support matters.',
-                  ),
-                  _stepCard(
-                    number: '02',
-                    icon: Icons.favorite_rounded,
-                    title: 'Choose to donate',
-                    text:
-                        'A clear call-to-action encourages donors to take the next meaningful step.',
-                  ),
-                  _stepCard(
-                    number: '03',
-                    icon: Icons.verified_rounded,
-                    title: 'Donation is verified',
-                    text:
-                        'Verified activity increases confidence and strengthens transparency.',
-                  ),
-                  _stepCard(
-                    number: '04',
-                    icon: Icons.health_and_safety_rounded,
-                    title: 'Patients receive hope',
-                    text:
-                        'Support helps reduce financial pressure and restores dignity to families.',
-                  ),
-                ];
-
-                return mobile
-                    ? Column(
-                        children: steps
-                            .map(
-                              (step) => Padding(
-                                padding: const EdgeInsets.only(bottom: 16),
-                                child: step,
-                              ),
-                            )
-                            .toList(),
-                      )
-                    : Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(child: steps[0]),
-                          const SizedBox(width: 16),
-                          Expanded(child: steps[1]),
-                          const SizedBox(width: 16),
-                          Expanded(child: steps[2]),
-                          const SizedBox(width: 16),
-                          Expanded(child: steps[3]),
-                        ],
-                      );
-              },
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1254,51 +1242,148 @@ class _LandingPageState extends State<LandingPage>
     required IconData icon,
     required String title,
     required String text,
+    required int delay,
   }) {
-    return _fadeSlide(
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.96),
-          borderRadius: BorderRadius.circular(28),
-        ),
+    return Reveal(
+      delayMs: delay,
+      child: HoverLift(
+        lift: 8,
+        builder: (context, hovered) {
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 240),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: hovered ? 1 : 0.96),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: hovered ? Brand.shadowLift : Brand.shadowSoft,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      height: 50,
+                      width: 50,
+                      decoration: Brand.iconBox(Brand.sky, radius: 16),
+                      child: Icon(icon, color: Brand.brand, size: 25),
+                    ),
+                    const Spacer(),
+                    Text(
+                      number,
+                      style: TextStyle(
+                        fontFamily: Brand.displayFont,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w700,
+                        color: Brand.brand.withValues(alpha: 0.28),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Text(title, style: Brand.heading(18)),
+                const SizedBox(height: 9),
+                Text(text, style: Brand.body(14)),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // --------------------------------------------------------- transparency
+
+  Widget _buildTransparency() {
+    final width = MediaQuery.of(context).size.width;
+
+    return Container(
+      key: _trustKey,
+      color: Brand.white,
+      padding: EdgeInsets.symmetric(vertical: Brand.sectionGap(width)),
+      child: ContentColumn(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              number,
-              style: TextStyle(
-                color: _accentTeal.withOpacity(0.55),
-                fontSize: 32,
-                fontWeight: FontWeight.w900,
-              ),
+            const SectionHeading(
+              eyebrow: 'Transparency',
+              title: 'You should know what happens to your donation.',
+              subtitle:
+                  'Trust is not a claim a donation site gets to make about '
+                  'itself. These are simply the things CureNurture does with '
+                  'every gift it receives.',
             ),
-            const SizedBox(height: 12),
-            Container(
-              height: 56,
-              width: 56,
-              decoration: BoxDecoration(
-                color: _softBlue,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Icon(icon, color: _accentTeal, size: 28),
+            const SizedBox(height: 48),
+            const ResponsiveRow(
+              breakpoint: 900,
+              gap: 20,
+              stagger: true,
+              equalHeight: true,
+              children: [
+                InfoCard(
+                  icon: Icons.receipt_long_rounded,
+                  title: 'Every donation is recorded',
+                  text:
+                      'Each gift is written to CureNurture’s donation records '
+                      'with its amount, payment channel and date — and the '
+                      'verified ones appear publicly further down this page.',
+                  accent: Brand.mint,
+                  accentSoft: Brand.mintSoft,
+                ),
+                InfoCard(
+                  icon: Icons.alt_route_rounded,
+                  title: 'You choose the destination',
+                  text:
+                      'Your donation is not pooled out of sight. You pick the '
+                      'dialysis centre yourself, or knowingly hand that choice '
+                      'to a random or equal split.',
+                  accent: Brand.brand,
+                  accentSoft: Brand.sky,
+                ),
+                InfoCard(
+                  icon: Icons.pie_chart_rounded,
+                  title: 'Equal splits are itemised',
+                  text:
+                      'When a donation is shared across every centre, each '
+                      'centre’s exact share is recorded separately, so the '
+                      'split is on the record and not just a promise.',
+                  accent: Brand.teal,
+                  accentSoft: Brand.tealSoft,
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
-            Text(
-              title,
-              style: TextStyle(
-                color: _ink,
-                fontWeight: FontWeight.w900,
-                fontSize: 18,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              text,
-              style: TextStyle(
-                color: Colors.blueGrey.shade700,
-                height: 1.65,
-                fontSize: 13.8,
+            const SizedBox(height: 32),
+            Reveal(
+              child: Container(
+                padding: const EdgeInsets.all(22),
+                decoration: BoxDecoration(
+                  color: Brand.canvas,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Brand.border),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      height: 40,
+                      width: 40,
+                      decoration: Brand.iconBox(Brand.sky, radius: 13),
+                      child: const Icon(
+                        Icons.privacy_tip_rounded,
+                        color: Brand.brand,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        'Donating anonymously means exactly that: no name and '
+                        'no email address is stored against the donation, and '
+                        'it appears in the public list below as "Anonymous".',
+                        style: Brand.body(14, color: Brand.textBody),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -1307,496 +1392,522 @@ class _LandingPageState extends State<LandingPage>
     );
   }
 
-  Widget _buildTransparency() {
-    return _sectionPadding(
-      color: Colors.white,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final mobile = _isMobile(constraints.maxWidth);
-
-          final cards = [
-            _statementCard(
-              icon: Icons.visibility_rounded,
-              title: 'Our Vision',
-              text:
-                  'We envision a world where every dialysis patient has access to essential care without financial barriers.',
-            ),
-            _statementCard(
-              icon: Icons.shield_rounded,
-              title: 'Transparency',
-              text:
-                  'Trust is the foundation of CureNurture. Verified donation activity helps donors feel confident and informed.',
-            ),
-            _statementCard(
-              icon: Icons.handshake_rounded,
-              title: 'Community Care',
-              text:
-                  'Every act of giving creates a ripple of compassion for patients, families, and the community around them.',
-            ),
-          ];
-
-          return Column(
-            children: [
-              _sectionHeader(
-                eyebrow: 'Commitment',
-                title: 'Designed to feel credible, warm, and reassuring.',
-                subtitle:
-                    'A persuasive donation site should not only look beautiful. It should make visitors feel safe, informed, and ready to help.',
-              ),
-              const SizedBox(height: 46),
-              mobile
-                  ? Column(
-                      children: cards
-                          .map(
-                            (card) => Padding(
-                              padding: const EdgeInsets.only(bottom: 16),
-                              child: card,
-                            ),
-                          )
-                          .toList(),
-                    )
-                  : Row(
-                      children: [
-                        Expanded(child: cards[0]),
-                        const SizedBox(width: 18),
-                        Expanded(child: cards[1]),
-                        const SizedBox(width: 18),
-                        Expanded(child: cards[2]),
-                      ],
-                    ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _statementCard({
-    required IconData icon,
-    required String title,
-    required String text,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(28),
-      decoration: BoxDecoration(
-        color: _softBlue,
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: const Color(0xFFD8EAF0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: _accentTeal, size: 38),
-          const SizedBox(height: 20),
-          Text(
-            title,
-            style: TextStyle(
-              color: _ink,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            text,
-            style: TextStyle(
-              color: Colors.blueGrey.shade700,
-              height: 1.7,
-              fontSize: 14.8,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // ---------------------------------------------------- verified donations
 
   Widget _buildVerifiedDonations() {
-    return _sectionPadding(
-      color: _surface,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final mobile = _isMobile(constraints.maxWidth);
+    final width = MediaQuery.of(context).size.width;
+    final mobile = _isMobile(width);
 
-          final intro = Column(
-            crossAxisAlignment: mobile
-                ? CrossAxisAlignment.center
-                : CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: _brandBlue.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(100),
-                ),
-                child: Text(
-                  'LIVE TRUST SIGNAL',
-                  style: TextStyle(
-                    color: _brandBlue,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.3,
+    return Container(
+      color: Brand.canvas,
+      padding: EdgeInsets.symmetric(vertical: Brand.sectionGap(width)),
+      child: ContentColumn(
+        child: ResponsiveRow(
+          breakpoint: 960,
+          gap: 44,
+          children: [
+            Reveal(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Eyebrow('Live activity', color: Brand.mint),
+                  const SizedBox(height: 18),
+                  Text(
+                    'Verified donation activity.',
+                    style: Brand.display(mobile ? 28 : 36),
                   ),
-                ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'These are real donations that have been verified in the '
+                    'CureNurture system, newest first. The list updates on its '
+                    'own as new gifts are recorded.',
+                    style: Brand.body(mobile ? 15 : 16.5),
+                  ),
+                  const SizedBox(height: 28),
+                  DonateButton(
+                    label: 'Add your donation',
+                    onPressed: () => _openDonation(context),
+                    expand: mobile,
+                  ),
+                ],
               ),
-              const SizedBox(height: 18),
-              Text(
-                'Verified Donation Activity',
-                textAlign: mobile ? TextAlign.center : TextAlign.left,
-                style: TextStyle(
-                  color: _ink,
-                  fontSize: 34,
-                  height: 1.15,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                'Showing verified donations makes the page feel active and credible. It reassures visitors that others are already contributing to the mission.',
-                textAlign: mobile ? TextAlign.center : TextAlign.left,
-                style: TextStyle(
-                  color: Colors.blueGrey.shade700,
-                  height: 1.75,
-                  fontSize: 16,
-                ),
-              ),
-              const SizedBox(height: 26),
-              _primaryButton(
-                text: 'Become a Donor',
-                icon: Icons.volunteer_activism_rounded,
-                onPressed: () => _openDonation(context),
-              ),
-            ],
-          );
-
-          final streamList = StreamBuilder<List<Map<String, String>>>(
-            stream: _verifiedDonationsStream,
-            builder: (context, snapshot) {
-              final donations = snapshot.data ?? [];
-
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return Container(
-                  padding: const EdgeInsets.all(36),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: const Color(0xFFE4EEF3)),
-                  ),
-                  child: Center(
-                    child: CircularProgressIndicator(color: _accentTeal),
-                  ),
-                );
-              }
-
-              if (donations.isEmpty) {
-                return Container(
-                  padding: const EdgeInsets.all(28),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: const Color(0xFFE4EEF3)),
-                  ),
-                  child: Text(
-                    'No verified donations yet. Once donations are verified, they will appear here.',
-                    style: TextStyle(
-                      color: Colors.blueGrey.shade700,
-                      height: 1.6,
-                    ),
-                  ),
-                );
-              }
-
-              return Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(32),
-                  border: Border.all(color: const Color(0xFFE4EEF3)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.045),
-                      blurRadius: 26,
-                      offset: const Offset(0, 16),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: donations
-                      .take(5)
-                      .map((donation) => _verifiedDonationCard(donation))
-                      .toList(),
-                ),
-              );
-            },
-          );
-
-          return mobile
-              ? Column(
-                  children: [intro, const SizedBox(height: 30), streamList],
-                )
-              : Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: intro),
-                    const SizedBox(width: 36),
-                    Expanded(child: streamList),
-                  ],
-                );
-        },
+            ),
+            Reveal(delayMs: 120, child: _verifiedList()),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _verifiedList() {
+    return StreamBuilder<List<Map<String, String>>>(
+      stream: _verifiedDonationsStream,
+      builder: (context, snapshot) {
+        final donations = snapshot.data ?? [];
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            padding: const EdgeInsets.all(40),
+            decoration: Brand.card(radius: 28),
+            child: const Center(
+              child: CircularProgressIndicator(color: Brand.teal),
+            ),
+          );
+        }
+
+        if (donations.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(30),
+            decoration: Brand.card(radius: 28),
+            child: Column(
+              children: [
+                Container(
+                  height: 50,
+                  width: 50,
+                  decoration: Brand.iconBox(Brand.sky, radius: 16),
+                  child: const Icon(
+                    Icons.inbox_rounded,
+                    color: Brand.brand,
+                    size: 25,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No verified donations yet.',
+                  style: Brand.heading(18),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Once donations are verified they will appear here '
+                  'automatically.',
+                  textAlign: TextAlign.center,
+                  style: Brand.body(14),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: Brand.card(radius: 28, shadow: Brand.shadowCard),
+          child: Column(
+            children: [
+              for (int i = 0; i < donations.take(5).length; i++) ...[
+                if (i > 0) const SizedBox(height: 10),
+                _verifiedDonationCard(donations[i]),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 
   Widget _verifiedDonationCard(Map<String, String> donation) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE3EEF4)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            height: 52,
-            width: 52,
-            decoration: BoxDecoration(
-              color: _brandBlue.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Icon(Icons.verified_rounded, color: _brandBlue),
-          ),
-          const SizedBox(width: 15),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  donation['name'] ?? 'Anonymous',
-                  style: TextStyle(
-                    color: _ink,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  donation['date'] ?? '',
-                  style: TextStyle(
-                    color: Colors.blueGrey.shade500,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                donation['amount'] ?? '',
-                style: TextStyle(
-                  color: _ink,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 15,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 11,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: _brandBlue.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(100),
-                ),
-                child: Text(
-                  donation['status'] ?? 'Verified',
-                  style: TextStyle(
-                    color: _brandBlue,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFinalCta() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 94),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [_darkTeal, _midTeal],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: _maxWidth(
-        child: Container(
-          padding: const EdgeInsets.all(42),
+    return HoverLift(
+      lift: 3,
+      builder: (context, hovered) {
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.10),
-            borderRadius: BorderRadius.circular(36),
-            border: Border.all(color: Colors.white.withOpacity(0.18)),
+            color: hovered ? Brand.mintSoft : Brand.canvas,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: hovered
+                  ? Brand.mint.withValues(alpha: 0.35)
+                  : Brand.border,
+            ),
           ),
-          child: Column(
+          child: Row(
             children: [
               Container(
-                height: 78,
-                width: 78,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.16),
-                  borderRadius: BorderRadius.circular(26),
-                ),
+                height: 46,
+                width: 46,
+                decoration: Brand.iconBox(Brand.mintSoft, radius: 15),
                 child: const Icon(
-                  Icons.volunteer_activism_rounded,
-                  color: Colors.white,
-                  size: 42,
+                  Icons.verified_rounded,
+                  color: Brand.mint,
+                  size: 23,
                 ),
               ),
-              const SizedBox(height: 24),
-              const Text(
-                'Turn compassion into life-changing support.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 38,
-                  height: 1.14,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.5,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      donation['name'] ?? 'Anonymous',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Brand.label(15.5, color: Brand.textStrong),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      donation['date'] ?? '',
+                      style: Brand.body(12.5, color: Brand.textMuted),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 18),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
-                child: Text(
-                  'Your support can transform despair into hope and struggle into strength. Together, we nurture healing. Together, we save lives.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.82),
-                    height: 1.75,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
-              Wrap(
-                spacing: 14,
-                runSpacing: 14,
-                alignment: WrapAlignment.center,
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  _primaryButton(
-                    text: 'Donate Now',
-                    icon: Icons.favorite_rounded,
-                    onPressed: () => _openDonation(context),
-                    backgroundColor: Colors.white,
-                    foregroundColor: _darkTeal,
+                  Text(
+                    donation['amount'] ?? '',
+                    style: const TextStyle(
+                      fontFamily: Brand.displayFont,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Brand.textStrong,
+                    ),
                   ),
-                  _secondaryButton(
-                    text: 'Learn More',
-                    icon: Icons.arrow_forward_rounded,
-                    light: true,
-                    onPressed: () => _openMoreDetails(context),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Brand.mintSoft,
+                      borderRadius: BorderRadius.circular(100),
+                    ),
+                    child: Text(
+                      donation['status'] ?? 'Verified',
+                      style: const TextStyle(
+                        color: Brand.mint,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                 ],
               ),
             ],
           ),
-        ),
+        );
+      },
+    );
+  }
+
+  // ------------------------------------------------------------ final CTA
+
+  Widget _buildFinalCta() {
+    final width = MediaQuery.of(context).size.width;
+    final mobile = _isMobile(width);
+
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(gradient: Brand.deepGradient),
+      child: Stack(
+        children: [
+          const Positioned.fill(child: FlowBackdrop()),
+          Padding(
+            padding: EdgeInsets.symmetric(
+              vertical: mobile ? 72 : 100,
+            ),
+            child: ContentColumn(
+              maxWidth: 860,
+              child: Reveal(
+                child: Column(
+                  children: [
+                    Floating(
+                      amplitude: 6,
+                      seconds: 8,
+                      child: Container(
+                        height: 78,
+                        width: 78,
+                        decoration: BoxDecoration(
+                          gradient: Brand.coralGradient,
+                          borderRadius: BorderRadius.circular(26),
+                          boxShadow: Brand.shadowCoral,
+                        ),
+                        child: const Icon(
+                          Icons.volunteer_activism_rounded,
+                          color: Colors.white,
+                          size: 40,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    Text(
+                      'Your support can help make dialysis care more '
+                      'accessible.',
+                      textAlign: TextAlign.center,
+                      style: Brand.display(
+                        mobile ? 30 : 44,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      'Give once, give anonymously, or give to the centre '
+                      'closest to your heart. However you choose to help, it '
+                      'reaches someone for whom treatment is not optional.',
+                      textAlign: TextAlign.center,
+                      style: Brand.body(
+                        mobile ? 15 : 17,
+                        color: Colors.white.withValues(alpha: 0.84),
+                      ),
+                    ),
+                    const SizedBox(height: 34),
+                    if (mobile) ...[
+                      DonateButton(
+                        label: 'Donate Now',
+                        onPressed: () => _openDonation(context),
+                        expand: true,
+                        large: true,
+                      ),
+                      const SizedBox(height: 12),
+                      GhostButton(
+                        label: 'Learn More',
+                        icon: Icons.arrow_forward_rounded,
+                        light: true,
+                        expand: true,
+                        onPressed: () => _openMoreDetails(context),
+                      ),
+                    ] else
+                      Wrap(
+                        spacing: 14,
+                        runSpacing: 14,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          DonateButton(
+                            label: 'Donate Now',
+                            onPressed: () => _openDonation(context),
+                            large: true,
+                          ),
+                          GhostButton(
+                            label: 'Learn More',
+                            icon: Icons.arrow_forward_rounded,
+                            light: true,
+                            onPressed: () => _openMoreDetails(context),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
+  // -------------------------------------------------------------- footer
+
   Widget _buildFooter() {
+    final width = MediaQuery.of(context).size.width;
+    final mobile = _isMobile(width);
+
     return Container(
       width: double.infinity,
-      color: const Color(0xFF0F3548),
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 30),
-      child: _maxWidth(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final mobile = _isMobile(constraints.maxWidth);
-
-            return mobile
+      color: Brand.ink,
+      padding: EdgeInsets.only(top: mobile ? 48 : 64, bottom: 28),
+      child: ContentColumn(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ResponsiveRow(
+              breakpoint: 760,
+              gap: 40,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Image.asset(
+                          'lib/assets/image/CureNurture_logo.png',
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.contain,
+                          semanticLabel: 'CureNurture logo',
+                        ),
+                        const SizedBox(width: 12),
+                        const Text(
+                          'CureNurture',
+                          style: TextStyle(
+                            fontFamily: Brand.displayFont,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 21,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 380),
+                      child: Text(
+                        'Connecting donors with the dialysis centres caring '
+                        'for patients who depend on ongoing treatment.',
+                        style: Brand.body(
+                          14,
+                          color: Colors.white.withValues(alpha: 0.70),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Explore',
+                      style: Brand.label(14, color: Colors.white),
+                    ),
+                    const SizedBox(height: 12),
+                    _footerLink('Why it matters', () => _scrollTo(_whyKey)),
+                    _footerLink('Your impact', () => _scrollTo(_helpsKey)),
+                    _footerLink('How it works', () => _scrollTo(_howKey)),
+                    _footerLink('Transparency', () => _scrollTo(_trustKey)),
+                    _footerLink(
+                      'About CureNurture',
+                      () => _openMoreDetails(context),
+                    ),
+                  ],
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ready to help?',
+                      style: Brand.label(14, color: Colors.white),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Your donation goes to the dialysis centre you choose.',
+                      style: Brand.body(
+                        13.5,
+                        color: Colors.white.withValues(alpha: 0.70),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    DonateButton(
+                      label: 'Donate Now',
+                      onPressed: () => _openDonation(context),
+                      expand: mobile,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 36),
+            Container(
+              height: 1,
+              color: Colors.white.withValues(alpha: 0.12),
+            ),
+            const SizedBox(height: 20),
+            mobile
                 ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _footerBrand(),
-                      const SizedBox(height: 18),
                       Text(
                         'CureNurture — Compassion in Action.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.white.withOpacity(0.72)),
+                        style: Brand.body(
+                          13,
+                          color: Colors.white.withValues(alpha: 0.62),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '© ${DateTime.now().year} CureNurture',
+                        style: Brand.body(
+                          13,
+                          color: Colors.white.withValues(alpha: 0.45),
+                        ),
                       ),
                     ],
                   )
                 : Row(
                     children: [
-                      _footerBrand(),
-                      const Spacer(),
                       Text(
                         'CureNurture — Compassion in Action.',
-                        style: TextStyle(color: Colors.white.withOpacity(0.72)),
+                        style: Brand.body(
+                          13,
+                          color: Colors.white.withValues(alpha: 0.62),
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '© ${DateTime.now().year} CureNurture',
+                        style: Brand.body(
+                          13,
+                          color: Colors.white.withValues(alpha: 0.45),
+                        ),
                       ),
                     ],
-                  );
-          },
+                  ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _footerBrand() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Image.asset(
-          'lib/assets/image/CureNurture_logo.png',
-          width: 36,
-          height: 36,
-          fit: BoxFit.contain,
-        ),
-        const SizedBox(width: 10),
-        const Text(
-          'CureNurture',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w900,
-            fontSize: 18,
+  Widget _footerLink(String label, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: TextButton(
+        onPressed: onTap,
+        style: ButtonStyle(
+          foregroundColor: WidgetStateProperty.resolveWith((states) {
+            return states.contains(WidgetState.hovered)
+                ? Colors.white
+                : Colors.white.withValues(alpha: 0.72);
+          }),
+          overlayColor: WidgetStatePropertyAll(
+            Colors.white.withValues(alpha: 0.06),
           ),
+          alignment: Alignment.centerLeft,
+          padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          ),
+          minimumSize: const WidgetStatePropertyAll(Size(0, 36)),
+          textStyle: const WidgetStatePropertyAll(
+            TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500),
+          ),
+          shape: WidgetStateProperty.resolveWith((states) {
+            return RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: states.contains(WidgetState.focused)
+                  ? const BorderSide(color: Colors.white, width: 1.6)
+                  : BorderSide.none,
+            );
+          }),
         ),
-      ],
+        child: Text(label),
+      ),
     );
   }
+
+  // --------------------------------------------------------------- build
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _surface,
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          _buildAppBar(),
-          SliverToBoxAdapter(child: _buildHero()),
-          SliverToBoxAdapter(child: _buildImpactStrip()),
-          SliverToBoxAdapter(child: _buildWhoWeAre()),
-          SliverToBoxAdapter(child: _buildPurpose()),
-          SliverToBoxAdapter(child: _buildHowItWorks()),
-          SliverToBoxAdapter(child: _buildTransparency()),
-          SliverToBoxAdapter(child: _buildVerifiedDonations()),
-          SliverToBoxAdapter(child: _buildFinalCta()),
-          SliverToBoxAdapter(child: _buildFooter()),
-        ],
+      backgroundColor: Brand.canvas,
+      body: RevealScope(
+        child: CustomScrollView(
+          controller: _scrollController,
+          slivers: [
+            _buildAppBar(),
+            SliverToBoxAdapter(child: _buildHero()),
+            SliverToBoxAdapter(child: _buildStats()),
+            SliverToBoxAdapter(child: _buildWhyItMatters()),
+            SliverToBoxAdapter(child: _buildHowItHelps()),
+            SliverToBoxAdapter(child: _buildHowItWorks()),
+            SliverToBoxAdapter(child: _buildTransparency()),
+            SliverToBoxAdapter(child: _buildVerifiedDonations()),
+            SliverToBoxAdapter(child: _buildFinalCta()),
+            SliverToBoxAdapter(child: _buildFooter()),
+          ],
+        ),
       ),
     );
   }

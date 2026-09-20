@@ -76,8 +76,8 @@ class ProfileUpdateService {
     final updateData = <String, dynamic>{
       if (bloodType != null && bloodType.trim().isNotEmpty)
         'blood_type': bloodType.trim(),
-      if (weight != null) 'weight': weight,
-      if (height != null) 'height': height,
+      'weight': ?weight,
+      'height': ?height,
       if (lastDialysisDate != null)
         'last_dialysis_date': lastDialysisDate
             .toIso8601String()

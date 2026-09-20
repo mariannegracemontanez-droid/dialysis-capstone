@@ -897,14 +897,31 @@ class _AppointmentPageState extends State<AppointmentPage> {
             final status =
                 request['status']?.toString().toLowerCase().trim() ??
                 'pending';
+            // 'changed_date' means the clinic accepted the request but
+            // scheduled a different date than the one asked for -- the
+            // granted date comes back in resolved_date.
             final statusColor = status == 'approved'
                 ? const Color(0xFF2A9D65)
+                : status == 'changed_date'
+                ? const Color(0xFF2F6FA8)
                 : status == 'declined'
                 ? const Color(0xFFC0432A)
                 : const Color(0xFFB4690E);
+            final statusLabel = status == 'changed_date'
+                ? 'NEW DATE SET'
+                : status.toUpperCase();
             final requestedDate = DateTime.tryParse(
               request['requested_date']?.toString() ?? '',
             );
+            final resolvedDate = DateTime.tryParse(
+              request['resolved_date']?.toString() ?? '',
+            );
+            final resolvedShift = request['resolved_shift']?.toString();
+            final adminNote = request['admin_notes']?.toString().trim();
+
+            // Once the clinic has decided, the date that matters to the
+            // patient is the one actually scheduled.
+            final shownDate = resolvedDate ?? requestedDate;
 
             return Container(
               margin: const EdgeInsets.only(bottom: 10),
@@ -922,9 +939,10 @@ class _AppointmentPageState extends State<AppointmentPage> {
                     children: [
                       Expanded(
                         child: Text(
-                          requestedDate == null
+                          shownDate == null
                               ? 'Requested date pending'
-                              : 'New date: ${DateFormat('MMM d, yyyy').format(requestedDate)}',
+                              : 'New date: ${DateFormat('MMM d, yyyy').format(shownDate)}'
+                                    '${resolvedShift == null ? '' : ' • $resolvedShift shift'}',
                           style: const TextStyle(
                             color: Color(0xFF173B4F),
                             fontSize: 13,
@@ -942,7 +960,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
-                          status.toUpperCase(),
+                          statusLabel,
                           style: TextStyle(
                             color: statusColor,
                             fontSize: 10.5,
@@ -960,6 +978,27 @@ class _AppointmentPageState extends State<AppointmentPage> {
                       fontSize: 12,
                     ),
                   ),
+                  if (status == 'changed_date' && requestedDate != null) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      'You asked for '
+                      '${DateFormat('MMM d, yyyy').format(requestedDate)}.',
+                      style: const TextStyle(
+                        color: Color(0xFF5B6D7D),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                  if (adminNote != null && adminNote.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      'Clinic note: $adminNote',
+                      style: const TextStyle(
+                        color: Color(0xFF5B6D7D),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             );

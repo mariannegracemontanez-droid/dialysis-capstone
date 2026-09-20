@@ -172,7 +172,9 @@ class _AdminCreatePageState extends State<AdminCreatePage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Create Admin Account'),
-        backgroundColor: const Color(0xFF174E71),
+        backgroundColor: const Color(0xFFFEFFFE),
+        foregroundColor: const Color(0xFF17435C),
+        surfaceTintColor: Colors.transparent,
       ),
       body: Center(
         child: SingleChildScrollView(

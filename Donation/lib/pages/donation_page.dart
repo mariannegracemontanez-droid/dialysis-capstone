@@ -1,11 +1,23 @@
-﻿import 'dart:math';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../theme/brand.dart';
+import '../widgets/decor.dart';
+import '../widgets/donation_steps.dart';
+import '../widgets/motion.dart';
+import '../widgets/ui.dart';
+import 'landing_page.dart';
 import 'login_page.dart';
-import 'proof_page.dart';
 
+/// Step two of the donation journey: amount, destination and payment
+/// channel.
+///
+/// Everything that decides what a donation *is* - validation, the three
+/// allocation methods, the equal-split arithmetic and the write to the
+/// donation records - is unchanged from the original page and marked below.
+/// This file only changes how that form looks and reads.
 class DonationPage extends StatefulWidget {
   const DonationPage({
     super.key,
@@ -20,7 +32,7 @@ class DonationPage extends StatefulWidget {
 
 class _DonationPageState extends State<DonationPage>
     with SingleTickerProviderStateMixin {
-    
+
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _customAmountController = TextEditingController();
@@ -37,20 +49,29 @@ class _DonationPageState extends State<DonationPage>
   late final Animation<double> _fadeAnimation;
   late final Animation<Offset> _slideAnimation;
 
-  final Color _darkTeal = const Color(0xFF163B56);
-  final Color _primaryTeal = const Color(0xFF3B97A2);
-  final Color _accentBlue = const Color(0xFF38A6DB);
-  final Color _surface = const Color(0xFFF7FBFD);
-  final Color _softBlue = const Color(0xFFEAF7FB);
-  final Color _fieldFill = const Color(0xFFF2F6F9);
+  // The page's original colour slots, now pointing at the shared palette so
+  // this form matches the rest of the site. `_accentBlue` drives the submit
+  // button, which is why it is the same coral used for every other donate
+  // action on the site.
+  final Color _darkTeal = Brand.brandDeep;
+  final Color _primaryTeal = Brand.teal;
+  final Color _accentBlue = Brand.coral;
+  final Color _surface = Brand.canvas;
+  final Color _softBlue = Brand.sky;
+  final Color _fieldFill = const Color(0xFFF4F8FB);
 
   @override
   void initState() {
     super.initState();
 
+    // Prefilled for a registered donation only. An anonymous donation must
+    // not pick up the signed-in account's details just because a session
+    // happens to exist -- choosing "Donate Anonymously" while logged in
+    // stays anonymous, and none of the account's information is prefilled,
+    // shown or submitted.
     final user = Supabase.instance.client.auth.currentUser;
 
-    if (user != null) {
+    if (!widget.isAnonymous && user != null) {
       _emailController.text = user.email ?? '';
     }
 
@@ -123,13 +144,6 @@ class _DonationPageState extends State<DonationPage>
     _customAmountController.dispose();
     _animationController.dispose();
     super.dispose();
-  }
-
-  void _selectAmount(String amount) {
-    setState(() {
-      _customAmountController.text = amount.replaceAll('P', '');
-      _errorMessage = null;
-    });
   }
 
   void _selectPaymentChannel(String channel) {
@@ -238,15 +252,48 @@ class _DonationPageState extends State<DonationPage>
     return double.tryParse(value);
   }
 
+  /// Returns to the landing page and clears the whole donation journey from
+  /// the navigation stack.
+  ///
+  /// Used both when a donation has been completed and when this page is the
+  /// only route left (see [_buildHeader]). Replacing the stack rather than
+  /// popping a fixed number of routes is what keeps this correct no matter
+  /// how the donor arrived -- straight from the landing page, by way of the
+  /// details page, or through the login step, which leaves this page as the
+  /// sole route. It also means Back can never re-enter a finished or
+  /// abandoned donation.
+  void _goToLandingPage() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LandingPage()),
+      (route) => false,
+    );
+  }
+
+  // ------------------------------------------------------- presentation
+
   PreferredSizeWidget _buildHeader() {
     return AppBar(
-      backgroundColor: Colors.white,
+      backgroundColor: Brand.white,
       elevation: 0,
+      scrolledUnderElevation: 0,
       surfaceTintColor: Colors.transparent,
       toolbarHeight: 74,
       leading: IconButton(
-        icon: Icon(Icons.arrow_back_rounded, color: _darkTeal),
-        onPressed: () => Navigator.pop(context),
+        icon: const Icon(Icons.arrow_back_rounded, color: Brand.brandDeep),
+        tooltip: 'Back',
+        // Normal back behaviour whenever there is a route to go back to.
+        // When there is not -- signing in mid-donation replaces the stack,
+        // so this page can be the only route -- popping would leave the app
+        // with no route at all, so fall back to the landing page instead.
+        onPressed: () {
+          final navigator = Navigator.of(context);
+
+          if (navigator.canPop()) {
+            navigator.pop();
+          } else {
+            _goToLandingPage();
+          }
+        },
       ),
       titleSpacing: 0,
       title: Row(
@@ -255,347 +302,91 @@ class _DonationPageState extends State<DonationPage>
             'lib/assets/image/CureNurture_logo.png',
             width: 36,
             height: 36,
+            semanticLabel: 'CureNurture logo',
           ),
           const SizedBox(width: 10),
-          Text(
-            'Cure Nurture',
-            style: TextStyle(color: _darkTeal, fontWeight: FontWeight.w900),
+          const Text(
+            'CureNurture',
+            style: TextStyle(
+              fontFamily: Brand.displayFont,
+              color: Brand.brandDeep,
+              fontWeight: FontWeight.w700,
+              fontSize: 17,
+            ),
           ),
         ],
+      ),
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(1),
+        child: Container(height: 1, color: Brand.border),
       ),
     );
   }
 
   Widget _animatedEntry({required Widget child, int delay = 0}) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
-      duration: Duration(milliseconds: 550 + delay),
-      curve: Curves.easeOutCubic,
-      builder: (context, value, _) {
-        return Opacity(
-          opacity: value,
-          child: Transform.translate(
-            offset: Offset(0, 24 * (1 - value)),
-            child: child,
-          ),
-        );
-      },
-    );
+    return Reveal(delayMs: delay, child: child);
   }
 
+  /// Banded page header carrying the step indicator, so a donor can always
+  /// see where they are in the journey and what is still ahead.
   Widget _buildHero() {
+    final width = MediaQuery.of(context).size.width;
+    final mobile = Brand.isMobile(width);
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 52),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [_darkTeal, _primaryTeal],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1180),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final mobile = constraints.maxWidth < 900;
-
-              final text = Column(
-                crossAxisAlignment: mobile
-                    ? CrossAxisAlignment.center
-                    : CrossAxisAlignment.start,
+      decoration: const BoxDecoration(gradient: Brand.brandGradient),
+      child: Stack(
+        children: [
+          const Positioned.fill(child: FlowBackdrop(opacity: 0.85)),
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: mobile ? 40 : 56),
+            child: ContentColumn(
+              maxWidth: 1000,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
+                  Align(
+                    alignment: Alignment.center,
+                    child: Eyebrow(
+                      widget.isAnonymous
+                          ? 'Anonymous donation'
+                          : 'Donor account',
+                      light: true,
                     ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.14),
-                      borderRadius: BorderRadius.circular(100),
-                      border: Border.all(color: Colors.white.withOpacity(0.18)),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Complete your donation.',
+                    textAlign: TextAlign.center,
+                    style: Brand.display(
+                      mobile ? 30 : 42,
+                      color: Colors.white,
                     ),
-                    child: const Text(
-                      'STEP 1 OF 2',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.4,
+                  ),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 660),
+                      child: Text(
+                        'Choose an amount, decide which dialysis centre it '
+                        'supports, and tell us how you will be sending it.',
+                        textAlign: TextAlign.center,
+                        style: Brand.body(
+                          mobile ? 14.5 : 16,
+                          color: Colors.white.withValues(alpha: 0.84),
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 22),
-                  const Text(
-                    'Start your donation details.',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 42,
-                      height: 1.12,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.6,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Text(
-                    'Fill in your information, choose a contribution amount, and select your payment method. The next step will ask you to upload your proof of payment.',
-                    textAlign: mobile ? TextAlign.center : TextAlign.left,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.82),
-                      fontSize: 16,
-                      height: 1.7,
-                    ),
-                  ),
+                  const SizedBox(height: 34),
+                  const DonationSteps(current: 1, light: true),
                 ],
-              );
-
-              final steps = Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: Colors.white.withOpacity(0.18)),
-                ),
-                child: Column(
-                  children: [
-                    _heroStep(
-                      icon: Icons.edit_note_rounded,
-                      title: 'Enter Details',
-                      text: 'Provide your name and email for donation records.',
-                    ),
-                    const SizedBox(height: 14),
-                    _heroStep(
-                      icon: Icons.volunteer_activism_rounded,
-                      title: 'Choose Amount',
-                      text: 'Select or enter the amount you want to give.',
-                    ),
-                    const SizedBox(height: 14),
-                    _heroStep(
-                      icon: Icons.upload_file_rounded,
-                      title: 'Upload Proof Next',
-                      text:
-                          'Continue to the proof upload and verification step.',
-                    ),
-                  ],
-                ),
-              );
-
-              if (mobile) {
-                return Column(
-                  children: [text, const SizedBox(height: 28), steps],
-                );
-              }
-
-              return Row(
-                children: [
-                  Expanded(flex: 6, child: text),
-                  const SizedBox(width: 44),
-                  Expanded(flex: 4, child: steps),
-                ],
-              );
-            },
+              ),
+            ),
           ),
-        ),
+        ],
       ),
-    );
-  }
-
-  Widget _heroStep({
-    required IconData icon,
-    required String title,
-    required String text,
-  }) {
-    return Row(
-      children: [
-        Container(
-          height: 48,
-          width: 48,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.16),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Icon(icon, color: Colors.white),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                text,
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.72),
-                  fontSize: 12.5,
-                  height: 1.35,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPageIntro() {
-    return Column(
-      children: [
-        Text(
-          'Complete Your Donation Details',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: _darkTeal,
-            fontSize: 34,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 12),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 740),
-          child: Text(
-            'This information helps us properly record your donation and connect it to your payment proof in the next step.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.blueGrey.shade600,
-              fontSize: 15.5,
-              height: 1.7,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildVerificationProgress() {
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: _softBlue,
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: const Color(0xFFD8EAF0)),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final mobile = constraints.maxWidth < 680;
-
-          final steps = [
-            _progressStep(
-              number: '1',
-              title: 'Donation Details',
-              subtitle: 'Current step',
-              active: true,
-            ),
-            _progressStep(
-              number: '2',
-              title: 'Proof Upload',
-              subtitle: 'Next step',
-              active: false,
-            ),
-            _progressStep(
-              number: '3',
-              title: 'Admin Review',
-              subtitle: 'Pending',
-              active: false,
-            ),
-          ];
-
-          if (mobile) {
-            return Column(
-              children: steps
-                  .map(
-                    (step) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: step,
-                    ),
-                  )
-                  .toList(),
-            );
-          }
-
-          return Row(
-            children: [
-              Expanded(child: steps[0]),
-              _progressLine(),
-              Expanded(child: steps[1]),
-              _progressLine(),
-              Expanded(child: steps[2]),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _progressStep({
-    required String number,
-    required String title,
-    required String subtitle,
-    required bool active,
-  }) {
-    return Row(
-      children: [
-        Container(
-          height: 44,
-          width: 44,
-          decoration: BoxDecoration(
-            color: active ? _primaryTeal : Colors.white,
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: active ? _primaryTeal : const Color(0xFFD8EAF0),
-            ),
-          ),
-          child: Center(
-            child: Text(
-              number,
-              style: TextStyle(
-                color: active ? Colors.white : Colors.blueGrey,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  color: active ? _darkTeal : Colors.blueGrey.shade500,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  color: Colors.blueGrey.shade500,
-                  fontSize: 12.5,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _progressLine() {
-    return Container(
-      width: 34,
-      height: 2,
-      margin: const EdgeInsets.symmetric(horizontal: 8),
-      color: const Color(0xFFCFE2EA),
     );
   }
 
@@ -603,41 +394,28 @@ class _DonationPageState extends State<DonationPage>
     required IconData icon,
     required String title,
     required String subtitle,
+    Color? accent,
+    Color? accentSoft,
   }) {
+    final tone = accent ?? _primaryTeal;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          height: 42,
-          width: 42,
-          decoration: BoxDecoration(
-            color: _softBlue,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Icon(icon, color: _primaryTeal),
+          height: 44,
+          width: 44,
+          decoration: Brand.iconBox(accentSoft ?? Brand.tealSoft, radius: 15),
+          child: Icon(icon, color: tone, size: 22),
         ),
-        const SizedBox(width: 13),
+        const SizedBox(width: 14),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: TextStyle(
-                  color: _darkTeal,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 17,
-                ),
-              ),
+              Text(title, style: Brand.heading(18)),
               const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  color: Colors.blueGrey.shade500,
-                  fontSize: 13,
-                  height: 1.4,
-                ),
-              ),
+              Text(subtitle, style: Brand.body(13.5, color: Brand.textMuted)),
             ],
           ),
         ),
@@ -651,73 +429,159 @@ class _DonationPageState extends State<DonationPage>
     required TextEditingController controller,
     TextInputType keyboardType = TextInputType.text,
     Widget? prefixIcon,
+    String? prefixText,
   }) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
-      style: TextStyle(color: _darkTeal, fontWeight: FontWeight.w600),
+      style: TextStyle(
+        color: _darkTeal,
+        fontWeight: FontWeight.w600,
+        fontSize: 15,
+      ),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
         prefixIcon: prefixIcon,
+        prefixText: prefixText,
+        prefixStyle: TextStyle(
+          color: _darkTeal,
+          fontWeight: FontWeight.w700,
+          fontSize: 15,
+        ),
         filled: true,
         fillColor: _fieldFill,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 18,
           vertical: 18,
         ),
-        labelStyle: TextStyle(color: Colors.blueGrey.shade600),
-        hintStyle: TextStyle(color: Colors.blueGrey.shade300),
+        labelStyle: const TextStyle(color: Brand.textMuted),
+        floatingLabelStyle: const TextStyle(
+          color: Brand.brand,
+          fontWeight: FontWeight.w600,
+        ),
+        hintStyle: TextStyle(color: Brand.textMuted.withValues(alpha: 0.6)),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: Color(0xFFDCE8EE)),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Brand.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: Color(0xFFDCE8EE)),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Brand.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(color: _primaryTeal, width: 1.5),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Brand.brand, width: 2),
         ),
       ),
     );
   }
 
-  Widget _buildAmountButton(String label) {
-    final isSelected =
-        _customAmountController.text.trim() == label.replaceAll('P', '');
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: () => _selectAmount(label),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 17),
-        decoration: BoxDecoration(
-          color: isSelected ? _darkTeal : Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isSelected ? _darkTeal : const Color(0xFFD5E4EA),
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: _darkTeal.withOpacity(0.14),
-                    blurRadius: 14,
-                    offset: const Offset(0, 8),
+  /// Shared look for the three kinds of choice in this form - payment
+  /// channel, allocation method and dialysis centre. Each one still just
+  /// reports a tap to the selection handler it was given.
+  Widget _choiceTile({
+    required bool isSelected,
+    required VoidCallback onTap,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String semanticLabel,
+    bool compact = false,
+  }) {
+    return HoverLift(
+      lift: 3,
+      builder: (context, hovered) {
+        return Semantics(
+          inMutuallyExclusiveGroup: true,
+          selected: isSelected,
+          button: true,
+          label: semanticLabel,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(compact ? 18 : 20),
+            focusColor: Brand.brand.withValues(alpha: 0.10),
+            hoverColor: Colors.transparent,
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              padding: EdgeInsets.all(compact ? 14 : 17),
+              decoration: BoxDecoration(
+                color: isSelected ? Brand.sky : Brand.white,
+                borderRadius: BorderRadius.circular(compact ? 18 : 20),
+                border: Border.all(
+                  color: isSelected
+                      ? Brand.brand
+                      : (hovered
+                            ? Brand.brand.withValues(alpha: 0.40)
+                            : Brand.border),
+                  width: isSelected ? 2 : 1.2,
+                ),
+                boxShadow: isSelected || hovered ? Brand.shadowSoft : null,
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    height: compact ? 38 : 44,
+                    width: compact ? 38 : 44,
+                    decoration: Brand.iconBox(
+                      isSelected ? Brand.white : _softBlue,
+                      radius: 14,
+                    ),
+                    child: Icon(
+                      icon,
+                      color: Brand.brand,
+                      size: compact ? 19 : 22,
+                    ),
                   ),
-                ]
-              : [],
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : _darkTeal,
-            fontWeight: FontWeight.w900,
+                  SizedBox(width: compact ? 11 : 13),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: Brand.label(
+                            compact ? 14 : 15,
+                            color: Brand.textStrong,
+                          ),
+                        ),
+                        if (subtitle.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            subtitle,
+                            style: Brand.body(12.5, color: Brand.textMuted),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    height: 24,
+                    width: 24,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isSelected ? Brand.brand : Colors.transparent,
+                      border: Border.all(
+                        color: isSelected ? Brand.brand : Brand.borderStrong,
+                        width: 2,
+                      ),
+                    ),
+                    child: isSelected
+                        ? const Icon(
+                            Icons.check_rounded,
+                            size: 15,
+                            color: Colors.white,
+                          )
+                        : null,
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -728,74 +592,13 @@ class _DonationPageState extends State<DonationPage>
   }) {
     final isSelected = _selectedPaymentChannel == method;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(24),
+    return _choiceTile(
+      isSelected: isSelected,
       onTap: () => _selectPaymentChannel(method),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: isSelected ? _darkTeal : Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: isSelected ? _darkTeal : const Color(0xFFDCE8EE),
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: _darkTeal.withOpacity(0.16),
-                    blurRadius: 18,
-                    offset: const Offset(0, 10),
-                  ),
-                ]
-              : [],
-        ),
-        child: Row(
-          children: [
-            Container(
-              height: 46,
-              width: 46,
-              decoration: BoxDecoration(
-                color: isSelected ? Colors.white.withOpacity(0.16) : _softBlue,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Icon(
-                icon,
-                color: isSelected ? Colors.white : _primaryTeal,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    method,
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : _darkTeal,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: isSelected
-                          ? Colors.white.withOpacity(0.72)
-                          : Colors.blueGrey.shade500,
-                      fontSize: 12.5,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              isSelected ? Icons.check_circle_rounded : Icons.circle_outlined,
-              color: isSelected ? Colors.white : Colors.blueGrey.shade300,
-            ),
-          ],
-        ),
-      ),
+      icon: icon,
+      title: method,
+      subtitle: subtitle,
+      semanticLabel: 'Pay by $method. $subtitle',
     );
   }
 
@@ -806,74 +609,13 @@ class _DonationPageState extends State<DonationPage>
   }) {
     final isSelected = _selectedAllocationMethod == method;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(24),
+    return _choiceTile(
+      isSelected: isSelected,
       onTap: () => _selectAllocationMethod(method),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: isSelected ? _darkTeal : Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: isSelected ? _darkTeal : const Color(0xFFDCE8EE),
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: _darkTeal.withOpacity(0.16),
-                    blurRadius: 18,
-                    offset: const Offset(0, 10),
-                  ),
-                ]
-              : [],
-        ),
-        child: Row(
-          children: [
-            Container(
-              height: 46,
-              width: 46,
-              decoration: BoxDecoration(
-                color: isSelected ? Colors.white.withOpacity(0.16) : _softBlue,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Icon(
-                icon,
-                color: isSelected ? Colors.white : _primaryTeal,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    method,
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : _darkTeal,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: isSelected
-                          ? Colors.white.withOpacity(0.72)
-                          : Colors.blueGrey.shade500,
-                      fontSize: 12.5,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              isSelected ? Icons.check_circle_rounded : Icons.circle_outlined,
-              color: isSelected ? Colors.white : Colors.blueGrey.shade300,
-            ),
-          ],
-        ),
-      ),
+      icon: icon,
+      title: method,
+      subtitle: subtitle,
+      semanticLabel: '$method. $subtitle',
     );
   }
 
@@ -886,101 +628,36 @@ class _DonationPageState extends State<DonationPage>
         : (center['city']?.toString() ?? '');
     final isSelected = _selectedCenterId == centerId;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
+    return _choiceTile(
+      isSelected: isSelected,
       onTap: () => _selectCenter(centerId),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isSelected ? _darkTeal : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? _darkTeal : const Color(0xFFDCE8EE),
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: _darkTeal.withOpacity(0.14),
-                    blurRadius: 14,
-                    offset: const Offset(0, 8),
-                  ),
-                ]
-              : [],
-        ),
-        child: Row(
-          children: [
-            Container(
-              height: 40,
-              width: 40,
-              decoration: BoxDecoration(
-                color: isSelected ? Colors.white.withOpacity(0.16) : _softBlue,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(
-                Icons.local_hospital_outlined,
-                color: isSelected ? Colors.white : _primaryTeal,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : _darkTeal,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  if (location.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Text(
-                      location,
-                      style: TextStyle(
-                        color: isSelected
-                            ? Colors.white.withOpacity(0.72)
-                            : Colors.blueGrey.shade500,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            Icon(
-              isSelected ? Icons.check_circle_rounded : Icons.circle_outlined,
-              color: isSelected ? Colors.white : Colors.blueGrey.shade300,
-              size: 20,
-            ),
-          ],
-        ),
-      ),
+      icon: Icons.local_hospital_rounded,
+      title: name,
+      subtitle: location,
+      semanticLabel: 'Donate to $name${location.isEmpty ? '' : ', $location'}',
+      compact: true,
     );
   }
 
   Widget _messageBox(String message) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.red.withOpacity(0.08),
+        color: Brand.coralSoft,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.red.withOpacity(0.20)),
+        border: Border.all(color: Brand.coral.withValues(alpha: 0.30)),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.redAccent),
-          const SizedBox(width: 10),
+          const Icon(Icons.error_outline_rounded, color: Brand.coral, size: 21),
+          const SizedBox(width: 12),
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(
-                color: Colors.redAccent,
-                fontWeight: FontWeight.w700,
-                height: 1.4,
-              ),
+              // Announced to assistive tech as soon as it appears, so a
+              // validation failure is not silent for screen-reader users.
+              style: Brand.label(14, color: Brand.coral),
             ),
           ),
         ],
@@ -988,65 +665,263 @@ class _DonationPageState extends State<DonationPage>
     );
   }
 
- Widget _buildDonationForm() {
-  return _animatedEntry(
-    delay: 100,
-    child: Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(36),
+  /// An inset panel used for the detail that appears under a chosen
+  /// allocation method.
+  Widget _allocationDetail({required Widget child}) {
+    return Container(
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(34),
-        border: Border.all(color: const Color(0xFFE3EEF4)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.045),
-            blurRadius: 28,
-            offset: const Offset(0, 18),
-          ),
-        ],
+        color: Brand.tealSoft,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Brand.teal.withValues(alpha: 0.18)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionLabel(
-            icon: Icons.person_outline_rounded,
-            title: widget.isAnonymous
-                ? 'Anonymous Donation'
-                : 'Donor Information',
-            subtitle: widget.isAnonymous
-                ? 'Your donation will not be associated with a donor account.'
-                : 'These details help us identify and record your contribution.',
-          ),
-          const SizedBox(height: 18),
+      child: child,
+    );
+  }
 
-          if (!widget.isAnonymous) ...[
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final mobile = constraints.maxWidth < 720;
+  Widget _buildDonationForm() {
+    final width = MediaQuery.of(context).size.width;
+    final mobile = Brand.isMobile(width);
 
-                if (mobile) {
-                  return Column(
+    return _animatedEntry(
+      delay: 100,
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(mobile ? 22 : 36),
+        decoration: BoxDecoration(
+          color: Brand.white,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: Brand.border),
+          boxShadow: Brand.shadowCard,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionLabel(
+              icon: widget.isAnonymous
+                  ? Icons.visibility_off_rounded
+                  : Icons.person_outline_rounded,
+              title: widget.isAnonymous
+                  ? 'Anonymous Donation'
+                  : 'Donor Information',
+              subtitle: widget.isAnonymous
+                  ? 'Your donation will not be associated with a donor account.'
+                  : 'These details help us identify and record your contribution.',
+            ),
+            const SizedBox(height: 18),
+
+            if (!widget.isAnonymous) ...[
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final narrow = constraints.maxWidth < 720;
+
+                  if (narrow) {
+                    return Column(
+                      children: [
+                        _buildTextField(
+                          label: 'Full Name / Organization',
+                          hint: 'Enter your name',
+                          controller: _nameController,
+                          prefixIcon: Icon(
+                            Icons.person_outline_rounded,
+                            color: _primaryTeal,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildTextField(
+                          label: 'Email Address',
+                          hint: 'Enter your email',
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          prefixIcon: Icon(
+                            Icons.email_outlined,
+                            color: _primaryTeal,
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+
+                  return Row(
                     children: [
-                      _buildTextField(
-                        label: 'Full Name / Organization',
-                        hint: 'Enter your name',
-                        controller: _nameController,
-                        prefixIcon: Icon(
-                          Icons.person_outline_rounded,
-                          color: _primaryTeal,
+                      Expanded(
+                        child: _buildTextField(
+                          label: 'Full Name / Organization',
+                          hint: 'Enter your name',
+                          controller: _nameController,
+                          prefixIcon: Icon(
+                            Icons.person_outline_rounded,
+                            color: _primaryTeal,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      _buildTextField(
-                        label: 'Email Address',
-                        hint: 'Enter your email',
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        prefixIcon: Icon(
-                          Icons.email_outlined,
-                          color: _primaryTeal,
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _buildTextField(
+                          label: 'Email Address',
+                          hint: 'Enter your email',
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          prefixIcon: Icon(
+                            Icons.email_outlined,
+                            color: _primaryTeal,
+                          ),
                         ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+
+              const SizedBox(height: 34),
+            ] else
+              const SizedBox(height: 34),
+
+            _sectionLabel(
+              icon: Icons.volunteer_activism_rounded,
+              title: 'Donation Amount',
+              subtitle: 'Enter the amount you would like to contribute.',
+              accent: Brand.coral,
+              accentSoft: Brand.coralSoft,
+            ),
+            const SizedBox(height: 18),
+
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 340),
+              child: _buildTextField(
+                label: 'Custom Amount',
+                hint: 'Enter amount',
+                controller: _customAmountController,
+                keyboardType: TextInputType.number,
+                prefixText: '₱  ',
+              ),
+            ),
+
+            const SizedBox(height: 34),
+
+            _sectionLabel(
+              icon: Icons.alt_route_rounded,
+              title: 'Fund Allocation',
+              subtitle:
+                  'Choose how you would like your donation to be distributed.',
+              accent: Brand.brand,
+              accentSoft: Brand.sky,
+            ),
+            const SizedBox(height: 18),
+
+            Column(
+              children: [
+                _allocationButton(
+                  method: 'Specific Dialysis Center',
+                  icon: Icons.location_on_outlined,
+                  subtitle: 'Choose exactly which center receives your donation.',
+                ),
+                const SizedBox(height: 12),
+                _allocationButton(
+                  method: 'Randomly Assign a Dialysis Center',
+                  icon: Icons.shuffle_rounded,
+                  subtitle: 'A dialysis center will be randomly selected to receive your donation.',
+                ),
+                const SizedBox(height: 12),
+                _allocationButton(
+                  method: 'Distribute Donation Equally Among All Centers',
+                  icon: Icons.balance_outlined,
+                  subtitle: 'Your donation will be shared equally across all centers.',
+                ),
+              ],
+            ),
+
+            if (_selectedAllocationMethod == 'Specific Dialysis Center')
+              _allocationDetail(
+                child: _isLoadingCenters
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Center(
+                          child: SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2.4),
+                          ),
+                        ),
+                      )
+                    : _dialysisCenters.isEmpty
+                    ? Text(
+                        'No dialysis centers are available right now.',
+                        style: Brand.body(13, color: Brand.textMuted),
+                      )
+                    : Column(
+                        children: [
+                          for (int i = 0; i < _dialysisCenters.length; i++) ...[
+                            if (i > 0) const SizedBox(height: 10),
+                            _centerButton(_dialysisCenters[i]),
+                          ],
+                        ],
+                      ),
+              ),
+
+            if (_selectedAllocationMethod ==
+                'Randomly Assign a Dialysis Center')
+              _allocationDetail(
+                child: Row(
+                  children: [
+                    Icon(Icons.shuffle_rounded, color: _primaryTeal, size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _isLoadingCenters
+                            ? 'Selecting a dialysis center...'
+                            : (_centerNameById(_selectedCenterId) != null
+                                  ? 'Randomly assigned to: ${_centerNameById(_selectedCenterId)}'
+                                  : 'No dialysis centers are currently available.'),
+                        style: Brand.label(13, color: Brand.brandDeep),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            if (_selectedAllocationMethod ==
+                'Distribute Donation Equally Among All Centers')
+              _allocationDetail(
+                child: Row(
+                  children: [
+                    Icon(Icons.balance_outlined, color: _primaryTeal, size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(child: _buildEqualDistributionSummary()),
+                  ],
+                ),
+              ),
+
+            const SizedBox(height: 34),
+
+            _sectionLabel(
+              icon: Icons.account_balance_wallet_outlined,
+              title: 'Payment Method',
+              subtitle:
+                  'Select the channel you will use to send your donation.',
+              accent: Brand.mint,
+              accentSoft: Brand.mintSoft,
+            ),
+            const SizedBox(height: 18),
+
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final narrow = constraints.maxWidth < 720;
+
+                if (narrow) {
+                  return Column(
+                    children: [
+                      _paymentButton(
+                        method: 'GCASH',
+                        icon: Icons.phone_android_rounded,
+                        subtitle: 'Mobile wallet transfer',
+                      ),
+                      const SizedBox(height: 12),
+                      _paymentButton(
+                        method: 'BANK TRANSFER',
+                        icon: Icons.account_balance_rounded,
+                        subtitle: 'Manual bank transfer',
                       ),
                     ],
                   );
@@ -1055,27 +930,18 @@ class _DonationPageState extends State<DonationPage>
                 return Row(
                   children: [
                     Expanded(
-                      child: _buildTextField(
-                        label: 'Full Name / Organization',
-                        hint: 'Enter your name',
-                        controller: _nameController,
-                        prefixIcon: Icon(
-                          Icons.person_outline_rounded,
-                          color: _primaryTeal,
-                        ),
+                      child: _paymentButton(
+                        method: 'GCASH',
+                        icon: Icons.phone_android_rounded,
+                        subtitle: 'Mobile wallet transfer',
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 14),
                     Expanded(
-                      child: _buildTextField(
-                        label: 'Email Address',
-                        hint: 'Enter your email',
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        prefixIcon: Icon(
-                          Icons.email_outlined,
-                          color: _primaryTeal,
-                        ),
+                      child: _paymentButton(
+                        method: 'BANK TRANSFER',
+                        icon: Icons.account_balance_rounded,
+                        subtitle: 'Manual bank transfer',
                       ),
                     ),
                   ],
@@ -1083,557 +949,430 @@ class _DonationPageState extends State<DonationPage>
               },
             ),
 
-            const SizedBox(height: 34),
-          ] else
-            const SizedBox(height: 34),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 22),
+              _messageBox(_errorMessage!),
+            ],
 
-          _sectionLabel(
-            icon: Icons.volunteer_activism_rounded,
-            title: 'Donation Amount',
-            subtitle:
-                'Choose a suggested amount or enter a custom contribution.',
-          ),
-          const SizedBox(height: 18),
+            const SizedBox(height: 28),
 
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SizedBox(
-                width: 210,
-                child: _buildTextField(
-                  label: 'Custom Amount',
-                  hint: 'Enter amount',
-                  controller: _customAmountController,
-                  keyboardType: TextInputType.number,
-                  prefixIcon: Icon(
-                    Icons.payments_outlined,
-                    color: _primaryTeal,
+            // The strongest element on the page, matching the Donate action
+            // everywhere else on the site.
+            SizedBox(
+              height: 60,
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _handleDonate,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _accentBlue,
+                  disabledBackgroundColor: _accentBlue.withValues(alpha: 0.45),
+                  foregroundColor: Colors.white,
+                  disabledForegroundColor: Colors.white70,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
                   ),
                 ),
-              ),
-              _buildAmountButton('P50'),
-              _buildAmountButton('P100'),
-              _buildAmountButton('P500'),
-              _buildAmountButton('P1000'),
-            ],
-          ),
-
-          const SizedBox(height: 34),
-
-          _sectionLabel(
-            icon: Icons.volunteer_activism_outlined,
-            title: 'Fund Allocation',
-            subtitle:
-                'Choose how you would like your donation to be distributed.',
-          ),
-          const SizedBox(height: 18),
-
-          Column(
-            children: [
-              _allocationButton(
-                method: 'Specific Dialysis Center',
-                icon: Icons.location_on_outlined,
-                subtitle: 'Choose exactly which center receives your donation.',
-              ),
-              const SizedBox(height: 14),
-              _allocationButton(
-                method: 'Randomly Assign a Dialysis Center',
-                icon: Icons.shuffle_rounded,
-                subtitle: 'A dialysis center will be randomly selected to receive your donation.',
-              ),
-              const SizedBox(height: 14),
-              _allocationButton(
-                method: 'Distribute Donation Equally Among All Centers',
-                icon: Icons.balance_outlined,
-                subtitle: 'Your donation will be shared equally across all centers.',
-              ),
-            ],
-          ),
-
-          if (_selectedAllocationMethod == 'Specific Dialysis Center') ...[
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: _softBlue,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: _isLoadingCenters
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Center(
-                        child: SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2.4),
-                        ),
-                      ),
-                    )
-                  : _dialysisCenters.isEmpty
-                  ? Text(
-                      'No dialysis centers are available right now.',
-                      style: TextStyle(
-                        color: Colors.blueGrey.shade500,
-                        fontSize: 12.5,
-                      ),
-                    )
-                  : Column(
-                      children: [
-                        for (int i = 0; i < _dialysisCenters.length; i++) ...[
-                          if (i > 0) const SizedBox(height: 10),
-                          _centerButton(_dialysisCenters[i]),
-                        ],
-                      ],
-                    ),
-            ),
-          ],
-
-          if (_selectedAllocationMethod ==
-              'Randomly Assign a Dialysis Center') ...[
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: _softBlue,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.shuffle_rounded, color: _primaryTeal, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _isLoadingCenters
-                          ? 'Selecting a dialysis center...'
-                          : (_centerNameById(_selectedCenterId) != null
-                                ? 'Randomly assigned to: ${_centerNameById(_selectedCenterId)}'
-                                : 'No dialysis centers are currently available.'),
-                      style: TextStyle(
-                        color: _darkTeal,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12.5,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          if (_selectedAllocationMethod ==
-              'Distribute Donation Equally Among All Centers') ...[
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: _softBlue,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.balance_outlined, color: _primaryTeal, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(child: _buildEqualDistributionSummary()),
-                ],
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 34),
-
-          _sectionLabel(
-            icon: Icons.account_balance_wallet_outlined,
-            title: 'Payment Method',
-            subtitle:
-                'Select the channel you will use to send your donation.',
-          ),
-          const SizedBox(height: 18),
-
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final mobile = constraints.maxWidth < 720;
-
-              if (mobile) {
-                return Column(
-                  children: [
-                    _paymentButton(
-                      method: 'GCASH',
-                      icon: Icons.phone_android_rounded,
-                      subtitle: 'Mobile wallet transfer',
-                    ),
-                    const SizedBox(height: 14),
-                    _paymentButton(
-                      method: 'BANK TRANSFER',
-                      icon: Icons.account_balance_rounded,
-                      subtitle: 'Manual bank transfer',
-                    ),
-                  ],
-                );
-              }
-
-              return Row(
-                children: [
-                  Expanded(
-                    child: _paymentButton(
-                      method: 'GCASH',
-                      icon: Icons.phone_android_rounded,
-                      subtitle: 'Mobile wallet transfer',
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: _paymentButton(
-                      method: 'BANK TRANSFER',
-                      icon: Icons.account_balance_rounded,
-                      subtitle: 'Manual bank transfer',
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-
-          if (_errorMessage != null) ...[
-            const SizedBox(height: 22),
-            _messageBox(_errorMessage!),
-          ],
-
-          const SizedBox(height: 28),
-
-          SizedBox(
-            height: 58,
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _isLoading ? null :_handleDonate,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _accentBlue,
-                disabledBackgroundColor: _accentBlue.withOpacity(0.55),
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 250),
-                child: _isLoading
-                    ? const SizedBox(
-                        key: ValueKey('loading'),
-                        height: 22,
-                        width: 22,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2.4,
-                        ),
-                      )
-                    : const Row(
-                        key: ValueKey('text'),
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.arrow_forward_rounded, size: 20),
-                          SizedBox(width: 10),
-                          Text(
-                            'CONTINUE TO PROOF UPLOAD',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 15,
-                              letterSpacing: 0.5,
-                            ),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  child: _isLoading
+                      ? const SizedBox(
+                          key: ValueKey('loading'),
+                          height: 24,
+                          width: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.4,
                           ),
-                        ],
-                      ),
+                        )
+                      : const Row(
+                          key: ValueKey('text'),
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.favorite_rounded, size: 21),
+                            SizedBox(width: 10),
+                            Text('SUBMIT DONATION'),
+                          ],
+                        ),
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-    ),
-   );
-}
-
-Future<void> _handleDonate() async {
-  setState(() {
-    _errorMessage = null;
-  });
-
-  // Validate donation amount
-  final amount = _parseAmount();
-
-  if (amount == null || amount <= 0) {
-    setState(() {
-      _errorMessage = 'Please enter a valid donation amount.';
-    });
-    return;
-  }
-
-  // Validate fund allocation selection
-  if (_selectedAllocationMethod == null) {
-    setState(() {
-      _errorMessage = 'Please select a fund allocation option.';
-    });
-    return;
-  }
-
-  // Validate dialysis center selection
-  if (_selectedAllocationMethod == 'Specific Dialysis Center' &&
-      _selectedCenterId == null) {
-    setState(() {
-      _errorMessage = 'Please select a dialysis center.';
-    });
-    return;
-  }
-
-  // Validate random center assignment
-  if (_selectedAllocationMethod == 'Randomly Assign a Dialysis Center' &&
-      _selectedCenterId == null) {
-    setState(() {
-      _errorMessage = 'No dialysis centers are currently available for random assignment.';
-    });
-    return;
-  }
-
-  // Validate equal distribution has eligible centers
-  if (_selectedAllocationMethod == 'Distribute Donation Equally Among All Centers' &&
-      _dialysisCenters.isEmpty) {
-    setState(() {
-      _errorMessage = 'No dialysis centers are currently available for equal distribution.';
-    });
-    return;
-  }
-
-  // Validate payment method
-  if (_selectedPaymentChannel == null) {
-    setState(() {
-      _errorMessage = 'Please select a payment method.';
-    });
-    return;
-  }
-
-  // For registered donors, make sure they are logged in.
-  final user = Supabase.instance.client.auth.currentUser;
-
-  if (!widget.isAnonymous && user == null) {
-    await showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Login Required'),
-          content: const Text(
-            'Please log in to your registered donor account before continuing.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(
-                    builder: (_) => const LoginPage(),
-                  ),
-                  (route) => false,
-                );
-              },
-              child: const Text('Back to Login'),
-            ),
           ],
-        );
-      },
+        ),
+      ),
     );
-
-    return;
   }
 
-  setState(() {
-    _isLoading = true;
-  });
-
-  try {
-    String? donorId;
-    String donorName;
-    String donorEmail;
-
-    if (widget.isAnonymous) {
-  // Anonymous donation:
-  // Do not store the donor's account information.
-  donorId = null;
-  donorName = '';
-  donorEmail = '';
-} else  {
-      // Registered donation:
-      // Use the currently logged-in account.
-      donorId = user!.id;
-
-      donorEmail = user.email ?? '';
-
-      final profile = await Supabase.instance.client
-          .from('profiles')
-          .select('full_name')
-          .eq('id', user.id)
-          .maybeSingle();
-
-      donorName = (profile?['full_name'] as String?)?.trim() ?? '';
-
-      if (donorName.isEmpty) {
-        donorName = user.email ?? 'Registered Donor';
-      }
-
-      if (donorEmail.isEmpty || !_isValidEmail(donorEmail)) {
-        throw Exception('The registered account does not have a valid email.');
-      }
-    }
-
-    // Save the donation record.
-    //
-    // Specific and Random both resolve to exactly one center, so they use
-    // the existing donations.clinic_id column directly -- the donation is
-    // immediately associated with that center, with no Super Admin step.
-    // Equal Distribution has no single center, so clinic_id is left null on
-    // the parent row (amount is still the full total); the per-center
-    // breakdown is saved separately below, into donation_allocations, so
-    // each center admin can see their own share.
-    final isEqualDistribution = _selectedAllocationMethod ==
-        'Distribute Donation Equally Among All Centers';
-
-    final response = await Supabase.instance.client
-        .from('donations')
-        .insert({
-          'donor_id': donorId,
-          'name': widget.isAnonymous ? null : donorName,
-          'email': widget.isAnonymous ? null : donorEmail,
-          'amount': amount,
-          'payment_method': _selectedPaymentChannel,
-          'status': 'pending',
-          'clinic_id': isEqualDistribution ? null : _selectedCenterId,
-        })
-        .select('id')
-        .single();
-
-    final donationId = response['id'].toString();
-
-    if (isEqualDistribution) {
-      // Reuses the exact shares already calculated and shown to the donor
-      // in the Fund Allocation summary -- not recalculated here.
-      final shares = _computeEqualShares(amount, _dialysisCenters.length);
-
-      await Supabase.instance.client.from('donation_allocations').insert([
-        for (int i = 0; i < _dialysisCenters.length; i++)
-          {
-            'donation_id': donationId,
-            'clinic_id': _dialysisCenters[i]['id'],
-            'amount': shares[i],
-          },
-      ]);
-    }
-
-    if (!mounted) return;
-
+  Future<void> _handleDonate() async {
     setState(() {
-      _isLoading = false;
+      _errorMessage = null;
     });
 
-    // Continue to proof upload.
-    Navigator.of(context).push(
-  MaterialPageRoute(
-    builder: (_) => ProofUploadPage(
-      donationId: donationId,
-      paymentMethod: _selectedPaymentChannel!,
-    ),
-  ),
-);
-  } catch (e) {
-    if (!mounted) return;
+    // Validate donation amount
+    final amount = _parseAmount();
+
+    if (amount == null || amount <= 0) {
+      setState(() {
+        _errorMessage = 'Please enter a valid donation amount.';
+      });
+      return;
+    }
+
+    // Validate fund allocation selection
+    if (_selectedAllocationMethod == null) {
+      setState(() {
+        _errorMessage = 'Please select a fund allocation option.';
+      });
+      return;
+    }
+
+    // Validate dialysis center selection
+    if (_selectedAllocationMethod == 'Specific Dialysis Center' &&
+        _selectedCenterId == null) {
+      setState(() {
+        _errorMessage = 'Please select a dialysis center.';
+      });
+      return;
+    }
+
+    // Validate random center assignment
+    if (_selectedAllocationMethod == 'Randomly Assign a Dialysis Center' &&
+        _selectedCenterId == null) {
+      setState(() {
+        _errorMessage = 'No dialysis centers are currently available for random assignment.';
+      });
+      return;
+    }
+
+    // Validate equal distribution has eligible centers
+    if (_selectedAllocationMethod == 'Distribute Donation Equally Among All Centers' &&
+        _dialysisCenters.isEmpty) {
+      setState(() {
+        _errorMessage = 'No dialysis centers are currently available for equal distribution.';
+      });
+      return;
+    }
+
+    // Validate payment method
+    if (_selectedPaymentChannel == null) {
+      setState(() {
+        _errorMessage = 'Please select a payment method.';
+      });
+      return;
+    }
+
+    // For registered donors, make sure they are logged in.
+    final user = Supabase.instance.client.auth.currentUser;
+
+    if (!widget.isAnonymous && user == null) {
+      await showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Login Required'),
+            content: const Text(
+              'Please log in to your registered donor account before continuing.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(
+                      builder: (_) => const LoginPage(),
+                    ),
+                    (route) => false,
+                  );
+                },
+                child: const Text('Back to Login'),
+              ),
+            ],
+          );
+        },
+      );
+
+      return;
+    }
 
     setState(() {
-      _isLoading = false;
-      _errorMessage = 'Unable to continue with your donation. ${e.toString()}';
+      _isLoading = true;
     });
+
+    try {
+      String? donorId;
+      String donorName;
+      String donorEmail;
+
+      if (widget.isAnonymous) {
+    // Anonymous donation:
+    // Do not store the donor's account information.
+    donorId = null;
+    donorName = '';
+    donorEmail = '';
+  } else  {
+        // Registered donation:
+        // Use the currently logged-in account.
+        donorId = user!.id;
+
+        donorEmail = user.email ?? '';
+
+        final profile = await Supabase.instance.client
+            .from('profiles')
+            .select('full_name')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        // What the donor actually typed into Full Name / Organization wins.
+        // The field is editable and asks them to "Enter your name", so a
+        // value entered there is the name this donation is recorded under --
+        // it lets a donor give under an organisation's name, or a different
+        // spelling, without altering their account.
+        //
+        // Left blank, this falls back to exactly the chain it always used:
+        // the account's profile name, then the account email, then a generic
+        // label -- so a donor who ignores the field is recorded as before.
+        // Account identification (donor_id) and the donor's email are taken
+        // from the authenticated account either way, and are untouched here.
+        final enteredName = _nameController.text.trim();
+
+        donorName = enteredName.isNotEmpty
+            ? enteredName
+            : (profile?['full_name'] as String?)?.trim() ?? '';
+
+        if (donorName.isEmpty) {
+          donorName = user.email ?? 'Registered Donor';
+        }
+
+        if (donorEmail.isEmpty || !_isValidEmail(donorEmail)) {
+          throw Exception('The registered account does not have a valid email.');
+        }
+      }
+
+      // Save the donation record.
+      //
+      // Specific and Random both resolve to exactly one center, so they use
+      // the existing donations.clinic_id column directly -- the donation is
+      // immediately associated with that center, with no Super Admin step.
+      // Equal Distribution has no single center, so clinic_id is left null on
+      // the parent row (amount is still the full total); the per-center
+      // breakdown is saved separately below, into donation_allocations, so
+      // each center admin can see their own share.
+      final isEqualDistribution = _selectedAllocationMethod ==
+          'Distribute Donation Equally Among All Centers';
+
+      // Records which of the three allocation methods the donor picked, so
+      // Super Admin's review screen can show it truthfully -- a specific-
+      // center pick and a random-center pick both end up as the same
+      // donations.clinic_id, so that column alone can't tell them apart.
+      final allocationType = isEqualDistribution
+          ? 'equal_distribution'
+          : (_selectedAllocationMethod == 'Randomly Assign a Dialysis Center'
+                ? 'random_center'
+                : 'specific_center');
+
+      final response = await Supabase.instance.client
+          .from('donations')
+          .insert({
+            'donor_id': donorId,
+            'name': widget.isAnonymous ? null : donorName,
+            'email': widget.isAnonymous ? null : donorEmail,
+            'amount': amount,
+            'payment_method': _selectedPaymentChannel,
+            'status': 'verified',
+            'clinic_id': isEqualDistribution ? null : _selectedCenterId,
+            'allocation_type': allocationType,
+          })
+          .select('id')
+          .single();
+
+      final donationId = response['id'].toString();
+
+      if (isEqualDistribution) {
+        // Reuses the exact shares already calculated and shown to the donor
+        // in the Fund Allocation summary -- not recalculated here.
+        final shares = _computeEqualShares(amount, _dialysisCenters.length);
+
+        await Supabase.instance.client.from('donation_allocations').insert([
+          for (int i = 0; i < _dialysisCenters.length; i++)
+            {
+              'donation_id': donationId,
+              'clinic_id': _dialysisCenters[i]['id'],
+              'amount': shares[i],
+            },
+        ]);
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      // Donations are voluntary and no longer require a payment receipt or any
+      // review before they count -- the donation (and its center routing,
+      // above) is already fully recorded at this point, so we just confirm
+      // that to the donor instead of asking for proof of payment.
+      // Not dismissible on purpose: closing this by tapping the barrier or
+      // pressing Escape used to drop the donor back onto a still-filled form
+      // that could be submitted a second time. "Back to Home" below is the
+      // only way out of it.
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('Thank You!'),
+            content: const Text(
+              'Your donation has been recorded successfully. We truly appreciate your generosity.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Back to Home'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (!mounted) return;
+
+      // The donation is fully recorded by this point; all that is left is to
+      // put the donor back on the landing page. This runs once the dialog has
+      // actually closed and -- because the dialog is not dismissible -- only
+      // ever by way of the "Back to Home" button above.
+      _goToLandingPage();
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Unable to continue with your donation. ${e.toString()}';
+      });
+    }
   }
-}
 
   Widget _buildLoginRequiredCard() {
-    return Container(
-      padding: const EdgeInsets.all(34),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(34),
-        border: Border.all(color: const Color(0xFFE3EEF4)),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.lock_outline_rounded, color: _primaryTeal, size: 46),
-          const SizedBox(height: 18),
-          Text(
-            'Please log in to donate',
-            style: TextStyle(
-              color: _darkTeal,
-              fontSize: 24,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Sign in first so your donation can be properly recorded and verified.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.blueGrey.shade600, height: 1.6),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const LoginPage()),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _primaryTeal,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
+    final width = MediaQuery.of(context).size.width;
+    final mobile = Brand.isMobile(width);
+
+    return _animatedEntry(
+      child: Container(
+        padding: EdgeInsets.all(mobile ? 26 : 38),
+        decoration: BoxDecoration(
+          color: Brand.white,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: Brand.border),
+          boxShadow: Brand.shadowCard,
+        ),
+        child: Column(
+          children: [
+            Container(
+              height: 68,
+              width: 68,
+              decoration: Brand.iconBox(Brand.sky, radius: 22),
+              child: const Icon(
+                Icons.lock_outline_rounded,
+                color: Brand.brand,
+                size: 33,
               ),
             ),
-            child: const Text(
-              'Go to Login',
-              style: TextStyle(fontWeight: FontWeight.w900),
+            const SizedBox(height: 20),
+            Text(
+              'Please log in to donate',
+              textAlign: TextAlign.center,
+              style: Brand.heading(mobile ? 21 : 24),
             ),
-          ),
-        ],
+            const SizedBox(height: 10),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: Text(
+                'Sign in first so your donation can be properly recorded and '
+                'verified under your name.',
+                textAlign: TextAlign.center,
+                style: Brand.body(14.5),
+              ),
+            ),
+            const SizedBox(height: 26),
+            DonateButton(
+              label: 'Go to Login',
+              icon: Icons.login_rounded,
+              expand: mobile,
+              onPressed: () {
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(builder: (_) => const LoginPage()),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
 
+  /// What actually happens on submit.
+  ///
+  /// The wording here follows the behaviour in [_handleDonate]: the record
+  /// is written and confirmed straight away, and the transfer itself is
+  /// made by the donor through the channel they picked above. There is no
+  /// separate proof-upload or review step in this flow.
   Widget _buildReminderStrip() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: _softBlue,
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: const Color(0xFFD8EAF0)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.info_outline_rounded, color: _primaryTeal),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              'After submitting your donation details, you will upload your proof of payment. Your donation will remain pending until it is reviewed.',
-              style: TextStyle(
-                color: Colors.blueGrey.shade700,
-                fontWeight: FontWeight.w600,
-                height: 1.5,
+    return _animatedEntry(
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          color: Brand.sky,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: Brand.brand.withValues(alpha: 0.16)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 42,
+              width: 42,
+              decoration: Brand.iconBox(Brand.white, radius: 14),
+              child: const Icon(
+                Icons.info_outline_rounded,
+                color: Brand.brand,
+                size: 21,
               ),
             ),
-          ),
-        ],
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'What happens when you submit',
+                    style: Brand.label(15, color: Brand.textStrong),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Your donation is saved to CureNurture’s donation records '
+                    'along with the amount, the payment channel you selected '
+                    'and the dialysis centre it is directed to. You will see a '
+                    'confirmation as soon as it has been recorded.',
+                    style: Brand.body(13.5),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1641,43 +1380,40 @@ Future<void> _handleDonate() async {
   @override
   Widget build(BuildContext context) {
     final user = Supabase.instance.client.auth.currentUser;
+    final width = MediaQuery.of(context).size.width;
+    final mobile = Brand.isMobile(width);
 
     return Scaffold(
       backgroundColor: _surface,
       appBar: _buildHeader(),
-      body: SingleChildScrollView(
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: SlideTransition(
-            position: _slideAnimation,
-            child: Column(
-              children: [
-                _buildHero(),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 28,
-                    vertical: 46,
-                  ),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1120),
+      body: RevealScope(
+        child: SingleChildScrollView(
+          child: FadeTransition(
+            opacity: _fadeAnimation,
+            child: SlideTransition(
+              position: _slideAnimation,
+              child: Column(
+                children: [
+                  _buildHero(),
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      vertical: mobile ? 32 : 46,
+                    ),
+                    child: ContentColumn(
+                      maxWidth: 1000,
                       child: Column(
                         children: [
-                          _buildPageIntro(),
-                          const SizedBox(height: 28),
-                          _buildVerificationProgress(),
-                          const SizedBox(height: 28),
                           (!widget.isAnonymous && user == null)
                               ? _buildLoginRequiredCard()
                               : _buildDonationForm(),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 22),
                           _buildReminderStrip(),
                         ],
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

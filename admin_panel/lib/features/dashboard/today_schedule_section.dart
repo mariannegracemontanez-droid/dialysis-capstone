@@ -2,26 +2,110 @@ import 'package:admin_panel/services/schedule_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
+
+import '../../models/center_schedule.dart';
+import '../../models/clinic_shift.dart';
+import '../../services/center_schedule_service.dart';
+import '../../theme/app_theme.dart';
+import '../../utils/admin_validators.dart';
+import '../../widgets/admin_modal.dart';
+import '../../widgets/admin_notice.dart';
 
 class TodayScheduleSection extends StatefulWidget {
   final String clinicId;
   final int machineCount;
 
+  /// Fired after this section changes a day's schedule, so the dashboard
+  /// can refresh anything that reads the same data (the reschedule
+  /// requests list, for one).
+  final VoidCallback? onScheduleChanged;
+
   const TodayScheduleSection({
     super.key,
     required this.clinicId,
     required this.machineCount,
+    this.onScheduleChanged,
   });
 
   @override
-  State<TodayScheduleSection> createState() => _TodayScheduleSectionState();
+  State<TodayScheduleSection> createState() => TodayScheduleSectionState();
 }
 
-class _TodayScheduleSectionState extends State<TodayScheduleSection> {
+class TodayScheduleSectionState extends State<TodayScheduleSection> {
   final ScheduleService _service = ScheduleService();
-  final SupabaseClient _supabase = Supabase.instance.client;
+  final CenterScheduleService _centerScheduleService = CenterScheduleService();
+
+  List<ClinicShift> _shifts = [];
+
+  /// patientId -> default shift code, for the day currently shown. Used
+  /// only to label a row as recurring vs. manually added.
+  Map<String, String> _recurringShifts = {};
+
+  /// This DATE's capacity picture, straight from
+  /// CenterScheduleService.getDateCapacity -- the one capacity
+  /// calculation in the app. Cancelled (removed) occupants never count,
+  /// so removing a patient frees a seat and adding one takes it.
+  DayCapacity? _dateCapacity;
+
+  ShiftCapacity? _shiftCapacityFor(String shiftCode) {
+    for (final entry in _dateCapacity?.shifts ?? const <ShiftCapacity>[]) {
+      if (entry.shift.shiftCode == shiftCode) return entry;
+    }
+    return null;
+  }
+
+  /// Configured capacity for a shift code -- never a naive machine-count
+  /// assumption. Falls back to the raw clinic_shifts figure, and then the
+  /// machine count, only while the date snapshot hasn't loaded yet.
+  int _capacityFor(String shiftCode) {
+    final entry = _shiftCapacityFor(shiftCode);
+    if (entry != null) return entry.effectiveCapacity;
+
+    for (final shift in _shifts) {
+      if (shift.shiftCode == shiftCode) return shift.capacity;
+    }
+    return widget.machineCount;
+  }
+
+  /// Outcomes from this section are raised through the one notice
+  /// system. It matters here more than anywhere: add, move, remove and
+  /// the session form are all driven from inside a modal, and a snack bar
+  /// raised from there used to be painted underneath it.
+  void _showMessage(String message, {bool isError = false}) {
+    if (!mounted) return;
+
+    if (isError) {
+      AdminNotice.error(context, message);
+    } else {
+      AdminNotice.success(context, message);
+    }
+  }
+
+  /// A rule the admin has run into -- a closed day, an inactive shift, a
+  /// full shift. Not a failure, so it does not demand acknowledgement.
+  void _showInfo(String message) {
+    if (!mounted) return;
+    AdminNotice.info(context, message);
+  }
+
+  /// A field the admin has to correct before the save can go through.
+  /// An error notice rather than an info one, so it waits to be
+  /// acknowledged and cannot be dismissed by clicking past it.
+  void _showValidation(String message) {
+    if (!mounted) return;
+    AdminNotice.error(context, message, title: 'Check this before saving');
+  }
+
+  /// Strips Dart's "Exception: " prefix so a blocked add/move/remove reads
+  /// as the plain explanation the service wrote.
+  String _friendlyError(Object error) {
+    final text = error.toString();
+    if (text.startsWith('Exception: ')) {
+      return text.substring('Exception: '.length);
+    }
+    return text;
+  }
 
   final List<String> days = [
     'Monday',
@@ -47,14 +131,18 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
   Timer? _dateWatcher;
   DateTime _currentWeekStart = DateTime.now();
 
-  static const Color primary = Color(0xFF245C78);
-  static const Color border = Color(0xFFE1E8EF);
-  static const Color textDark = Color(0xFF1F2D3D);
-  static const Color textMuted = Color(0xFF6B7A8C);
-  static const Color green = Color(0xFF10B981);
-  static const Color teal = Color(0xFF70C8BF);
-  static const Color softBg = Color(0xFFF8FAFC);
-  static const Color orange = Color(0xFFF59E0B);
+  // Presentation only: the section's palette now comes from the shared
+  // Admin theme, so it matches the rest of the panel and the Super Admin
+  // portal. The names are unchanged, so nothing below had to move.
+  static const Color primary = AppTheme.blue1;
+  static const Color border = AppTheme.border;
+  static const Color textDark = AppTheme.textPrimary;
+  static const Color textMuted = AppTheme.textMuted;
+  static const Color green = AppTheme.accentGreen;
+  static const Color teal = AppTheme.blue1;
+  static const Color softBg = AppTheme.surfaceTint;
+  static const Color orange = AppTheme.accentOrange;
+  static const Color purple = AppTheme.accentPurple;
 
   @override
   void initState() {
@@ -247,38 +335,64 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     return '';
   }
 
+  /// Reads shift label/time straight from clinic_shifts -- previously
+  /// this only showed a shift's time once at least one daily_schedules
+  /// row for that shift existed on some date, which meant a brand-new
+  /// clinic or an empty day showed "Time not set" even though the shift
+  /// was fully configured.
   Future<void> loadShiftTimes() async {
     try {
-      final response = await _supabase
-          .from('daily_schedules')
-          .select('shift, start_time, end_time')
-          .eq('clinic_id', widget.clinicId);
-
-      final nextShiftTimes = {'AM': 'Time not set', 'PM': 'Time not set'};
-
-      for (final slot in response) {
-        final shift = slot['shift']?.toString().toUpperCase();
-
-        if (shift == 'AM' || shift == 'PM') {
-          final startTime = _formatTimeValue(slot['start_time']);
-          final endTime = _formatTimeValue(slot['end_time']);
-
-          if (startTime.isNotEmpty && endTime.isNotEmpty) {
-            nextShiftTimes[shift!] = '$startTime - $endTime';
-          }
-        }
-      }
+      final shifts = await _centerScheduleService.getClinicShifts(
+        widget.clinicId,
+      );
 
       if (!mounted) return;
 
       setState(() {
-        shiftTimes = nextShiftTimes;
+        shiftTimes = _shiftTimesFrom(shifts);
+        _shifts = shifts;
       });
     } catch (e) {
       debugPrint('Load shift times error: $e');
     }
   }
 
+  /// The AM/PM time labels for a shift list. Pure, so a caller that has
+  /// already read the shifts doesn't have to read them a second time just
+  /// to get the labels.
+  Map<String, String> _shiftTimesFrom(List<ClinicShift> shifts) {
+    final nextShiftTimes = {'AM': 'Time not set', 'PM': 'Time not set'};
+
+    for (final shift in shifts) {
+      final startTime = _formatTimeValue(shift.startTime);
+      final endTime = _formatTimeValue(shift.endTime);
+
+      if (startTime.isNotEmpty && endTime.isNotEmpty) {
+        nextShiftTimes[shift.shiftCode] = '$startTime - $endTime';
+      }
+    }
+
+    return nextShiftTimes;
+  }
+
+  /// Loads everything the selected day needs.
+  ///
+  /// Same reads, same results, same order of dependency as before -- only
+  /// the *shape* of the trip changed. It used to be a chain of awaits in
+  /// which a capacity snapshot was built twice (once inside
+  /// generateTodayDefaultSchedule, once inside getDateCapacity) and the
+  /// clinic's shifts were read three times over, so switching day cost
+  /// roughly fifteen sequential round trips. It is now three phases:
+  ///
+  ///   1. read the shifts and the capacity snapshot, together;
+  ///   2. generate this date's default list -- this WRITES, so it has to
+  ///      finish before the date is read back;
+  ///   3. read the date back: assignments, recurring labels and this
+  ///      date's live capacity, together.
+  ///
+  /// Nothing is cached between calls: every switch of the day still reads
+  /// the schedule fresh from the database, because a stale dialysis list
+  /// is not an acceptable trade for a faster one.
   Future<void> loadSelectedDaySchedule() async {
     if (!mounted) return;
 
@@ -286,30 +400,79 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
 
     try {
       final selectedDate = getDateForSelectedDay();
+      final dayIndex = days.indexOf(selectedDay);
+      final date = getDateForDay(dayIndex < 0 ? 0 : dayIndex);
 
-      await loadShiftTimes();
+      // --- phase 1: the center's configuration ------------------------
+      final setup = await Future.wait<Object>([
+        _centerScheduleService.getClinicShifts(widget.clinicId),
+        _centerScheduleService.getCapacitySnapshot(widget.clinicId),
+      ]);
 
-      final data = await _service.getDailyAssignments(
+      final shifts = setup[0] as List<ClinicShift>;
+      final snapshot = setup[1] as CenterCapacitySnapshot;
+
+      if (!mounted) return;
+
+      // The shift time labels come from the list just read, so the header
+      // stops saying "Time not set" as early as possible.
+      setState(() {
+        _shifts = shifts;
+        shiftTimes = _shiftTimesFrom(shifts);
+      });
+
+      // --- phase 2: populate this date's default list ------------------
+      // Additive and idempotent, and never touches a daily_schedules row
+      // that already exists for a patient on this date (manually added or
+      // previously generated).
+      await _centerScheduleService.generateTodayDefaultSchedule(
         clinicId: widget.clinicId,
-        scheduleDate: selectedDate,
+        date: date,
+        snapshot: snapshot,
       );
+
+      // --- phase 3: read the date back ---------------------------------
+      final loaded = await Future.wait<Object>([
+        _service.getDailyAssignments(
+          clinicId: widget.clinicId,
+          scheduleDate: selectedDate,
+        ),
+        _centerScheduleService.getRecurringPatientShiftsForDay(
+          clinicId: widget.clinicId,
+          day: selectedDay,
+          shifts: shifts,
+        ),
+        // Capacity for this exact date, not the recurring week -- so a
+        // removal frees a seat and an addition takes one straight away.
+        // The snapshot only supplies the configured capacity; the
+        // occupancy figure is still read fresh from daily_schedules.
+        _centerScheduleService.getDateCapacity(
+          clinicId: widget.clinicId,
+          date: date,
+          snapshot: snapshot,
+        ),
+      ]);
+
+      final data = loaded[0] as List<dynamic>;
+      final recurringShifts = loaded[1] as Map<String, String>;
+      final dateCapacity = loaded[2] as DayCapacity;
 
       if (!mounted) return;
 
       setState(() {
         amPatients = data.where((item) => item['shift'] == 'AM').toList();
         pmPatients = data.where((item) => item['shift'] == 'PM').toList();
+        _recurringShifts = recurringShifts;
+        _dateCapacity = dateCapacity;
       });
     } catch (e) {
       debugPrint('Load schedule error: $e');
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to load schedule: $e'),
-          backgroundColor: Colors.red,
-        ),
+      _showMessage(
+        'The schedule for $selectedDay could not be loaded. $e',
+        isError: true,
       );
     } finally {
       if (!mounted) return;
@@ -317,32 +480,136 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     }
   }
 
+  /// Colour + wording for why a candidate is offered on this date.
+  static (String, Color, IconData) _sourceBadge(DateCandidateSource source) {
+    switch (source) {
+      case DateCandidateSource.rescheduled:
+        return ('Rescheduled', purple, Icons.swap_horiz_rounded);
+      case DateCandidateSource.removedToday:
+        return ('Removed', orange, Icons.undo_rounded);
+      case DateCandidateSource.recurring:
+        return ('Recurring', primary, Icons.event_repeat_rounded);
+    }
+  }
+
+  Widget _candidateBadge(DateCandidateSource source) {
+    final (label, color, icon) = _sourceBadge(source);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Why this patient can be added today, in one short line under their
+  /// name -- so an approved reschedule is never a silent appearance.
+  String _candidateSubtitle(DateScheduleCandidate candidate) {
+    switch (candidate.source) {
+      case DateCandidateSource.rescheduled:
+        final from = candidate.rescheduleOriginalDate;
+        final to = candidate.rescheduleNewDate;
+        final range = from == null || to == null
+            ? ''
+            : '  •  ${DateFormat('EEE, MMM d').format(from)} → '
+                  '${DateFormat('EEE, MMM d').format(to)}';
+        return 'Available from an approved reschedule request$range';
+
+      case DateCandidateSource.removedToday:
+        final was = candidate.currentShiftCode;
+        return was == null
+            ? 'Taken off this day earlier — adding them back affects this '
+                  'day only'
+            : 'Taken off the $was shift earlier — adding them here affects '
+                  'this day only';
+
+      case DateCandidateSource.recurring:
+        final code = candidate.defaultShiftCode;
+        return code == null
+            ? 'From their recurring weekly schedule'
+            : 'Recurring $code patient on $selectedDay';
+    }
+  }
+
   Future<void> openAddModal(String shift) async {
     try {
       final selectedDate = getDateForSelectedDay();
+      final dayIndex = days.indexOf(selectedDay);
+      final date = getDateForDay(dayIndex < 0 ? 0 : dayIndex);
 
-      final patients = await _service.getEligiblePatients(
-        widget.clinicId,
-        selectedDay,
-      );
+      // The capacity check and the candidate list are independent reads,
+      // so the modal waits for one round trip rather than two. Both are
+      // read fresh -- the capacity that gates the add is never taken from
+      // the copy this section already has on screen.
+      final opening = await Future.wait<Object>([
+        _centerScheduleService.getDateCapacity(
+          clinicId: widget.clinicId,
+          date: date,
+        ),
+        // Candidates are resolved for the DATE, not just the weekday:
+        // recurring patients who aren't on the list yet, anyone an admin
+        // removed from this date earlier, and anyone an approved
+        // reschedule request grants this date. Nobody already live on
+        // this date is offered -- they can only be moved.
+        _centerScheduleService.getDateCandidates(
+          clinicId: widget.clinicId,
+          date: date,
+          shifts: _shifts.isEmpty ? null : _shifts,
+        ),
+      ]);
 
-      final latestAssignments = await _service.getDailyAssignments(
-        clinicId: widget.clinicId,
-        scheduleDate: selectedDate,
-      );
-
-      final assignedPatientIds = latestAssignments
-          .map((item) => item['patient_id']?.toString())
-          .where((id) => id != null)
-          .toSet();
-
-      final availablePatients = patients.where((item) {
-        return !assignedPatientIds.contains(item['patient_id']?.toString());
-      }).toList();
+      final dayCapacity = opening[0] as DayCapacity;
+      final candidates = opening[1] as List<DateScheduleCandidate>;
 
       if (!mounted) return;
 
-      showDialog(
+      if (!dayCapacity.isOperating) {
+        _showInfo('The center does not operate on $selectedDay.');
+        return;
+      }
+
+      ShiftCapacity? shiftCapacity;
+      for (final entry in dayCapacity.shifts) {
+        if (entry.shift.shiftCode == shift) shiftCapacity = entry;
+      }
+
+      if (shiftCapacity == null || !shiftCapacity.shift.isActive) {
+        _showInfo('The $shift shift is not active at this center.');
+        return;
+      }
+
+      if (shiftCapacity.isFull) {
+        _showInfo(
+          'The $shift shift is full '
+          '(${shiftCapacity.scheduled}/${shiftCapacity.effectiveCapacity}). '
+          'Remove a patient from this shift before adding another.',
+        );
+        return;
+      }
+
+      final capacityLine =
+          '${shiftCapacity.scheduled}/${shiftCapacity.effectiveCapacity} '
+          'filled · ${shiftCapacity.available} vacant';
+
+      await showAdminDialog(
         context: context,
         builder: (dialogContext) {
           bool dialogIsAdding = false;
@@ -353,18 +620,13 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                 backgroundColor: Colors.transparent,
                 insetPadding: const EdgeInsets.all(24),
                 child: Container(
-                  width: 520,
-                  constraints: const BoxConstraints(maxHeight: 560),
+                  width: 540,
+                  constraints: const BoxConstraints(maxHeight: 580),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.16),
-                        blurRadius: 24,
-                        offset: const Offset(0, 12),
-                      ),
-                    ],
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(AppTheme.rXl),
+                    border: Border.all(color: AppTheme.border),
+                    boxShadow: AppTheme.shadowMd,
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -377,7 +639,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                               width: 40,
                               height: 40,
                               decoration: BoxDecoration(
-                                color: green.withOpacity(0.12),
+                                color: green.withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: const Icon(
@@ -400,7 +662,8 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    '$selectedDay • $selectedDate',
+                                    '$selectedDay • $selectedDate • '
+                                    '$capacityLine',
                                     style: const TextStyle(
                                       color: textMuted,
                                       fontSize: 12,
@@ -422,28 +685,33 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                       Flexible(
                         child: SizedBox(
                           height: 430,
-                          child: availablePatients.isEmpty
+                          child: candidates.isEmpty
                               ? const Center(
                                   child: Padding(
                                     padding: EdgeInsets.all(24),
                                     child: Text(
-                                      'No available patients scheduled for this day.',
+                                      'Everyone scheduled for this day is '
+                                      'already on the list.\n\nPatients also '
+                                      'appear here once they are removed from '
+                                      'this day, or once a reschedule request '
+                                      'for this date is approved.',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         color: textMuted,
                                         fontWeight: FontWeight.w700,
+                                        height: 1.5,
                                       ),
                                     ),
                                   ),
                                 )
                               : ListView.separated(
                                   padding: const EdgeInsets.all(16),
-                                  itemCount: availablePatients.length,
+                                  itemCount: candidates.length,
                                   separatorBuilder: (_, _) =>
                                       const SizedBox(height: 8),
                                   itemBuilder: (context, index) {
-                                    final item = availablePatients[index];
-                                    final patientName = getPatientName(item);
+                                    final candidate = candidates[index];
+                                    final patientName = candidate.patientName;
 
                                     return InkWell(
                                       borderRadius: BorderRadius.circular(10),
@@ -455,16 +723,19 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                                               });
 
                                               try {
-                                                await _service
-                                                    .assignDailySchedule(
-                                                      weeklyScheduleId:
-                                                          item['id'],
-                                                      patientId:
-                                                          item['patient_id'],
+                                                await _centerScheduleService
+                                                    .addPatientToDate(
                                                       clinicId: widget.clinicId,
-                                                      shift: shift,
-                                                      scheduleDate:
-                                                          selectedDate,
+                                                      date: date,
+                                                      shiftCode: shift,
+                                                      patientId:
+                                                          candidate.patientId,
+                                                      weeklyScheduleId:
+                                                          candidate
+                                                              .weeklyScheduleId,
+                                                      rescheduleRequestId:
+                                                          candidate
+                                                              .rescheduleRequestId,
                                                     );
 
                                                 if (!mounted) return;
@@ -472,19 +743,17 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                                                 Navigator.of(
                                                   dialogContext,
                                                 ).pop();
+
                                                 await loadSelectedDaySchedule();
+                                                widget.onScheduleChanged
+                                                    ?.call();
 
                                                 if (!mounted) return;
 
-                                                ScaffoldMessenger.of(
-                                                  context,
-                                                ).showSnackBar(
-                                                  SnackBar(
-                                                    content: Text(
-                                                      '$patientName added to $shift Shift.',
-                                                    ),
-                                                    backgroundColor: green,
-                                                  ),
+                                                _showMessage(
+                                                  '$patientName added to the '
+                                                  '$shift shift for '
+                                                  '$selectedDay.',
                                                 );
                                               } catch (e) {
                                                 debugPrint(
@@ -497,15 +766,9 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                                                   dialogIsAdding = false;
                                                 });
 
-                                                ScaffoldMessenger.of(
-                                                  context,
-                                                ).showSnackBar(
-                                                  SnackBar(
-                                                    content: Text(
-                                                      'Failed to add patient: $e',
-                                                    ),
-                                                    backgroundColor: Colors.red,
-                                                  ),
+                                                _showMessage(
+                                                  _friendlyError(e),
+                                                  isError: true,
                                                 );
                                               }
                                             },
@@ -532,21 +795,56 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                                                           .trim()[0]
                                                           .toUpperCase(),
                                                 style: const TextStyle(
-                                                  color: Color(0xFF0369A1),
+                                                  color: AppTheme.blue1,
                                                   fontWeight: FontWeight.w900,
                                                 ),
                                               ),
                                             ),
                                             const SizedBox(width: 11),
                                             Expanded(
-                                              child: Text(
-                                                patientName,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w800,
-                                                  color: textDark,
-                                                ),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      Flexible(
+                                                        child: Text(
+                                                          patientName,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style:
+                                                              const TextStyle(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w800,
+                                                                color: textDark,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 7),
+                                                      _candidateBadge(
+                                                        candidate.source,
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 3),
+                                                  Text(
+                                                    _candidateSubtitle(
+                                                      candidate,
+                                                    ),
+                                                    style: const TextStyle(
+                                                      fontSize: 10.5,
+                                                      color: textMuted,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      height: 1.35,
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                             ),
+                                            const SizedBox(width: 8),
                                             dialogIsAdding
                                                 ? const SizedBox(
                                                     width: 18,
@@ -558,7 +856,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                                                   )
                                                 : const Icon(
                                                     Icons.chevron_right_rounded,
-                                                    color: Color(0xFF94A3B8),
+                                                    color: AppTheme.iconMuted,
                                                   ),
                                           ],
                                         ),
@@ -580,44 +878,146 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
       debugPrint('Open modal error: $e');
 
       if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error loading patients: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showMessage(_friendlyError(e), isError: true);
     }
   }
 
+  /// The small tinted explanation that sits under a confirmation's
+  /// question - used wherever an action is deliberately scoped to one day.
+  static Widget _noticeBox({required IconData icon, required String text}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceTint,
+        borderRadius: BorderRadius.circular(AppTheme.rMd),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: AppTheme.blue1),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 12.5,
+                height: 1.45,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Takes the patient off THIS DATE only.
+  ///
+  /// This cancels the date's daily_schedules occurrence. It does not touch
+  /// patient_schedule_days, weekly_schedules or patients.preferred_shift,
+  /// so the patient's recurring Mon/Wed/Fri (or whatever they are on)
+  /// stays exactly as it was and they reappear automatically on their next
+  /// scheduled day.
   Future<void> removePatient(dynamic item) async {
+    final patientName = getPatientName(item);
+    final shift = item['shift']?.toString() ?? '';
+
+    final confirmed = await showAdminConfirm(
+      context: context,
+      title: 'Remove from this day',
+      icon: Icons.event_busy_rounded,
+      destructive: true,
+      confirmLabel: 'Remove from this day',
+      message:
+          'Remove $patientName from the $shift shift on $selectedDay '
+          '(${getDateForSelectedDay()})?',
+      detail: _noticeBox(
+        icon: Icons.event_repeat_rounded,
+        text:
+            'This affects this day only. Their recurring weekly schedule is '
+            'not changed, and they will appear again on their next '
+            'scheduled day.',
+      ),
+    );
+
+    if (confirmed != true) return;
+
     try {
-      await _service.deleteDailySchedule(
+      await _centerScheduleService.cancelDateOccurrence(
         dailyScheduleId: item['id'].toString(),
         clinicId: widget.clinicId,
+        reason: 'Removed from the $selectedDay $shift list by the center admin',
       );
 
       await loadSelectedDaySchedule();
+      widget.onScheduleChanged?.call();
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Patient removed from schedule.'),
-          backgroundColor: green,
-        ),
+      _showMessage(
+        '$patientName removed from the $shift shift for $selectedDay only. '
+        'Their recurring schedule is unchanged.',
       );
     } catch (e) {
       debugPrint('Remove patient error: $e');
 
       if (!mounted) return;
+      _showMessage(_friendlyError(e), isError: true);
+    }
+  }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to remove patient: $e'),
-          backgroundColor: Colors.red,
-        ),
+  /// Moves a patient to the other shift FOR THIS DATE ONLY, by updating
+  /// the single occurrence row they already have -- so no duplicate
+  /// session can appear, and their recurring default shift
+  /// (patient_schedule_days.shift_id) is untouched.
+  Future<void> movePatient(dynamic item, String fromShift) async {
+    final toShift = fromShift == 'AM' ? 'PM' : 'AM';
+    final patientName = getPatientName(item);
+    final dayIndex = days.indexOf(selectedDay);
+    final date = getDateForDay(dayIndex < 0 ? 0 : dayIndex);
+
+    final confirmed = await showAdminConfirm(
+      context: context,
+      title: 'Move to $toShift shift',
+      icon: Icons.swap_horiz_rounded,
+      confirmLabel: 'Move to $toShift',
+      message:
+          'Move $patientName from the $fromShift shift to the $toShift '
+          'shift on $selectedDay?',
+      detail: _noticeBox(
+        icon: Icons.event_repeat_rounded,
+        text:
+            'This applies to this day only \u2014 their normal default shift '
+            'stays $fromShift.',
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await _centerScheduleService.moveOccurrenceToShift(
+        dailyScheduleId: item['id'].toString(),
+        clinicId: widget.clinicId,
+        date: date,
+        toShiftCode: toShift,
       );
+
+      await loadSelectedDaySchedule();
+      widget.onScheduleChanged?.call();
+
+      if (!mounted) return;
+
+      _showMessage(
+        '$patientName moved to the $toShift shift for $selectedDay only.',
+      );
+    } catch (e) {
+      debugPrint('Move patient error: $e');
+
+      if (!mounted) return;
+      _showMessage(_friendlyError(e), isError: true);
     }
   }
 
@@ -656,36 +1056,40 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     bool isSavingAfter = false;
     bool isCompleting = false;
 
-    await showDialog(
+    await showAdminDialog(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setModalState) {
             Future<void> saveBefore() async {
-              final weight = double.tryParse(
-                beforeWeightController.text.trim(),
-              );
-              final systolic = int.tryParse(
-                beforeSystolicController.text.trim(),
-              );
-              final diastolic = int.tryParse(
-                beforeDiastolicController.text.trim(),
-              );
+              // Each value is checked on its own so the admin is told
+              // which reading is wrong, instead of one message covering
+              // three fields. The blood pressure pair is checked
+              // together: a systolic below its own diastolic is a
+              // transposed entry.
+              final beforeError = AdminValidators.firstError([
+                () => AdminValidators.weightKg(
+                  beforeWeightController.text,
+                  label: 'weight before dialysis',
+                ),
+                () => AdminValidators.bloodPressure(
+                  systolic: beforeSystolicController.text,
+                  diastolic: beforeDiastolicController.text,
+                  systolicLabel: 'before-dialysis systolic reading',
+                  diastolicLabel: 'before-dialysis diastolic reading',
+                ),
+              ]);
 
-              if (weight == null ||
-                  weight <= 0 ||
-                  systolic == null ||
-                  diastolic == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Please enter a valid before-dialysis weight and blood pressure.',
-                    ),
-                    backgroundColor: Colors.red,
-                  ),
-                );
+              if (beforeError != null) {
+                _showValidation(beforeError);
                 return;
               }
+
+              final weight = double.parse(beforeWeightController.text.trim());
+              final systolic = int.parse(beforeSystolicController.text.trim());
+              final diastolic = int.parse(
+                beforeDiastolicController.text.trim(),
+              );
 
               setModalState(() => isSavingBefore = true);
 
@@ -723,7 +1127,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
             }
 
             Future<void> completeSession() async {
-              final confirmed = await showDialog<bool>(
+              final confirmed = await showAdminDialog<bool>(
                 context: dialogContext,
                 builder: (confirmContext) => AlertDialog(
                   title: const Text('Complete Dialysis Session'),
@@ -766,8 +1170,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                 await _showFeedbackDialog(
                   ctx: dialogContext,
                   success: true,
-                  message:
-                      '$patientName\'s dialysis session marked completed.',
+                  message: '$patientName\'s dialysis session marked completed.',
                 );
               } catch (e) {
                 debugPrint('Complete dialysis session error: $e');
@@ -782,46 +1185,42 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
             }
 
             Future<void> saveAfter() async {
-              final weight = double.tryParse(
-                afterWeightController.text.trim(),
-              );
-              final hours = int.tryParse(durationHoursController.text.trim());
-              final minutes = int.tryParse(
-                durationMinutesController.text.trim(),
-              );
+              // The 0-8h / 0-59m bounds are the CHECK constraints
+              // daily_schedules already carries (see
+              // supabase/dialysis_session_duration.sql), so a value the
+              // form rejects is exactly one the database would reject.
+              final afterError = AdminValidators.firstError([
+                () => AdminValidators.weightKg(
+                  afterWeightController.text,
+                  label: 'weight after dialysis',
+                ),
+                () => AdminValidators.wholeNumber(
+                  durationHoursController.text,
+                  label: 'session duration in hours',
+                  min: 0,
+                  max: 8,
+                ),
+                () => AdminValidators.wholeNumber(
+                  durationMinutesController.text,
+                  label: 'session duration in minutes',
+                  min: 0,
+                  max: 59,
+                ),
+              ]);
 
-              if (weight == null || weight <= 0) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Please enter a valid after-dialysis weight.',
-                    ),
-                    backgroundColor: Colors.red,
-                  ),
-                );
+              if (afterError != null) {
+                _showValidation(afterError);
                 return;
               }
 
-              if (hours == null || hours < 0 || hours > 8) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Session duration hours must be between 0 and 8.',
-                    ),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-                return;
-              }
+              final weight = double.parse(afterWeightController.text.trim());
+              final hours = int.parse(durationHoursController.text.trim());
+              final minutes = int.parse(durationMinutesController.text.trim());
 
-              if (minutes == null || minutes < 0 || minutes > 59) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Session duration minutes must be between 0 and 59.',
-                    ),
-                    backgroundColor: Colors.red,
-                  ),
+              if (hours == 0 && minutes == 0) {
+                _showValidation(
+                  'The session duration cannot be zero. Enter how long the '
+                  'session actually ran.',
                 );
                 return;
               }
@@ -876,15 +1275,10 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                 width: 560,
                 constraints: const BoxConstraints(maxHeight: 680),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.16),
-                      blurRadius: 24,
-                      offset: const Offset(0, 12),
-                    ),
-                  ],
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(AppTheme.rXl),
+                  border: Border.all(color: AppTheme.border),
+                  boxShadow: AppTheme.shadowMd,
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -897,7 +1291,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                             width: 40,
                             height: 40,
                             decoration: BoxDecoration(
-                              color: primary.withOpacity(0.12),
+                              color: primary.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: const Icon(
@@ -933,8 +1327,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                           ),
                           _statusChip(isCompleted),
                           IconButton(
-                            onPressed: () =>
-                                Navigator.of(dialogContext).pop(),
+                            onPressed: () => Navigator.of(dialogContext).pop(),
                             icon: const Icon(Icons.close_rounded),
                           ),
                         ],
@@ -1050,7 +1443,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                                 ),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: isCompleted
-                                      ? const Color(0xFFCBD5E1)
+                                      ? AppTheme.borderStrong
                                       : green,
                                   foregroundColor: Colors.white,
                                   disabledBackgroundColor: const Color(
@@ -1071,7 +1464,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                                   ? green
                                   : (isCompleted
                                         ? primary
-                                        : const Color(0xFF94A3B8)),
+                                        : AppTheme.iconMuted),
                               enabled: isCompleted,
                               children: [
                                 _sessionInputField(
@@ -1088,7 +1481,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                                       size: 14,
                                       color: afterEnabled
                                           ? primary
-                                          : const Color(0xFFB0BBC7),
+                                          : AppTheme.iconMuted,
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
@@ -1200,86 +1593,24 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     await loadSelectedDaySchedule();
   }
 
+  /// Feedback from inside the session modal.
+  ///
+  /// This used to be a small dialog of its own, pushed on top of the
+  /// session modal with its own three-second timer and its own styling --
+  /// a second, parallel notification system. It now delegates to the one
+  /// [AdminNotice] system, which already layers above the modal, so the
+  /// timings and the look match the rest of the panel.
+  ///
+  /// [ctx] is kept in the signature because every caller passes the
+  /// modal's own context, which is the one still mounted at that point.
   Future<void> _showFeedbackDialog({
     required BuildContext ctx,
     required bool success,
     required String message,
-  }) async {
-    final color = success ? green : const Color(0xFFEF4444);
-    final icon = success ? Icons.check_circle_rounded : Icons.error_rounded;
-
-    await showDialog(
-      context: ctx,
-      barrierDismissible: true,
-      builder: (feedbackContext) {
-        bool dismissed = false;
-        void dismiss() {
-          if (dismissed) return;
-          dismissed = true;
-          if (feedbackContext.mounted) {
-            Navigator.of(feedbackContext).pop();
-          }
-        }
-
-        Timer(const Duration(seconds: 3), dismiss);
-
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: dismiss,
-          child: Dialog(
-            backgroundColor: Colors.transparent,
-            insetPadding: const EdgeInsets.all(24),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 24),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.16),
-                    blurRadius: 24,
-                    offset: const Offset(0, 12),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.12),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(icon, color: color, size: 24),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    message,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: textDark,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Tap anywhere to dismiss',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: textMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
+  }) {
+    return success
+        ? AdminNotice.success(ctx, message)
+        : AdminNotice.error(ctx, message);
   }
 
   Widget _lockedNote(String message, {bool positive = false}) {
@@ -1312,7 +1643,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
       margin: const EdgeInsets.only(left: 8, right: 4),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(99),
       ),
       child: Text(
@@ -1337,7 +1668,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: enabled ? Colors.white : const Color(0xFFF8FAFC),
+        color: enabled ? Colors.white : AppTheme.surfaceTint,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: border),
       ),
@@ -1350,7 +1681,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                 width: 30,
                 height: 30,
                 decoration: BoxDecoration(
-                  color: accent.withOpacity(0.14),
+                  color: accent.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(icon, size: 16, color: accent),
@@ -1397,10 +1728,10 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
         prefixIcon: Icon(
           icon,
           size: 18,
-          color: enabled ? primary : const Color(0xFFB0BBC7),
+          color: enabled ? primary : AppTheme.iconMuted,
         ),
         filled: true,
-        fillColor: enabled ? softBg : const Color(0xFFF1F5F9),
+        fillColor: enabled ? softBg : AppTheme.surfaceTint,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 12,
@@ -1440,13 +1771,15 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                   ? (constraints.maxWidth - 50) / 6
                   : 112;
 
-              return GestureDetector(
+              return _DayTab(
                 onTap: () async {
+                  if (isLoading) return;
                   setState(() => selectedDay = day);
                   await loadSelectedDaySchedule();
                 },
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
+                  duration: AppTheme.motion(context, AppTheme.fast),
+                  curve: AppTheme.ease,
                   width: itemWidth,
                   margin: EdgeInsets.only(
                     right: index == days.length - 1 ? 0 : 10,
@@ -1458,8 +1791,8 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                     border: Border.all(color: isSelected ? teal : border),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(
-                          isSelected ? 0.08 : 0.03,
+                        color: Colors.black.withValues(
+                          alpha: isSelected ? 0.08 : 0.03,
                         ),
                         blurRadius: 9,
                         offset: const Offset(0, 3),
@@ -1501,8 +1834,16 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     required String shift,
     required List<dynamic> patients,
   }) {
-    final bool isFull = patients.length >= widget.machineCount;
-    final int rowsToShow = widget.machineCount > 12 ? 12 : widget.machineCount;
+    final int capacity = _capacityFor(shift);
+    final bool isFull = patients.length >= capacity;
+
+    // Never hide a scheduled patient: if a shift is somehow over its
+    // configured capacity, show every one of them rather than cutting the
+    // list at the capacity figure.
+    final int cappedRows = capacity > 12 ? 12 : capacity;
+    final int rowsToShow = patients.length > cappedRows
+        ? patients.length
+        : cappedRows;
 
     return Container(
       padding: const EdgeInsets.all(13),
@@ -1532,7 +1873,8 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                     Row(
                       children: [
                         Text(
-                          '${patients.length}/${widget.machineCount} slots filled',
+                          '${patients.length}/$capacity filled · '
+                          '${capacity - patients.length < 0 ? 0 : capacity - patients.length} vacant',
                           style: const TextStyle(
                             fontSize: 11,
                             color: textMuted,
@@ -1547,7 +1889,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF1F5F9),
+                              color: AppTheme.surfaceTint,
                               borderRadius: BorderRadius.circular(99),
                               border: Border.all(color: border),
                             ),
@@ -1590,7 +1932,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: green,
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: const Color(0xFFCBD5E1),
+                  disabledBackgroundColor: AppTheme.borderStrong,
                   disabledForegroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 13,
@@ -1615,7 +1957,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
               columnWidths: const {
                 0: FixedColumnWidth(34),
                 1: FlexColumnWidth(),
-                2: FixedColumnWidth(42),
+                2: FixedColumnWidth(62),
               },
               children: List.generate(rowsToShow, (index) {
                 final patient = index < patients.length
@@ -1624,23 +1966,21 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
 
                 return TableRow(
                   decoration: BoxDecoration(
-                    color: index.isEven
-                        ? const Color(0xFFFBFDFF)
-                        : Colors.white,
+                    color: index.isEven ? AppTheme.surface : Colors.white,
                   ),
                   children: [
                     numberCell('${index + 1}'),
                     patientCell(patient, shift),
-                    tableActionCell(patient),
+                    tableActionCell(patient, shift),
                   ],
                 );
               }),
             ),
           ),
-          if (widget.machineCount > rowsToShow) ...[
+          if (capacity > rowsToShow) ...[
             const SizedBox(height: 10),
             Text(
-              '+ ${widget.machineCount - rowsToShow} more machine slots',
+              '+ ${capacity - rowsToShow} more machine slots',
               style: const TextStyle(
                 color: textMuted,
                 fontSize: 11,
@@ -1672,6 +2012,16 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     final bool isEmpty = patient == null;
     final String text = isEmpty ? 'Available slot' : getPatientName(patient);
 
+    // A session counts as recurring when the patient's saved schedule
+    // puts them on this day and shift; anything else is a change made for
+    // this date only -- either an approved reschedule request (the row
+    // carries its id) or a manual addition/move by the admin.
+    final patientId = isEmpty ? null : patient['patient_id']?.toString();
+    final bool isRecurring =
+        patientId != null && _recurringShifts[patientId] == shift;
+    final bool isRescheduled =
+        !isEmpty && patient['reschedule_request_id'] != null;
+
     return InkWell(
       onTap: isEmpty ? null : () => openSessionModal(patient, shift),
       child: Container(
@@ -1687,10 +2037,15 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: isEmpty ? FontWeight.w500 : FontWeight.w800,
-                  color: isEmpty ? const Color(0xFFB0BBC7) : textDark,
+                  color: isEmpty ? AppTheme.iconMuted : textDark,
                 ),
               ),
             ),
+            if (!isEmpty)
+              _sourceChip(
+                isRecurring: isRecurring,
+                isRescheduled: isRescheduled,
+              ),
             if (!isEmpty) _statusChip(_service.isSessionCompleted(patient)),
           ],
         ),
@@ -1698,35 +2053,111 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
     );
   }
 
-  Widget tableActionCell(dynamic patient) {
+  Widget _sourceChip({required bool isRecurring, required bool isRescheduled}) {
+    final Color color;
+    final String label;
+    final String tooltip;
+
+    if (isRescheduled) {
+      color = purple;
+      label = 'Rescheduled';
+      tooltip =
+          'Here for this date only, from an approved reschedule request. '
+          'Their recurring weekly schedule is unchanged.';
+    } else if (isRecurring) {
+      color = primary;
+      label = 'Recurring';
+      tooltip = "From the patient's recurring weekly schedule";
+    } else {
+      color = orange;
+      label = 'Added';
+      tooltip = 'Added or moved by an admin for this date only';
+    }
+
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        margin: const EdgeInsets.only(right: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 8.5,
+            fontWeight: FontWeight.w900,
+            color: color,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget tableActionCell(dynamic patient, String shift) {
+    if (patient == null) {
+      return const SizedBox(height: 34);
+    }
+
+    final isCompleted = _service.isSessionCompleted(patient);
+    final otherShift = shift == 'AM' ? 'PM' : 'AM';
+
     return Container(
       height: 34,
       alignment: Alignment.center,
-      child: patient == null
-          ? const SizedBox.shrink()
-          : IconButton(
-              tooltip: 'Remove',
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-              icon: const Icon(
-                Icons.close_rounded,
-                size: 16,
-                color: Color(0xFFEF4444),
-              ),
-              onPressed: () => removePatient(patient),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: isCompleted
+                ? 'A completed session cannot be moved'
+                : 'Move to $otherShift shift (this day only)',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 24, minHeight: 26),
+            icon: Icon(
+              Icons.swap_horiz_rounded,
+              size: 16,
+              color: isCompleted ? AppTheme.borderStrong : primary,
             ),
+            onPressed: isCompleted ? null : () => movePatient(patient, shift),
+          ),
+          IconButton(
+            tooltip: isCompleted
+                ? 'A completed session cannot be removed'
+                : 'Remove from this day only',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 24, minHeight: 26),
+            icon: Icon(
+              Icons.close_rounded,
+              size: 16,
+              color: isCompleted ? AppTheme.borderStrong : AppTheme.danger,
+            ),
+            onPressed: isCompleted ? null : () => removePatient(patient),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildSummaryStrip() {
     final totalAssigned = amPatients.length + pmPatients.length;
-    final totalCapacity = widget.machineCount * 2;
+
+    // Same date-level capacity the shift cards use, so the strip can
+    // never disagree with them.
+    final dateCapacity = _dateCapacity;
+    final totalCapacity = dateCapacity != null
+        ? dateCapacity.capacity
+        : (_shifts.isEmpty
+              ? widget.machineCount * 2
+              : _shifts.fold<int>(0, (sum, s) => sum + s.capacity));
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: AppTheme.surfaceTint,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: border),
       ),
@@ -1750,14 +2181,14 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
             'PM Patients',
             pmPatients.length.toString(),
             Icons.nights_stay_rounded,
-            const Color(0xFF8E44AD),
+            AppTheme.accentPurple,
           ),
           const SizedBox(width: 12),
           _summaryItem(
             'Capacity Used',
             '$totalAssigned/$totalCapacity',
             Icons.event_seat_rounded,
-            const Color(0xFFF59E0B),
+            AppTheme.accentOrange,
           ),
         ],
       ),
@@ -1772,7 +2203,7 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.11),
+              color: color.withValues(alpha: 0.11),
               borderRadius: BorderRadius.circular(9),
             ),
             child: Icon(icon, size: 18, color: color),
@@ -1842,9 +2273,32 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
         _buildSummaryStrip(),
         const SizedBox(height: 14),
         if (isLoading)
-          const Padding(
-            padding: EdgeInsets.all(30),
-            child: CircularProgressIndicator(color: primary),
+          // A skeleton in the shape of the two shift tables, rather than
+          // a bare spinner: the section keeps its size, so the rest of the
+          // dashboard doesn't jump while a day loads. Deliberately shows
+          // no names or numbers - a loading state must never be mistaken
+          // for schedule data.
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < 740) {
+                return const Column(
+                  children: [
+                    _ShiftTableSkeleton(title: 'AM Shift'),
+                    SizedBox(height: 12),
+                    _ShiftTableSkeleton(title: 'PM Shift'),
+                  ],
+                );
+              }
+
+              return const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: _ShiftTableSkeleton(title: 'AM Shift')),
+                  SizedBox(width: 14),
+                  Expanded(child: _ShiftTableSkeleton(title: 'PM Shift')),
+                ],
+              );
+            },
           )
         else
           LayoutBuilder(
@@ -1890,6 +2344,86 @@ class _TodayScheduleSectionState extends State<TodayScheduleSection> {
             },
           ),
       ],
+    );
+  }
+}
+
+/// A day tab. Separate from the table so hovering one doesn't rebuild the
+/// whole section.
+class _DayTab extends StatefulWidget {
+  final Future<void> Function() onTap;
+  final Widget child;
+
+  const _DayTab({required this.onTap, required this.child});
+
+  @override
+  State<_DayTab> createState() => _DayTabState();
+}
+
+class _DayTabState extends State<_DayTab> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: () => widget.onTap(),
+        child: AnimatedOpacity(
+          duration: AppTheme.motion(context, AppTheme.fast),
+          opacity: _hovered ? 0.88 : 1,
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
+/// The placeholder shown in a shift table's place while the day loads.
+class _ShiftTableSkeleton extends StatelessWidget {
+  final String title;
+
+  const _ShiftTableSkeleton({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        border: Border.all(color: AppTheme.border),
+        borderRadius: BorderRadius.circular(AppTheme.rMd),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const AdminSkeleton(width: 170, height: 10),
+          const SizedBox(height: 16),
+          for (var i = 0; i < 6; i++) ...[
+            if (i > 0) const SizedBox(height: 10),
+            Row(
+              children: const [
+                AdminSkeleton(width: 26, height: 26, radius: 13),
+                SizedBox(width: 10),
+                Expanded(child: AdminSkeleton(height: 11)),
+                SizedBox(width: 10),
+                AdminSkeleton(width: 54, height: 11),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

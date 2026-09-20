@@ -7,6 +7,7 @@ import '../models/donation_summary.dart';
 import '../models/notification_item.dart';
 import '../models/user_model.dart';
 import '../services/dashboard_service.dart';
+import '../theme/app_theme.dart';
 import 'admin_accounts_page.dart';
 import 'center_page.dart';
 import 'donations_page.dart';
@@ -55,11 +56,10 @@ class _DashboardPageState extends State<DashboardPage>
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
 
-  static const Color primaryColor = Color(0xFF174E71);
-  static const Color accentColor = Color(0xFF1F719F);
-  static const Color bgColor = Color(0xFFF4F7FA);
-  static const Color textDark = Color(0xFF102A43);
-  static const Color mutedText = Color(0xFF6B7280);
+  // Presentation tokens, sourced from the shared palette.
+  static const Color primaryColor = AppTheme.blue1;
+  static const Color bgColor = AppTheme.canvas;
+  static const Color mutedText = AppTheme.textMuted;
 
   @override
   void initState() {
@@ -187,27 +187,34 @@ class _DashboardPageState extends State<DashboardPage>
     return Scaffold(
       backgroundColor: bgColor,
       body: Row(
+        // Stretch, so the sidebar and the content area both fill the viewport
+        // height. Without it a section shorter than the window floats
+        // vertically centred and its scroll view never reaches full height.
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildSidebar(),
           Expanded(
             child: Stack(
               children: [
+                // No padding here on purpose: each section pads *inside* its
+                // own scroll view, so the scrollbar rides the true right edge
+                // of the viewport instead of floating inset from it.
                 Container(
                   color: bgColor,
                   child: FadeTransition(
                     opacity: _fadeAnimation,
-                    child: Padding(
-                      padding: const EdgeInsets.all(28),
-                      child: _buildContent(user),
-                    ),
+                    child: _buildContent(user),
                   ),
                 ),
                 if (_isLoading)
                   Positioned.fill(
                     child: Container(
-                      color: Colors.white.withOpacity(0.72),
+                      color: const Color(0xCCFEFFFE),
                       child: const Center(
-                        child: CircularProgressIndicator(color: accentColor),
+                        child: CircularProgressIndicator(
+                          color: AppTheme.blue1,
+                          strokeWidth: 3,
+                        ),
                       ),
                     ),
                   ),
@@ -220,56 +227,66 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Widget _buildSidebar() {
+    final sidebarWidth = AppTheme.sidebarWidth(
+      MediaQuery.of(context).size.width,
+    );
+
     return Container(
-      width: 285,
+      width: sidebarWidth,
       decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFF0B1D2A), Color(0xFF103C55), Color(0xFF174E71)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
+        color: AppTheme.surface,
+        border: Border(right: BorderSide(color: AppTheme.border)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 38),
+          const SizedBox(height: 26),
 
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 22),
+            padding: const EdgeInsets.symmetric(horizontal: 18),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(5),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
                     shape: BoxShape.circle,
+                    border: Border.all(color: AppTheme.border),
                   ),
                   child: Image.asset(
                     'assets/images/CureNurture_CircleLogo.png',
-                    width: 42,
-                    height: 42,
+                    width: 34,
+                    height: 34,
                   ),
                 ),
-                const SizedBox(width: 13),
+                const SizedBox(width: 12),
                 const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'CureNurture',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
+                          color: AppTheme.blue3,
+                          fontSize: 16,
+                          height: 1.2,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.2,
                         ),
                       ),
-                      SizedBox(height: 4),
+                      SizedBox(height: 3),
                       Text(
                         'Super Admin Portal',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Color(0xB3FFFFFF),
-                          fontSize: 12.5,
+                          color: AppTheme.textMuted,
+                          fontSize: 11,
+                          height: 1.2,
                           fontWeight: FontWeight.w500,
+                          letterSpacing: 0.1,
                         ),
                       ),
                     ],
@@ -279,7 +296,11 @@ class _DashboardPageState extends State<DashboardPage>
             ),
           ),
 
-          const SizedBox(height: 34),
+          const SizedBox(height: 22),
+
+          const Divider(height: 1, thickness: 1, color: AppTheme.border),
+
+          const SizedBox(height: 14),
 
           _SidebarItem(
             label: 'Dashboard',
@@ -302,7 +323,7 @@ class _DashboardPageState extends State<DashboardPage>
             },
           ),
           _SidebarItem(
-            label: 'Distribute Donation',
+            label: 'Donation',
             icon: Icons.volunteer_activism_rounded,
             selected: _selectedSection == DashboardSection.distribution,
             onTap: () {
@@ -325,29 +346,30 @@ class _DashboardPageState extends State<DashboardPage>
           const Spacer(),
 
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
             child: Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(13),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withOpacity(0.12)),
+                color: AppTheme.surfaceTint,
+                borderRadius: BorderRadius.circular(AppTheme.rLg),
+                border: Border.all(color: AppTheme.border),
               ),
-              child: Row(
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(
                     Icons.health_and_safety_rounded,
-                    color: Colors.white.withOpacity(0.90),
-                    size: 22,
+                    color: AppTheme.blue1,
+                    size: 18,
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'Manage centers, patients, and dialysis support efficiently.',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.72),
-                        fontSize: 12,
-                        height: 1.35,
+                        color: AppTheme.textSecondary,
+                        fontSize: 11.5,
+                        height: 1.4,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -357,21 +379,27 @@ class _DashboardPageState extends State<DashboardPage>
             ),
           ),
 
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
 
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: ElevatedButton.icon(
-              onPressed: _logout,
-              icon: const Icon(Icons.logout_rounded, size: 18),
-              label: const Text('Log out'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: const Color(0xFF174E71),
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(vertical: 15),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: SizedBox(
+              height: 42,
+              child: OutlinedButton.icon(
+                onPressed: _logout,
+                icon: const Icon(Icons.logout_rounded, size: 17),
+                label: const Text('Log out'),
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: AppTheme.surface,
+                  foregroundColor: AppTheme.blue3,
+                  side: const BorderSide(color: AppTheme.borderStrong),
+                  textStyle: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppTheme.rMd),
+                  ),
                 ),
               ),
             ),
@@ -379,17 +407,17 @@ class _DashboardPageState extends State<DashboardPage>
 
           const SizedBox(height: 14),
 
-          Text(
+          const Text(
             '© 2026 CureNurture',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.42),
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+              color: AppTheme.textMuted,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w500,
             ),
           ),
 
-          const SizedBox(height: 22),
+          const SizedBox(height: 18),
         ],
       ),
     );
@@ -426,165 +454,179 @@ class _DashboardPageState extends State<DashboardPage>
         .length;
 
     return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(user),
-
-          const SizedBox(height: 24),
-
-          _buildSummaryGrid(
-            totalMachines: totalMachines,
-            totalSlots: totalSlots,
-            activeCenters: activeCenters,
+      padding: EdgeInsets.all(AppTheme.pagePadding(width)),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxWidth: AppTheme.maxContentWidth,
           ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(user),
 
-          const SizedBox(height: 24),
+              const SizedBox(height: AppTheme.gapLg),
 
-          _buildOperationsBanner(),
+              _buildSummaryGrid(
+                totalMachines: totalMachines,
+                totalSlots: totalSlots,
+                activeCenters: activeCenters,
+              ),
 
-          const SizedBox(height: 24),
+              const SizedBox(height: AppTheme.gapLg),
 
-          // FULL WIDTH CENTER SECTION
-          _buildCenterGrid(width),
-        ],
+              _buildOperationsBanner(),
+
+              const SizedBox(height: AppTheme.gapLg),
+
+              // FULL WIDTH CENTER SECTION
+              _buildCenterGrid(width),
+            ],
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildHeader(UserModel? user) {
+    const title = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _HeaderIcon(),
+        SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Dialysis Center Operations Dashboard',
+                style: TextStyle(
+                  color: AppTheme.blue3,
+                  fontSize: 22,
+                  height: 1.25,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              SizedBox(height: 6),
+              Text(
+                'Track center availability, machine capacity, patient flow, and donation support in one place.',
+                style: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 13.5,
+                  height: 1.45,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    final actions = Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        _headerInfoChip(
+          Icons.access_time_rounded,
+          'Today',
+          _formattedToday(),
+        ),
+        SizedBox(
+          height: 40,
+          child: ElevatedButton.icon(
+            onPressed: _loadDashboard,
+            icon: const Icon(Icons.refresh_rounded, size: 17),
+            label: const Text('Refresh'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primaryColor,
+              foregroundColor: AppTheme.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              textStyle: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppTheme.rMd),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+
     return Container(
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF174E71), Color(0xFF1F719F)],
+          colors: [AppTheme.white, AppTheme.headerTint],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x1A174E71),
-            blurRadius: 24,
-            offset: Offset(0, 14),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(AppTheme.rXl),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.shadowSm,
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 62,
-            height: 62,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.16),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.white.withOpacity(0.20)),
-            ),
-            child: const Icon(
-              Icons.monitor_heart_rounded,
-              color: Colors.white,
-              size: 32,
-            ),
-          ),
-          const SizedBox(width: 18),
-          const Expanded(
-            child: Column(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 900) {
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Dialysis Center Operations Dashboard',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 25,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Track center availability, machine capacity, patient flow, and donation support in one place.',
-                  style: TextStyle(
-                    color: Color(0xDFFFFFFF),
-                    fontSize: 14.5,
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(
-            width: 170,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  height: 35,
-                  child: ElevatedButton.icon(
-                    onPressed: _loadDashboard,
-                    icon: const Icon(Icons.refresh_rounded, size: 18),
-                    label: const Text('Refresh'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: primaryColor,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 14,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                  ),
-                ),
+              children: [title, const SizedBox(height: 18), actions],
+            );
+          }
 
-                const SizedBox(height: 10),
-
-                SizedBox(
-                  height: 60,
-                  child: _headerInfoChip(
-                    Icons.access_time_rounded,
-                    'Today',
-                    _formattedToday(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const Expanded(child: title),
+              const SizedBox(width: 24),
+              actions,
+            ],
+          );
+        },
       ),
     );
   }
 
   Widget _headerInfoChip(IconData icon, String label, String value) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 13),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.13),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.16)),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.rMd),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: Colors.white, size: 18),
+          Icon(icon, color: primaryColor, size: 17),
           const SizedBox(width: 9),
           Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 label,
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.65),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+                style: const TextStyle(
+                  color: AppTheme.textMuted,
+                  fontSize: 10.5,
+                  height: 1.2,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
+              const SizedBox(height: 1),
               Text(
                 value,
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: AppTheme.blue3,
                   fontSize: 12.5,
-                  fontWeight: FontWeight.w800,
+                  height: 1.2,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
@@ -599,220 +641,187 @@ class _DashboardPageState extends State<DashboardPage>
     required int totalSlots,
     required int activeCenters,
   }) {
+    final metrics = <Widget>[
+      _DashboardMetric(
+        label: 'Active Centers',
+        value: '$activeCenters / ${_centers.length}',
+        icon: Icons.local_hospital_rounded,
+        note: 'Centers open based on operating hours',
+      ),
+      _DashboardMetric(
+        label: 'Available Slots',
+        value: '$totalSlots',
+        icon: Icons.airline_seat_flat_rounded,
+        note: 'Remaining dialysis session capacity',
+      ),
+      _DashboardMetric(
+        label: 'Dialysis Machines',
+        value: '$totalMachines',
+        icon: Icons.precision_manufacturing_rounded,
+        note: 'Total machines across centers',
+      ),
+      _DashboardMetric(
+        label: 'Donation Fund',
+        value: _formatPeso(_stats['donations'] ?? 0),
+        icon: Icons.volunteer_activism_rounded,
+        note: 'Verified donations only',
+      ),
+    ];
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        const spacing = 18.0;
+        const spacing = AppTheme.gapMd;
+        const cardHeight = 166.0;
 
-        final useOneRow = width >= 1000;
+        // One row of four for every desktop width; two-up below that.
+        final columns = constraints.maxWidth >= 900 ? 4 : 2;
 
-        if (useOneRow) {
-          final donationWidth = width * 0.35;
-          final normalCardWidth = (width - donationWidth - (spacing * 3)) / 3;
+        final rows = <Widget>[];
 
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: normalCardWidth,
-                height: 160,
-                child: _DashboardMetric(
-                  label: 'Active Centers',
-                  value: '$activeCenters / ${_centers.length}',
-                  icon: Icons.local_hospital_rounded,
-                  color: const Color(0xFF059669),
-                  note: 'Centers open based on operating hours',
-                ),
-              ),
-              const SizedBox(width: spacing),
-              SizedBox(
-                width: normalCardWidth,
-                height: 160,
-                child: _DashboardMetric(
-                  label: 'Available Slots',
-                  value: '$totalSlots',
-                  icon: Icons.airline_seat_flat_rounded,
-                  color: const Color(0xFFEA580C),
-                  note: 'Remaining dialysis session capacity',
-                ),
-              ),
-              const SizedBox(width: spacing),
-              SizedBox(
-                width: normalCardWidth,
-                height: 160,
-                child: _DashboardMetric(
-                  label: 'Dialysis Machines',
-                  value: '$totalMachines',
-                  icon: Icons.precision_manufacturing_rounded,
-                  color: const Color(0xFF0891B2),
-                  note: 'Total machines across centers',
-                ),
-              ),
-              const SizedBox(width: spacing),
-              SizedBox(
-                width: donationWidth,
-                height: 160,
-                child: _DashboardMetric(
-                  label: 'Donation Fund',
-                  value: _formatPeso(_stats['donations'] ?? 0),
-                  icon: Icons.volunteer_activism_rounded,
-                  color: const Color(0xFFDB2777),
-                  note: 'Verified donations only',
-                  isWide: true,
-                ),
-              ),
-            ],
+        for (var start = 0; start < metrics.length; start += columns) {
+          final end = (start + columns).clamp(0, metrics.length);
+          final slice = metrics.sublist(start, end);
+
+          if (rows.isNotEmpty) {
+            rows.add(const SizedBox(height: spacing));
+          }
+
+          rows.add(
+            Row(
+              children: [
+                for (var i = 0; i < slice.length; i++) ...[
+                  if (i > 0) const SizedBox(width: spacing),
+                  Expanded(
+                    child: SizedBox(height: cardHeight, child: slice[i]),
+                  ),
+                ],
+              ],
+            ),
           );
         }
 
-        return Column(
-          children: [
-            _mobileKpiRow(
-              left: _DashboardMetric(
-                label: 'Active Centers',
-                value: '$activeCenters / ${_centers.length}',
-                icon: Icons.local_hospital_rounded,
-                color: const Color(0xFF059669),
-                note: 'Centers open based on operating hours',
-              ),
-              right: _DashboardMetric(
-                label: 'Available Slots',
-                value: '$totalSlots',
-                icon: Icons.airline_seat_flat_rounded,
-                color: const Color(0xFFEA580C),
-                note: 'Remaining dialysis session capacity',
-              ),
-            ),
-            const SizedBox(height: spacing),
-            _mobileKpiRow(
-              left: _DashboardMetric(
-                label: 'Dialysis Machines',
-                value: '$totalMachines',
-                icon: Icons.precision_manufacturing_rounded,
-                color: const Color(0xFF0891B2),
-                note: 'Total machines across centers',
-              ),
-              right: _DashboardMetric(
-                label: 'Donation Fund',
-                value: _formatPeso(_stats['donations'] ?? 0),
-                icon: Icons.volunteer_activism_rounded,
-                color: const Color(0xFFDB2777),
-                note: 'Verified donations only',
-                isWide: true,
-              ),
-            ),
-          ],
-        );
+        return Column(children: rows);
       },
     );
   }
 
-  Widget _mobileKpiRow({required Widget left, required Widget right}) {
-    return Row(
-      children: [
-        Expanded(child: SizedBox(height: 155, child: left)),
-        const SizedBox(width: 18),
-        Expanded(child: SizedBox(height: 155, child: right)),
-      ],
-    );
-  }
-
   Widget _buildOperationsBanner() {
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE7EEF4)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0F000000),
-            blurRadius: 20,
-            offset: Offset(0, 10),
-          ),
-        ],
+    final steps = <Widget>[
+      _bannerStep(
+        Icons.assignment_turned_in_rounded,
+        'Verify Capacity',
+        'Review machine count, slots, and shift schedules.',
       ),
-      child: Row(
-        children: [
-          _bannerStep(
-            Icons.assignment_turned_in_rounded,
-            'Verify Capacity',
-            'Review machine count, slots, and shift schedules.',
-          ),
-          _bannerDivider(),
-          _bannerStep(
-            Icons.groups_2_rounded,
-            'Coordinate Patients',
-            'Keep center availability visible for smoother referrals.',
-          ),
-          _bannerDivider(),
-          _bannerStep(
-            Icons.volunteer_activism_rounded,
-            'Support Treatment',
-            'Monitor donation assistance and dialysis-related needs.',
-          ),
-        ],
+      _bannerStep(
+        Icons.groups_2_rounded,
+        'Coordinate Patients',
+        'Keep center availability visible for smoother referrals.',
+      ),
+      _bannerStep(
+        Icons.volunteer_activism_rounded,
+        'Support Treatment',
+        'Monitor donation assistance and dialysis-related needs.',
+      ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.rXl),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.shadowSm,
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 900) {
+            return Column(
+              children: [
+                for (var i = 0; i < steps.length; i++) ...[
+                  if (i > 0) _bannerDivider(horizontal: true),
+                  steps[i],
+                ],
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              for (var i = 0; i < steps.length; i++) ...[
+                if (i > 0) _bannerDivider(),
+                Expanded(child: steps[i]),
+              ],
+            ],
+          );
+        },
       ),
     );
   }
 
   Widget _bannerStep(IconData icon, String title, String description) {
-    return Expanded(
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(13),
-            decoration: BoxDecoration(
-              color: accentColor.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Icon(icon, color: accentColor, size: 24),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: AppTheme.accentSoft,
+            borderRadius: BorderRadius.circular(AppTheme.rMd),
           ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: textDark,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 14.5,
-                  ),
+          child: Icon(icon, color: AppTheme.blue1, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: AppTheme.blue3,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  height: 1.3,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: const TextStyle(
-                    color: mutedText,
-                    fontSize: 12.5,
-                    height: 1.35,
-                  ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                description,
+                style: const TextStyle(
+                  color: AppTheme.textMuted,
+                  fontSize: 12.5,
+                  height: 1.4,
+                  fontWeight: FontWeight.w400,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  Widget _bannerDivider() {
+  Widget _bannerDivider({bool horizontal = false}) {
+    if (horizontal) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Divider(height: 1, thickness: 1, color: AppTheme.border),
+      );
+    }
+
     return Container(
       width: 1,
-      height: 52,
-      margin: const EdgeInsets.symmetric(horizontal: 18),
-      color: const Color(0xFFE5EAF0),
+      height: 44,
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      color: AppTheme.border,
     );
   }
 
   Widget _buildCenterGrid(double width) {
-    final crossAxisCount = width > 1600
-        ? 3
-        : width > 1100
-        ? 2
-        : 1;
+    // Three columns on every desktop width; narrower viewports step down.
+    final crossAxisCount = AppTheme.centerColumns(width);
+
     if (_centers.isEmpty) {
       return _emptyStateCard(
         icon: Icons.location_city_outlined,
@@ -832,9 +841,9 @@ class _DashboardPageState extends State<DashboardPage>
         itemCount: _centers.length,
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: crossAxisCount,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
-          childAspectRatio: 1.55,
+          crossAxisSpacing: AppTheme.gapMd,
+          mainAxisSpacing: AppTheme.gapMd,
+          mainAxisExtent: 234,
         ),
         itemBuilder: (context, index) {
           final center = _centers[index];
@@ -879,24 +888,18 @@ class _DashboardPageState extends State<DashboardPage>
           }
 
           return Material(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(22),
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(AppTheme.rLg),
             child: InkWell(
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(AppTheme.rLg),
               onTap: () => _showCenterDetailsModal(center),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                padding: const EdgeInsets.all(18),
+              hoverColor: AppTheme.accentSoft,
+              child: Container(
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: const Color(0xFFE5EAF0)),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x07000000),
-                      blurRadius: 14,
-                      offset: Offset(0, 6),
-                    ),
-                  ],
+                  borderRadius: BorderRadius.circular(AppTheme.rLg),
+                  border: Border.all(color: AppTheme.border),
+                  boxShadow: AppTheme.shadowSm,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -904,36 +907,37 @@ class _DashboardPageState extends State<DashboardPage>
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.all(10),
+                          width: 34,
+                          height: 34,
                           decoration: BoxDecoration(
-                            color: statusColor.withOpacity(0.10),
-                            borderRadius: BorderRadius.circular(15),
+                            color: statusColor.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(AppTheme.rMd),
                           ),
                           child: Icon(
                             Icons.local_hospital_rounded,
                             color: statusColor,
-                            size: 21,
+                            size: 18,
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 11),
                         Expanded(
                           child: Text(
                             center.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              color: textDark,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 15.5,
+                              color: AppTheme.blue3,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14.5,
+                              height: 1.25,
                             ),
                           ),
                         ),
-                        _statusChip(statusLabel, statusColor),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 8),
                         const Icon(
                           Icons.open_in_new_rounded,
-                          color: mutedText,
-                          size: 18,
+                          color: AppTheme.iconMuted,
+                          size: 15,
                         ),
                       ],
                     ),
@@ -941,12 +945,12 @@ class _DashboardPageState extends State<DashboardPage>
                     const SizedBox(height: 14),
 
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(999),
                       child: LinearProgressIndicator(
                         value: (occupancy / 100).clamp(0.0, 1.0),
                         color: statusColor,
-                        backgroundColor: statusColor.withOpacity(0.12),
-                        minHeight: 9,
+                        backgroundColor: statusColor.withValues(alpha: 0.12),
+                        minHeight: 6,
                       ),
                     ),
 
@@ -954,21 +958,35 @@ class _DashboardPageState extends State<DashboardPage>
 
                     Row(
                       children: [
-                        Text(
-                          '${occupancy.toStringAsFixed(0)}% Occupied',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w800,
-                            color: statusColor,
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 110),
+                          child: _statusChip(statusLabel, statusColor),
+                        ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            '${occupancy.toStringAsFixed(0)}% Occupied',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: statusColor,
+                            ),
                           ),
                         ),
-                        const Spacer(),
-                        Text(
-                          'Slots left: $slots',
-                          style: const TextStyle(
-                            color: mutedText,
-                            fontSize: 12.3,
-                            fontWeight: FontWeight.w600,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Slots left: $slots',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.end,
+                            style: const TextStyle(
+                              color: AppTheme.textMuted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
                       ],
@@ -980,44 +998,44 @@ class _DashboardPageState extends State<DashboardPage>
                       children: [
                         const Icon(
                           Icons.access_time_rounded,
-                          size: 15,
-                          color: mutedText,
+                          size: 14,
+                          color: AppTheme.iconMuted,
                         ),
-                        const SizedBox(width: 7),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             center.operatingHours,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontSize: 12.5,
-                              color: mutedText,
-                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                              color: AppTheme.textSecondary,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ),
                       ],
                     ),
 
-                    const SizedBox(height: 7),
+                    const SizedBox(height: 6),
 
                     Row(
                       children: [
                         const Icon(
                           Icons.location_on_rounded,
-                          size: 15,
-                          color: mutedText,
+                          size: 14,
+                          color: AppTheme.iconMuted,
                         ),
-                        const SizedBox(width: 7),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             center.address,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontSize: 12.5,
-                              color: mutedText,
-                              fontWeight: FontWeight.w500,
+                              fontSize: 12,
+                              color: AppTheme.textMuted,
+                              fontWeight: FontWeight.w400,
                             ),
                           ),
                         ),
@@ -1029,9 +1047,9 @@ class _DashboardPageState extends State<DashboardPage>
                     Row(
                       children: [
                         _miniStat('Machines', center.machines.toString()),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
                         _miniStat('Slots', center.availableSlots.toString()),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
                         _miniStat('Shifts', center.shifts.toString()),
                       ],
                     ),
@@ -1095,22 +1113,16 @@ class _DashboardPageState extends State<DashboardPage>
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: BorderRadius.circular(AppTheme.rXl),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
                 child: Container(
-                  padding: const EdgeInsets.all(26),
+                  padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(color: const Color(0xFFE7EEF4)),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x22000000),
-                        blurRadius: 28,
-                        offset: Offset(0, 18),
-                      ),
-                    ],
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(AppTheme.rXl),
+                    border: Border.all(color: AppTheme.border),
+                    boxShadow: AppTheme.shadowMd,
                   ),
                   child: SingleChildScrollView(
                     child: Column(
@@ -1121,16 +1133,18 @@ class _DashboardPageState extends State<DashboardPage>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Container(
-                              width: 58,
-                              height: 58,
+                              width: 52,
+                              height: 52,
                               decoration: BoxDecoration(
-                                color: statusColor.withOpacity(0.10),
-                                borderRadius: BorderRadius.circular(20),
+                                color: statusColor.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.rLg,
+                                ),
                               ),
                               child: Icon(
                                 Icons.local_hospital_rounded,
                                 color: statusColor,
-                                size: 30,
+                                size: 26,
                               ),
                             ),
                             const SizedBox(width: 16),
@@ -1141,19 +1155,20 @@ class _DashboardPageState extends State<DashboardPage>
                                   Text(
                                     center.name,
                                     style: const TextStyle(
-                                      color: textDark,
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: -0.4,
+                                      color: AppTheme.blue3,
+                                      fontSize: 21,
+                                      height: 1.25,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: -0.3,
                                     ),
                                   ),
-                                  const SizedBox(height: 6),
+                                  const SizedBox(height: 5),
                                   Text(
                                     center.address,
                                     style: const TextStyle(
-                                      color: mutedText,
-                                      fontSize: 13.5,
-                                      height: 1.35,
+                                      color: AppTheme.textMuted,
+                                      fontSize: 13,
+                                      height: 1.4,
                                     ),
                                   ),
                                 ],
@@ -1173,11 +1188,11 @@ class _DashboardPageState extends State<DashboardPage>
                         const SizedBox(height: 24),
 
                         Container(
-                          padding: const EdgeInsets.all(18),
+                          padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF8FBFD),
-                            borderRadius: BorderRadius.circular(22),
-                            border: Border.all(color: const Color(0xFFE7EEF4)),
+                            color: AppTheme.surfaceTint,
+                            borderRadius: BorderRadius.circular(AppTheme.rLg),
+                            border: Border.all(color: AppTheme.border),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1188,31 +1203,31 @@ class _DashboardPageState extends State<DashboardPage>
                                     '${occupancy.toStringAsFixed(0)}% Occupied',
                                     style: TextStyle(
                                       color: statusColor,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                   const Spacer(),
                                   Text(
                                     'Slots left: $slots',
                                     style: const TextStyle(
-                                      color: mutedText,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
+                                      color: AppTheme.textMuted,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 12),
                               ClipRRect(
-                                borderRadius: BorderRadius.circular(20),
+                                borderRadius: BorderRadius.circular(999),
                                 child: LinearProgressIndicator(
                                   value: (occupancy / 100).clamp(0.0, 1.0),
                                   color: statusColor,
-                                  backgroundColor: statusColor.withOpacity(
-                                    0.12,
+                                  backgroundColor: statusColor.withValues(
+                                    alpha: 0.12,
                                   ),
-                                  minHeight: 11,
+                                  minHeight: 8,
                                 ),
                               ),
                             ],
@@ -1298,15 +1313,15 @@ class _DashboardPageState extends State<DashboardPage>
 
   Widget _modalInfoTile(IconData icon, String label, String value) {
     return Container(
-      padding: const EdgeInsets.all(13),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF6FAFD),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE7EEF4)),
+        color: AppTheme.surfaceTint,
+        borderRadius: BorderRadius.circular(AppTheme.rMd),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         children: [
-          Icon(icon, color: accentColor, size: 20),
+          Icon(icon, color: AppTheme.blue1, size: 19),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -1318,9 +1333,10 @@ class _DashboardPageState extends State<DashboardPage>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: mutedText,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textMuted,
+                    fontSize: 10.5,
+                    height: 1.2,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -1329,9 +1345,10 @@ class _DashboardPageState extends State<DashboardPage>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: textDark,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w800,
+                    color: AppTheme.blue3,
+                    fontSize: 13,
+                    height: 1.25,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
@@ -1351,14 +1368,14 @@ class _DashboardPageState extends State<DashboardPage>
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FBFD),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE7EEF4)),
+        color: AppTheme.surfaceTint,
+        borderRadius: BorderRadius.circular(AppTheme.rLg),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: accentColor, size: 20),
+          Icon(icon, color: AppTheme.blue1, size: 19),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1367,18 +1384,19 @@ class _DashboardPageState extends State<DashboardPage>
                 Text(
                   title,
                   style: const TextStyle(
-                    color: textDark,
-                    fontWeight: FontWeight.w800,
+                    color: AppTheme.blue3,
+                    fontWeight: FontWeight.w600,
                     fontSize: 13.5,
+                    height: 1.3,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 5),
                 Text(
                   value.isEmpty ? '--' : value,
                   style: const TextStyle(
-                    color: mutedText,
-                    fontSize: 12.8,
-                    height: 1.4,
+                    color: AppTheme.textSecondary,
+                    fontSize: 12.5,
+                    height: 1.45,
                   ),
                 ),
               ],
@@ -1398,33 +1416,29 @@ class _DashboardPageState extends State<DashboardPage>
   }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: const Color(0xFFE7EEF4)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0F000000),
-            blurRadius: 20,
-            offset: Offset(0, 10),
-          ),
-        ],
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.rXl),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.shadowSm,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Container(
-                padding: const EdgeInsets.all(11),
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
-                  color: accentColor.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(16),
+                  color: AppTheme.accentSoft,
+                  borderRadius: BorderRadius.circular(AppTheme.rMd),
                 ),
-                child: Icon(icon, color: accentColor, size: 22),
+                child: Icon(icon, color: AppTheme.blue1, size: 20),
               ),
-              const SizedBox(width: 13),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1432,27 +1446,30 @@ class _DashboardPageState extends State<DashboardPage>
                     Text(
                       title,
                       style: const TextStyle(
-                        color: textDark,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
+                        color: AppTheme.blue3,
+                        fontSize: 16.5,
+                        height: 1.3,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
                       ),
                     ),
                     const SizedBox(height: 3),
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        color: mutedText,
-                        fontSize: 12.8,
-                        height: 1.35,
+                        color: AppTheme.textMuted,
+                        fontSize: 12.5,
+                        height: 1.4,
+                        fontWeight: FontWeight.w400,
                       ),
                     ),
                   ],
                 ),
               ),
-              if (trailing != null) trailing,
+              ?trailing,
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
           child,
         ],
       ),
@@ -1466,29 +1483,34 @@ class _DashboardPageState extends State<DashboardPage>
   }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE7EEF4)),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.rXl),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.shadowSm,
       ),
       child: Column(
         children: [
-          Icon(icon, size: 42, color: mutedText),
-          const SizedBox(height: 12),
+          Icon(icon, size: 36, color: AppTheme.iconMuted),
+          const SizedBox(height: 14),
           Text(
             title,
             style: const TextStyle(
-              color: textDark,
-              fontWeight: FontWeight.w800,
-              fontSize: 16,
+              color: AppTheme.blue3,
+              fontWeight: FontWeight.w700,
+              fontSize: 15.5,
             ),
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 6),
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: mutedText, fontSize: 13),
+            style: const TextStyle(
+              color: AppTheme.textMuted,
+              fontSize: 12.5,
+              height: 1.4,
+            ),
           ),
         ],
       ),
@@ -1497,17 +1519,21 @@ class _DashboardPageState extends State<DashboardPage>
 
   Widget _statusChip(String label, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.11),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.20)),
       ),
       child: Text(
         label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: color,
-          fontSize: 11.5,
-          fontWeight: FontWeight.w800,
+          fontSize: 11,
+          height: 1.2,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -1544,30 +1570,37 @@ class _DashboardPageState extends State<DashboardPage>
   Widget _miniStat(String label, String value) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: const Color(0xFFF6FAFD),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE7EEF4)),
+          color: AppTheme.surfaceTint,
+          borderRadius: BorderRadius.circular(AppTheme.rSm),
+          border: Border.all(color: AppTheme.border),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontSize: 10.5,
-                color: mutedText,
-                fontWeight: FontWeight.w600,
+                height: 1.2,
+                color: AppTheme.textMuted,
+                fontWeight: FontWeight.w500,
               ),
             ),
             const SizedBox(height: 2),
             Text(
               value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color: textDark,
+                fontSize: 14.5,
+                height: 1.25,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.blue3,
               ),
             ),
           ],
@@ -1882,150 +1915,120 @@ class _DashboardPageState extends State<DashboardPage>
   }
 }
 
+/// Header emblem for the dashboard banner.
+class _HeaderIcon extends StatelessWidget {
+  const _HeaderIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: AppTheme.accentSoft,
+        borderRadius: BorderRadius.circular(AppTheme.rLg),
+        border: Border.all(color: AppTheme.borderStrong),
+      ),
+      child: const Icon(
+        Icons.monitor_heart_rounded,
+        color: AppTheme.blue1,
+        size: 24,
+      ),
+    );
+  }
+}
+
 class _DashboardMetric extends StatelessWidget {
   final String label;
   final String value;
   final String note;
   final IconData icon;
-  final Color color;
-  final bool isWide;
 
   const _DashboardMetric({
     required this.label,
     required this.value,
     required this.note,
     required this.icon,
-    required this.color,
-    this.isWide = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: EdgeInsets.all(isWide ? 20 : 18),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE7EEF4)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0F000000),
-            blurRadius: 20,
-            offset: Offset(0, 10),
-          ),
-        ],
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.rXl),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.shadowSm,
       ),
-      child: isWide ? _wideLayout() : _normalLayout(),
-    );
-  }
-
-  Widget _normalLayout() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            _iconBox(size: 44, iconSize: 22),
-            const Spacer(),
-            Icon(
-              Icons.trending_up_rounded,
-              size: 18,
-              color: color.withOpacity(0.65),
-            ),
-          ],
-        ),
-        const Spacer(),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Color(0xFF102A43),
-            fontSize: 24,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Color(0xFF102A43),
-            fontWeight: FontWeight.w800,
-            fontSize: 13,
-          ),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          note,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: Color(0xFF6B7280), fontSize: 11.5),
-        ),
-      ],
-    );
-  }
-
-  Widget _wideLayout() {
-    return Row(
-      children: [
-        _iconBox(size: 48, iconSize: 24),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF102A43),
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13.5,
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppTheme.accentSoft,
+                  borderRadius: BorderRadius.circular(AppTheme.rMd),
                 ),
+                child: Icon(icon, color: AppTheme.blue1, size: 19),
               ),
-              const SizedBox(height: 5),
-              Text(
-                note,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontSize: 11.5,
-                  height: 1.25,
-                ),
+              const Spacer(),
+              const Icon(
+                Icons.trending_up_rounded,
+                size: 16,
+                color: AppTheme.iconMuted,
               ),
             ],
           ),
-        ),
-        const SizedBox(width: 10),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            value,
-            style: const TextStyle(
-              color: Color(0xFF102A43),
-              fontSize: 25,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.5,
+          const Spacer(),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: const TextStyle(
+                color: AppTheme.blue3,
+                fontSize: 24,
+                height: 1.25,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.4,
+              ),
             ),
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _iconBox({double size = 48, double iconSize = 24}) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.11),
-        borderRadius: BorderRadius.circular(17),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppTheme.textPrimary,
+              fontSize: 12.5,
+              height: 1.3,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          // Fixed two-line box so the values line up across the row whether or
+          // not a note wraps.
+          SizedBox(
+            height: 30,
+            child: Text(
+              note,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppTheme.textMuted,
+                fontSize: 11.5,
+                height: 1.3,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
+        ],
       ),
-      child: Icon(icon, color: color, size: iconSize),
     );
   }
 }
@@ -2045,43 +2048,40 @@ class _SidebarItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 220),
-      margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-      decoration: BoxDecoration(
-        color: selected ? Colors.white.withOpacity(0.14) : Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: selected ? Colors.white.withOpacity(0.22) : Colors.transparent,
-        ),
-      ),
+    final foreground = selected ? AppTheme.white : AppTheme.textSecondary;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       child: Material(
-        color: Colors.transparent,
+        color: selected ? AppTheme.blue1 : Colors.transparent,
+        borderRadius: BorderRadius.circular(AppTheme.rMd),
         child: InkWell(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppTheme.rMd),
           onTap: onTap,
-          hoverColor: Colors.white.withOpacity(0.08),
+          hoverColor: selected ? Colors.transparent : AppTheme.accentSoft,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 15),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
             child: Row(
               children: [
                 Icon(
                   icon,
-                  color: selected
-                      ? Colors.white
-                      : Colors.white.withOpacity(0.68),
-                  size: 22,
+                  color: selected ? AppTheme.white : AppTheme.iconMuted,
+                  size: 19,
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 11),
                 Expanded(
                   child: Text(
                     label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: selected
-                          ? Colors.white
-                          : Colors.white.withOpacity(0.68),
-                      fontSize: 14,
-                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                      color: foreground,
+                      fontSize: 13.5,
+                      height: 1.25,
+                      letterSpacing: 0.1,
+                      fontWeight: selected
+                          ? FontWeight.w600
+                          : FontWeight.w500,
                     ),
                   ),
                 ),

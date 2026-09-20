@@ -13,7 +13,10 @@ class Patient {
   final String? emergencyContactName;
   final String? emergencyContactNumber;
   final String? address;
-  final String? status; // pending, accepted, declined, no_sched
+  /// pending -> no_sched (accepted/reserved here, no recurring schedule)
+  /// -> active (accepted and holds an active recurring schedule).
+  /// Also: declined, deleted. There is no 'accepted' status.
+  final String? status;
   final DateTime? createdAt;
   final String? clinicId;
 

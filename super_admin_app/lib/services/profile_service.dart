@@ -10,12 +10,16 @@ class ProfileService {
     return user.id;
   }
 
+  /// Returns every admin profile regardless of status -- both active and
+  /// inactive (soft-deactivated) accounts -- so the Account Management page's
+  /// Status filter has real active/inactive data to filter between. Note this
+  /// is a different query from the separate status='active' clinic-locking
+  /// checks inside the Create/Edit modals, which stay unchanged.
   Future<List<Map<String, dynamic>>> getAdminProfiles() async {
     final data = await _supabase
         .from('profiles')
         .select('*, clinics(name)')
         .eq('role', 'admin')
-        .eq('status', 'active')
         .order('full_name');
 
     return List<Map<String, dynamic>>.from(data);
@@ -82,6 +86,25 @@ class ProfileService {
     await SupabaseConfig.client
         .from('profiles')
         .update({'status': 'inactive', 'is_active': false, 'clinic_id': null})
+        .eq('id', adminId)
+        .eq('role', 'admin');
+  }
+
+  /// Mirrors deleteAdmin() in reverse. The previous clinic assignment is not
+  /// stored anywhere once cleared, so reactivation always requires a fresh
+  /// clinic choice from the Super Admin -- this method does not attempt to
+  /// recover or guess the old clinic_id.
+  Future<void> reactivateAdmin({
+    required String adminId,
+    required String clinicId,
+  }) async {
+    await SupabaseConfig.client
+        .from('profiles')
+        .update({
+          'status': 'active',
+          'is_active': true,
+          'clinic_id': clinicId,
+        })
         .eq('id', adminId)
         .eq('role', 'admin');
   }

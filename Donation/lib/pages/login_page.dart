@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../theme/brand.dart';
+
 import 'landing_page.dart';
 import 'signup_page.dart';
 import 'donation_page.dart';
@@ -33,10 +35,12 @@ class _LoginPageState extends State<LoginPage>
   late final Animation<double> _fadeAnimation;
   late final Animation<Offset> _slideAnimation;
 
-  static const Color primaryColor = Color(0xFF3B97A2);
-  static const Color secondaryColor = Color(0xFF163B56);
-  static const Color surfaceColor = Color(0xFFF6FAFD);
-  static const Color softBlue = Color(0xFFEAF7FB);
+  // Re-pointed at the shared palette so signing in mid-donation does
+  // not jump to a different-looking site. Only the colours moved.
+  static const Color primaryColor = Brand.brand;
+  static const Color secondaryColor = Brand.brandDeep;
+  static const Color surfaceColor = Brand.canvas;
+  static const Color softBlue = Brand.sky;
 
   Route _smoothRoute(Widget page) {
     return PageRouteBuilder(

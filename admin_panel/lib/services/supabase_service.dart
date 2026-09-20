@@ -4,6 +4,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/clinic.dart';
 import '../models/patient.dart';
 
+/// UNUSED. Nothing in the app instantiates this class -- patient reads and
+/// status changes all go through PatientService, which scopes every query
+/// to the signed-in admin's clinic and verifies that each write actually
+/// landed. The helpers here do neither (and getAcceptedPatients still
+/// filters on an 'accepted' status that does not exist in the schema), so
+/// do not wire them up -- extend PatientService instead.
 class SupabaseService {
   final SupabaseClient _client = Supabase.instance.client;
 

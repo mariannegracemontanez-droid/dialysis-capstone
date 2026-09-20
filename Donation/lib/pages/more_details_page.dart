@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../theme/brand.dart';
+import '../widgets/ui.dart';
+import 'donation_option_page.dart';
+
 class MoreDetailsPage extends StatefulWidget {
   const MoreDetailsPage({super.key});
 
@@ -13,11 +17,13 @@ class _MoreDetailsPageState extends State<MoreDetailsPage>
   late final Animation<double> _fadeAnimation;
   late final Animation<Offset> _slideAnimation;
 
-  final Color _darkTeal = const Color(0xFF163B56);
-  final Color _primaryTeal = const Color(0xFF3B97A2);
-  final Color _accentBlue = const Color(0xFF38A6DB);
-  final Color _surface = const Color(0xFFF7FBFD);
-  final Color _softBlue = const Color(0xFFEAF7FB);
+  // Shared palette, so the mission page matches the landing page it is
+  // reached from.
+  final Color _darkTeal = Brand.brandDeep;
+  final Color _primaryTeal = Brand.teal;
+  final Color _accentBlue = Brand.coral;
+  final Color _surface = Brand.canvas;
+  final Color _softBlue = Brand.sky;
 
   @override
   void initState() {
@@ -667,6 +673,22 @@ class _MoreDetailsPageState extends State<MoreDetailsPage>
               color: Colors.white.withOpacity(0.78),
               height: 1.6,
             ),
+          ),
+          const SizedBox(height: 26),
+          // This block used to end without anywhere to go. It now opens the
+          // same donation flow the landing page does - no new route, just a
+          // second way into the existing one.
+          DonateButton(
+            label: 'Donate Now',
+            large: true,
+            expand: Brand.isMobile(MediaQuery.of(context).size.width),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const DonationOptionPage(),
+                ),
+              );
+            },
           ),
         ],
       ),

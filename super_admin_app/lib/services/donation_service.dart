@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
+import '../models/center_donation_history_entry.dart';
 import '../models/donation_record.dart';
 import '../models/donation_summary.dart';
 import '../models/fund_distribution.dart';
@@ -10,7 +11,7 @@ class DonationService {
   Future<List<DonationRecord>> fetchDonations() async {
     final response = await _supabase
         .from('donations')
-        .select('*')
+        .select('*, clinics(name)')
         .order('created_at', ascending: false);
 
     final list = response as List<dynamic>;
@@ -18,6 +19,76 @@ class DonationService {
     return list
         .map((item) => DonationRecord.fromJson(item as Map<String, dynamic>))
         .toList();
+  }
+
+  /// The per-center breakdown for an equal-distribution donation. Empty for
+  /// specific/random donations, which resolve to a single
+  /// donations.clinic_id instead.
+  Future<List<DonationAllocation>> fetchAllocationsForDonation(
+    String donationId,
+  ) async {
+    final response = await _supabase
+        .from('donation_allocations')
+        .select('*, clinics(name)')
+        .eq('donation_id', donationId)
+        .order('amount', ascending: false);
+
+    return (response as List<dynamic>)
+        .map((item) => DonationAllocation.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// A single center's donation history: every specific/random donation
+  /// sent directly to it, plus its share of every equal-distribution
+  /// donation -- normalized into one list for the Center Donation History
+  /// section.
+  Future<List<CenterDonationHistoryEntry>> fetchCenterDonationHistory(
+    String clinicId,
+  ) async {
+    final direct = await _supabase
+        .from('donations')
+        .select('id, amount, allocation_type, status, created_at, name, email')
+        .eq('clinic_id', clinicId)
+        .order('created_at', ascending: false);
+
+    final shares = await _supabase
+        .from('donation_allocations')
+        .select('donation_id, amount, created_at, donations(status, name, email)')
+        .eq('clinic_id', clinicId)
+        .order('created_at', ascending: false);
+
+    final entries = <CenterDonationHistoryEntry>[
+      for (final item in (direct as List<dynamic>))
+        CenterDonationHistoryEntry(
+          donationId: item['id'].toString(),
+          amount: double.tryParse(item['amount'].toString()) ?? 0.0,
+          allocationType: item['allocation_type']?.toString() ?? 'specific_center',
+          status: item['status']?.toString() ?? 'pending',
+          date: DateTime.tryParse(item['created_at'].toString()) ?? DateTime.now(),
+          donorName: item['name']?.toString(),
+          donorEmail: item['email']?.toString(),
+        ),
+      for (final item in (shares as List<dynamic>))
+        CenterDonationHistoryEntry(
+          donationId: item['donation_id'].toString(),
+          amount: double.tryParse(item['amount'].toString()) ?? 0.0,
+          allocationType: 'equal_distribution',
+          status: (item['donations'] is Map
+                  ? item['donations']['status']?.toString()
+                  : null) ??
+              'pending',
+          date: DateTime.tryParse(item['created_at'].toString()) ?? DateTime.now(),
+          donorName: item['donations'] is Map
+              ? item['donations']['name']?.toString()
+              : null,
+          donorEmail: item['donations'] is Map
+              ? item['donations']['email']?.toString()
+              : null,
+        ),
+    ];
+
+    entries.sort((a, b) => b.date.compareTo(a.date));
+    return entries;
   }
 
   Future<double> fetchTotalDonations() async {
@@ -121,9 +192,5 @@ class DonationService {
       'status': status,
       'created_at': DateTime.now().toIso8601String(),
     });
-  }
-
-  Future<void> deleteDonation(String donationId) async {
-    await _supabase.from('donations').delete().eq('id', donationId);
   }
 }

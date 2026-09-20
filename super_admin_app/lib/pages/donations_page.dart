@@ -1,13 +1,78 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../models/center_donation_history_entry.dart';
 import '../models/donation_record.dart';
 import '../models/fund_distribution.dart';
 import 'package:super_admin_app/services/donation_service.dart';
+import '../theme/app_theme.dart';
 
-int pendingCount = 0;
 int verifiedCount = 0;
-int rejectedCount = 0;
+
+/// Preset date windows for the Center Donation History filter. Applied
+/// client-side against the existing donation date -- no new fields or queries.
+enum _HistoryDateRange {
+  allTime('All Time', null),
+  last7Days('Last 7 Days', 7),
+  last30Days('Last 30 Days', 30),
+  last90Days('Last 90 Days', 90),
+  thisYear('This Year', null);
+
+  const _HistoryDateRange(this.label, this.days);
+
+  final String label;
+  final int? days;
+}
+
+/// One display row in the Overall Donation History table. Not a persisted
+/// model -- just a normalized shape so the table/search/filter code can treat
+/// "All Centers" rows (from DonationRecord, one per raw donation) and
+/// "one center selected" rows (from CenterDonationHistoryEntry, one per
+/// center-share) identically.
+class _OverallHistoryRow {
+  final String donationId;
+  final double amount;
+  final String allocationType;
+  final String status;
+  final DateTime date;
+  final String centerLabel;
+  final String? donorName;
+  final String? donorEmail;
+
+  _OverallHistoryRow({
+    required this.donationId,
+    required this.amount,
+    required this.allocationType,
+    required this.status,
+    required this.date,
+    required this.centerLabel,
+    this.donorName,
+    this.donorEmail,
+  });
+
+  String get allocationLabel {
+    switch (allocationType) {
+      case 'specific_center':
+        return 'Specific Center';
+      case 'random_center':
+        return 'Random';
+      case 'equal_distribution':
+        return 'Equal Share';
+      default:
+        return 'Not recorded';
+    }
+  }
+
+  String get statusLabel {
+    switch (status) {
+      case 'verified':
+        return 'Received';
+      case 'rejected':
+        return 'Rejected';
+      default:
+        return 'Pending';
+    }
+  }
+}
 
 class DonationsPage extends StatefulWidget {
   const DonationsPage({super.key});
@@ -30,6 +95,31 @@ class _DonationsPageState extends State<DonationsPage> {
 
   final Map<String, double> centerTotals = {};
 
+  // Center Donation History section.
+  String? _historyCenterId;
+  List<CenterDonationHistoryEntry> _historyEntries = [];
+  bool _isLoadingHistory = false;
+
+  // Center Donation History filters -- applied client-side to the already
+  // loaded _historyEntries, so they only affect which rows the table shows.
+  final TextEditingController _historySearchController = TextEditingController();
+  String _historySearch = '';
+  _HistoryDateRange _historyRange = _HistoryDateRange.allTime;
+
+  // Overall Donation History section (read-only, all centers). Fully
+  // independent of the Center Donation History state above -- it reuses the
+  // same _HistoryDateRange presets but keeps its own selection/search/range
+  // so neither section affects the other. "All Centers" (null) reads
+  // straight from _donations (already loaded); picking one center switches
+  // to _overallCenterEntries, fetched via the same fetchCenterDonationHistory
+  // the Center Donation History section already uses.
+  String? _overallCenterId;
+  List<CenterDonationHistoryEntry> _overallCenterEntries = [];
+  bool _isLoadingOverall = false;
+  final TextEditingController _overallSearchController = TextEditingController();
+  String _overallSearch = '';
+  _HistoryDateRange _overallRange = _HistoryDateRange.allTime;
+
   static const Color _primary = Color(0xFF0F719F);
   static const Color _dark = Color(0xFF0F3A55);
   static const Color _muted = Color(0xFF647583);
@@ -38,10 +128,39 @@ class _DonationsPageState extends State<DonationsPage> {
   static const Color _danger = Color(0xFFDE4D4D);
   static const Color _warning = Color(0xFFFB8B3C);
 
+  // Center Donation History panel: fixed-but-responsive heights so the
+  // section reads as a bounded dashboard card (sidebar + history both
+  // scroll internally) instead of growing with the record count.
+  static const double _historyPanelHeightWide = 500;
+  static const double _historyPanelHeightCompact = 440;
+  static const double _tabletBreakpoint = 900;
+  static const double _mobileBreakpoint = 640;
+
+  Map<String, dynamic>? get _selectedHistoryCenter {
+    for (final center in _centers) {
+      if (center['id'].toString() == _historyCenterId) return center;
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? get _selectedOverallCenter {
+    for (final center in _centers) {
+      if (center['id'].toString() == _overallCenterId) return center;
+    }
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
     _loadDonations();
+  }
+
+  @override
+  void dispose() {
+    _historySearchController.dispose();
+    _overallSearchController.dispose();
+    super.dispose();
   }
 
   String _formatCompactCurrency(double amount) {
@@ -81,16 +200,25 @@ class _DonationsPageState extends State<DonationsPage> {
             .clamp(0, double.infinity)
             .toDouble();
 
-        pendingCount = donations.where((d) => d.status == 'pending').length;
         verifiedCount = donations.where((d) => d.status == 'verified').length;
-        rejectedCount = donations.where((d) => d.status == 'rejected').length;
 
         centerTotals.clear();
         for (final item in distributions) {
           centerTotals[item.centerName] =
               (centerTotals[item.centerName] ?? 0.0) + item.amount.toDouble();
         }
+
+        // Keep the current selection if that center still exists in this
+        // fresh list, otherwise fall back to the first center.
+        final stillExists = centers.any((c) => c['id'].toString() == _historyCenterId);
+        if (_historyCenterId == null || !stillExists) {
+          _historyCenterId = centers.isNotEmpty ? centers.first['id'].toString() : null;
+        }
       });
+
+      if (_historyCenterId != null) {
+        await _loadCenterHistory(_historyCenterId!);
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -103,324 +231,89 @@ class _DonationsPageState extends State<DonationsPage> {
     }
   }
 
-  Future<void> _showDonationDialog() async {
-    final formKey = GlobalKey<FormState>();
-    final amountController = TextEditingController();
-    final remarksController = TextEditingController();
+  Future<void> _loadCenterHistory(String clinicId) async {
+    if (mounted) {
+      setState(() => _isLoadingHistory = true);
+    }
 
-    Map<String, dynamic>? selectedCenter = _centers.isNotEmpty
-        ? _centers.first
-        : null;
-    var isSaving = false;
-
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return Dialog(
-              insetPadding: const EdgeInsets.all(24),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(28),
-              ),
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 520),
-                padding: const EdgeInsets.all(26),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(28),
-                ),
-                child: Form(
-                  key: formKey,
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: _primary.withAlpha(25),
-                                borderRadius: BorderRadius.circular(18),
-                              ),
-                              child: const Icon(
-                                Icons.account_balance_wallet_outlined,
-                                color: _primary,
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            const Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Distribute Funds',
-                                    style: TextStyle(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.w800,
-                                      color: _dark,
-                                    ),
-                                  ),
-                                  SizedBox(height: 4),
-                                  Text(
-                                    'Allocate verified donation funds to a dialysis center.',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: _muted,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF5FAFD),
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: const Color(0xFFE1EEF5)),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.savings_outlined,
-                                color: _primary,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'Available Funds: ${_formatCompactCurrency(_availableFunds)}',
-                                  style: const TextStyle(
-                                    color: _dark,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        DropdownButtonFormField<Map<String, dynamic>>(
-                          value: selectedCenter,
-                          items: _centers.map((center) {
-                            return DropdownMenuItem<Map<String, dynamic>>(
-                              value: center,
-                              child: Text(
-                                center['name']?.toString() ?? 'Unnamed Center',
-                              ),
-                            );
-                          }).toList(),
-                          decoration: _inputDecoration(
-                            'Center',
-                            Icons.local_hospital_outlined,
-                          ),
-                          onChanged: (value) {
-                            setDialogState(() => selectedCenter = value);
-                          },
-                          validator: (value) =>
-                              value == null ? 'Select a center' : null,
-                        ),
-                        const SizedBox(height: 14),
-                        _buildTextField(
-                          controller: amountController,
-                          label: 'Amount',
-                          icon: Icons.payments_outlined,
-                          keyboardType: TextInputType.number,
-                        ),
-                        const SizedBox(height: 14),
-                        _buildTextField(
-                          controller: remarksController,
-                          label: 'Remarks',
-                          icon: Icons.notes_outlined,
-                        ),
-                        const SizedBox(height: 26),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            TextButton(
-                              onPressed: isSaving
-                                  ? null
-                                  : () => Navigator.pop(context),
-                              child: const Text('Cancel'),
-                            ),
-                            const SizedBox(width: 10),
-                            FilledButton.icon(
-                              onPressed: isSaving
-                                  ? null
-                                  : () async {
-                                      if (!formKey.currentState!.validate())
-                                        return;
-
-                                      final amount = double.tryParse(
-                                        amountController.text.trim(),
-                                      );
-
-                                      if (amount == null || amount <= 0) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Enter a valid amount',
-                                            ),
-                                          ),
-                                        );
-                                        return;
-                                      }
-
-                                      if (amount > _availableFunds) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Insufficient available funds',
-                                            ),
-                                          ),
-                                        );
-                                        return;
-                                      }
-
-                                      setDialogState(() => isSaving = true);
-
-                                      try {
-                                        await _service.createFundDistribution(
-                                          clinicId: selectedCenter!['id']
-                                              .toString(),
-                                          centerName: selectedCenter!['name']
-                                              .toString(),
-                                          amount: amount,
-                                          remarks: remarksController.text
-                                              .trim(),
-                                        );
-
-                                        if (!context.mounted) return;
-                                        Navigator.pop(context);
-                                        await _loadDonations();
-
-                                        if (!mounted) return;
-                                        ScaffoldMessenger.of(
-                                          this.context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Funds distributed successfully',
-                                            ),
-                                          ),
-                                        );
-                                      } catch (error) {
-                                        if (!mounted) return;
-                                        ScaffoldMessenger.of(
-                                          this.context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text('Error: $error'),
-                                          ),
-                                        );
-                                      } finally {
-                                        setDialogState(() => isSaving = false);
-                                      }
-                                    },
-                              icon: isSaving
-                                  ? const SizedBox(
-                                      height: 18,
-                                      width: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Icon(Icons.send_rounded),
-                              label: Text(
-                                isSaving ? 'Saving...' : 'Distribute',
-                              ),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: _primary,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                  vertical: 16,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    amountController.dispose();
-    remarksController.dispose();
+    try {
+      final entries = await _service.fetchCenterDonationHistory(clinicId);
+      if (!mounted) return;
+      setState(() => _historyEntries = entries);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load center history: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingHistory = false);
+      }
+    }
   }
 
-  Future<void> _deleteDonation(DonationRecord donation) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('Delete donation record'),
-        content: Text(
-          'Delete donation of ₱${donation.amount.toStringAsFixed(0)} from ${donation.donorName}?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(backgroundColor: _danger),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
+  /// Loads a single center's donations for the Overall Donation History
+  /// section when it is narrowed from "All Centers" to one center. Reuses
+  /// the exact same service call as _loadCenterHistory above -- this method
+  /// only exists so the two sections keep fully independent state.
+  Future<void> _loadOverallHistory(String clinicId) async {
+    if (mounted) {
+      setState(() => _isLoadingOverall = true);
+    }
 
-    if (confirmed != true) return;
-
-    await _service.deleteDonation(donation.id);
-    await _loadDonations();
+    try {
+      final entries = await _service.fetchCenterDonationHistory(clinicId);
+      if (!mounted) return;
+      setState(() => _overallCenterEntries = entries);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load overall donation history: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingOverall = false);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final totalRecords = _donations.length;
     final verifiedRecords = verifiedCount;
     final distributionCount = _fundDistributions.length;
-    final hasPieData = pendingCount + verifiedCount + rejectedCount > 0;
+
+    // Both derived from lists already in memory -- no extra query, no new
+    // backend surface, just more useful context under the same three figures.
+    final pendingRecords = _donations
+        .where((d) => d.status.toLowerCase().trim() != 'verified')
+        .length;
+    final centersFunded = centerTotals.keys.length;
 
     final double maxY = centerTotals.isNotEmpty
         ? centerTotals.values.reduce((a, b) => a > b ? a : b) + 1000.0
         : 1000.0;
 
+    final pagePadding = AppTheme.pagePadding(
+      MediaQuery.of(context).size.width,
+    );
+
     return Container(
       color: _bg,
-      child: RefreshIndicator(
+      child: AppMenuTheme(
+        child: RefreshIndicator(
         onRefresh: _loadDonations,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
-          padding: const EdgeInsets.all(28),
+          // Padded inside the scroll view so the scrollbar rides the
+          // viewport edge instead of floating inset from it.
+          padding: EdgeInsets.all(pagePadding),
           child: LayoutBuilder(
             builder: (context, constraints) {
               final isWide = constraints.maxWidth >= 1150;
               final statWidth = isWide
-                  ? (constraints.maxWidth - 48) / 4
+                  ? (constraints.maxWidth - 32) / 3
                   : constraints.maxWidth >= 760
                   ? (constraints.maxWidth - 16) / 2
                   : constraints.maxWidth;
@@ -429,7 +322,7 @@ class _DonationsPageState extends State<DonationsPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildHeader(),
-                  const SizedBox(height: 26),
+                  const SizedBox(height: AppTheme.gapLg),
                   Wrap(
                     spacing: 16,
                     runSpacing: 16,
@@ -442,8 +335,11 @@ class _DonationsPageState extends State<DonationsPage> {
                           value: _formatCompactCurrency(
                             _totalVerifiedDonations,
                           ),
-                          subtitle: '$verifiedRecords verified donation(s)',
-                          color: _primary,
+                          subtitle: pendingRecords > 0
+                              ? '$verifiedRecords verified · $pendingRecords awaiting review'
+                              : '$verifiedRecords verified donation(s)',
+                          color: AppTheme.accentPink,
+                          softColor: AppTheme.accentPinkSoft,
                         ),
                       ),
                       SizedBox(
@@ -453,7 +349,8 @@ class _DonationsPageState extends State<DonationsPage> {
                           label: 'Available Funds',
                           value: _formatCompactCurrency(_availableFunds),
                           subtitle: 'Verified funds minus distributed amount',
-                          color: _success,
+                          color: AppTheme.accentGreen,
+                          softColor: AppTheme.accentGreenSoft,
                         ),
                       ),
                       SizedBox(
@@ -462,136 +359,29 @@ class _DonationsPageState extends State<DonationsPage> {
                           icon: Icons.send_time_extension_outlined,
                           label: 'Distributed',
                           value: _formatCompactCurrency(_totalDistributedFunds),
-                          subtitle: '$distributionCount distribution logs',
-                          color: _warning,
-                        ),
-                      ),
-                      SizedBox(
-                        width: statWidth,
-                        child: _InfoCard(
-                          icon: Icons.pending_actions_outlined,
-                          label: 'Pending Review',
-                          value: pendingCount.toString(),
-                          subtitle: '$totalRecords total donation record(s)',
-                          color: _danger,
+                          subtitle: centersFunded > 0
+                              ? '$distributionCount logs across $centersFunded center(s)'
+                              : '$distributionCount distribution logs',
+                          color: AppTheme.accentOrange,
+                          softColor: AppTheme.accentOrangeSoft,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 26),
+                  const SizedBox(height: AppTheme.gapLg),
                   Wrap(
                     spacing: 20,
                     runSpacing: 20,
                     children: [
                       SizedBox(
-                        width: isWide
-                            ? (constraints.maxWidth - 20) * 0.42
-                            : constraints.maxWidth,
+                        width: constraints.maxWidth,
                         child: _SectionCard(
-                          title: 'Donation Status Overview',
-                          subtitle:
-                              'Monitor pending, verified, and rejected donation submissions.',
-                          icon: Icons.donut_large_rounded,
-                          child: SizedBox(
-                            height: 330,
-                            child: hasPieData
-                                ? Column(
-                                    children: [
-                                      Expanded(
-                                        child: PieChart(
-                                          PieChartData(
-                                            sectionsSpace: 8,
-                                            centerSpaceRadius: 58,
-                                            borderData: FlBorderData(
-                                              show: false,
-                                            ),
-                                            sections: [
-                                              PieChartSectionData(
-                                                value: pendingCount.toDouble(),
-                                                title: pendingCount == 0
-                                                    ? ''
-                                                    : 'Pending',
-                                                color: _warning,
-                                                radius: 76,
-                                                titleStyle: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                              PieChartSectionData(
-                                                value: verifiedCount.toDouble(),
-                                                title: verifiedCount == 0
-                                                    ? ''
-                                                    : 'Verified',
-                                                color: _success,
-                                                radius: 76,
-                                                titleStyle: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                              PieChartSectionData(
-                                                value: rejectedCount.toDouble(),
-                                                title: rejectedCount == 0
-                                                    ? ''
-                                                    : 'Rejected',
-                                                color: _danger,
-                                                radius: 76,
-                                                titleStyle: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 18),
-                                      Wrap(
-                                        spacing: 10,
-                                        runSpacing: 10,
-                                        alignment: WrapAlignment.center,
-                                        children: [
-                                          _LegendChip(
-                                            label: 'Pending',
-                                            color: _warning,
-                                            value: pendingCount.toString(),
-                                          ),
-                                          _LegendChip(
-                                            label: 'Verified',
-                                            color: _success,
-                                            value: verifiedCount.toString(),
-                                          ),
-                                          _LegendChip(
-                                            label: 'Rejected',
-                                            color: _danger,
-                                            value: rejectedCount.toString(),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  )
-                                : const _EmptyState(
-                                    icon: Icons.pie_chart_outline_rounded,
-                                    title: 'No analytics available',
-                                    message:
-                                        'Donation status data will appear here once records are added.',
-                                  ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(
-                        width: isWide
-                            ? (constraints.maxWidth - 20) * 0.58
-                            : constraints.maxWidth,
-                        child: _SectionCard(
-                          title: 'Distribution Per Center',
+                          title: 'Donations Per Center',
                           subtitle:
                               'Compare how much funding each center has received.',
                           icon: Icons.bar_chart_rounded,
+                          accent: AppTheme.blue1,
+                          accentSoft: AppTheme.accentBlueSoft,
                           child: SizedBox(
                             height: 330,
                             child: centerTotals.isEmpty
@@ -612,7 +402,7 @@ class _DonationsPageState extends State<DonationsPage> {
                                         horizontalInterval: maxY / 4,
                                         getDrawingHorizontalLine: (value) =>
                                             const FlLine(
-                                              color: Color(0xFFE8EEF3),
+                                              color: AppTheme.border,
                                               strokeWidth: 1,
                                             ),
                                       ),
@@ -693,17 +483,22 @@ class _DonationsPageState extends State<DonationsPage> {
                                               barRods: [
                                                 BarChartRodData(
                                                   toY: item.value.toDouble(),
-                                                  width: 30,
+                                                  width: 28,
                                                   borderRadius:
-                                                      BorderRadius.circular(18),
-                                                  color: _primary,
+                                                      BorderRadius.circular(6),
+                                                  // One blue per center, from
+                                                  // the shared brand scale, so
+                                                  // bars stay distinguishable
+                                                  // without leaving the palette.
+                                                  color: AppTheme.chartBlue(
+                                                    index,
+                                                  ),
                                                   backDrawRodData:
                                                       BackgroundBarChartRodData(
                                                         show: true,
                                                         toY: maxY,
-                                                        color: const Color(
-                                                          0xFFEFF6FA,
-                                                        ),
+                                                        color: AppTheme
+                                                            .surfaceTint,
                                                       ),
                                                 ),
                                               ],
@@ -717,28 +512,35 @@ class _DonationsPageState extends State<DonationsPage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 26),
-                  _SectionCard(
-                    title: 'Donation Records',
-                    subtitle:
-                        'Review donation submissions, verify valid receipts, reject invalid entries, or delete duplicate records.',
-                    icon: Icons.receipt_long_outlined,
-                    trailing: _isLoading
-                        ? null
-                        : TextButton.icon(
-                            onPressed: _loadDonations,
-                            icon: const Icon(Icons.refresh_rounded),
-                            label: const Text('Refresh'),
-                          ),
-                    child: _buildDonationRecords(),
-                  ),
-                  const SizedBox(height: 26),
+                  const SizedBox(height: AppTheme.gapLg),
                   _SectionCard(
                     title: 'Distribution Audit Log',
                     subtitle:
                         'Track fund allocation history, remarks, dates, and distribution status.',
                     icon: Icons.history_rounded,
+                    accent: AppTheme.accentOrange,
+                    accentSoft: AppTheme.accentOrangeSoft,
                     child: _buildAuditLog(),
+                  ),
+                  const SizedBox(height: AppTheme.gapLg),
+                  _SectionCard(
+                    title: 'Center Donation History',
+                    subtitle:
+                        'Review one center\'s full donation record -- specific, random, and equal-share allocations.',
+                    icon: Icons.local_hospital_outlined,
+                    accent: AppTheme.accentTeal,
+                    accentSoft: AppTheme.accentTealSoft,
+                    child: _buildCenterHistory(),
+                  ),
+                  const SizedBox(height: AppTheme.gapLg),
+                  _SectionCard(
+                    title: 'Overall Donation History',
+                    subtitle:
+                        'Read-only oversight of donation records across every center -- search, filter by center and date, no approval actions.',
+                    icon: Icons.fact_check_outlined,
+                    accent: AppTheme.accentGreen,
+                    accentSoft: AppTheme.accentGreenSoft,
+                    child: _buildOverallHistory(),
                   ),
                 ],
               );
@@ -746,27 +548,23 @@ class _DonationsPageState extends State<DonationsPage> {
           ),
         ),
       ),
+      ),
     );
   }
 
   Widget _buildHeader() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF0F719F), Color(0xFF0F3A55)],
+          colors: [AppTheme.white, AppTheme.headerTint],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(30),
-        boxShadow: [
-          BoxShadow(
-            color: _primary.withAlpha(45),
-            blurRadius: 28,
-            offset: const Offset(0, 16),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(AppTheme.rXl),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.shadowSm,
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -783,162 +581,58 @@ class _DonationsPageState extends State<DonationsPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(30),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: Colors.white.withAlpha(40)),
-                      ),
-                      child: const Text(
-                        'Donation Management',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                          letterSpacing: 0.3,
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: AppTheme.accentPinkSoft,
+                            borderRadius: BorderRadius.circular(AppTheme.rLg),
+                            border: Border.all(color: AppTheme.borderStrong),
+                          ),
+                          child: const Icon(
+                            Icons.volunteer_activism_rounded,
+                            color: AppTheme.accentPink,
+                            size: 24,
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Distribute Donation Funds',
-                      style: TextStyle(
-                        fontSize: 34,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        height: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Allocate verified donations to centers and keep every distribution transparent.',
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: Colors.white.withAlpha(215),
-                        height: 1.5,
-                      ),
+                        const SizedBox(width: 16),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Distribute Donation Funds',
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  height: 1.25,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.3,
+                                  color: AppTheme.blue3,
+                                ),
+                              ),
+                              SizedBox(height: 6),
+                              Text(
+                                'Allocate verified donations to centers and keep every distribution transparent.',
+                                style: TextStyle(
+                                  fontSize: 13.5,
+                                  height: 1.45,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
-                ),
-              ),
-              if (isCompact) const SizedBox(height: 22),
-              FilledButton.icon(
-                onPressed: _showDonationDialog,
-                icon: const Icon(Icons.add_card_rounded),
-                label: const Text('Distribute Funds'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: _primary,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 22,
-                    vertical: 18,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
                 ),
               ),
             ],
           );
         },
       ),
-    );
-  }
-
-  Widget _buildDonationRecords() {
-    if (_isLoading) return const _LoadingBlock();
-
-    if (_donations.isEmpty) {
-      return const _EmptyState(
-        icon: Icons.volunteer_activism_outlined,
-        title: 'No donations yet',
-        message:
-            'Donation records will appear here once donors submit their contributions.',
-      );
-    }
-
-    final pending = _donations.where((d) => d.status == 'pending').toList();
-    final approved = _donations.where((d) => d.status == 'verified').toList();
-    final rejected = _donations.where((d) => d.status == 'rejected').toList();
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 950;
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _DonationGroup(
-              title: 'Pending Donations',
-              count: pending.length,
-              color: _warning,
-              donations: pending,
-              onDelete: _deleteDonation,
-              onRefresh: _loadDonations,
-              isScrollable: false,
-            ),
-            const SizedBox(height: 22),
-            if (isWide)
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: _DonationGroup(
-                      title: 'Verified Donations',
-                      count: approved.length,
-                      color: _success,
-                      donations: approved,
-                      onDelete: _deleteDonation,
-                      onRefresh: _loadDonations,
-                      isScrollable: true,
-                    ),
-                  ),
-                  const SizedBox(width: 20),
-                  Expanded(
-                    child: _DonationGroup(
-                      title: 'Rejected Donations',
-                      count: rejected.length,
-                      color: _danger,
-                      donations: rejected,
-                      onDelete: _deleteDonation,
-                      onRefresh: _loadDonations,
-                      isScrollable: true,
-                    ),
-                  ),
-                ],
-              )
-            else
-              Column(
-                children: [
-                  _DonationGroup(
-                    title: 'Verified Donations',
-                    count: approved.length,
-                    color: _success,
-                    donations: approved,
-                    onDelete: _deleteDonation,
-                    onRefresh: _loadDonations,
-                    isScrollable: true,
-                  ),
-                  const SizedBox(height: 22),
-                  _DonationGroup(
-                    title: 'Rejected Donations',
-                    count: rejected.length,
-                    color: _danger,
-                    donations: rejected,
-                    onDelete: _deleteDonation,
-                    onRefresh: _loadDonations,
-                    isScrollable: true,
-                  ),
-                ],
-              ),
-          ],
-        );
-      },
     );
   }
 
@@ -1030,36 +724,914 @@ class _DonationsPageState extends State<DonationsPage> {
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      validator: (value) =>
-          (value == null || value.isEmpty) ? 'This field is required' : null,
-      decoration: _inputDecoration(label, icon),
+  Color _historyStatusColor(String status) {
+    if (status == 'verified') return _success;
+    if (status == 'rejected') return _danger;
+    return _warning;
+  }
+
+  /// The loaded history rows narrowed by the search box and the date-range
+  /// dropdown. Order is left untouched, so the service's newest-first sort is
+  /// preserved. Search is a case-insensitive substring match across donor
+  /// name, donor email, donation ID, and the selected center's name.
+  List<CenterDonationHistoryEntry> _filteredHistoryEntries() {
+    final query = _historySearch.trim().toLowerCase();
+    final centerName =
+        _selectedHistoryCenter?['name']?.toString().toLowerCase() ?? '';
+
+    DateTime? cutoff;
+    if (_historyRange == _HistoryDateRange.thisYear) {
+      cutoff = DateTime(DateTime.now().year);
+    } else if (_historyRange.days != null) {
+      cutoff = DateTime.now().subtract(Duration(days: _historyRange.days!));
+    }
+
+    return _historyEntries.where((entry) {
+      if (cutoff != null && entry.date.isBefore(cutoff)) return false;
+      if (query.isEmpty) return true;
+
+      final haystack = [
+        entry.donorName ?? '',
+        entry.donorEmail ?? '',
+        entry.donationId,
+        centerName,
+      ].join(' ').toLowerCase();
+
+      return haystack.contains(query);
+    }).toList();
+  }
+
+  // ---- Overall Donation History (Step 3, read-only, all centers) --------
+
+  /// "All Centers" label for an equal-distribution donation, since one such
+  /// donation is not tied to a single center.
+  String _overallCenterLabel(DonationRecord donation) {
+    if (donation.allocationType == 'equal_distribution') {
+      return 'All Centers (Equal Share)';
+    }
+    return donation.clinicName ?? 'Not recorded';
+  }
+
+  /// "All Centers" rows: one row per raw donation, at its full donated
+  /// amount. An equal-distribution donation appears exactly once here --
+  /// never split -- so totals never double-count.
+  List<_OverallHistoryRow> _rowsFromAllDonations() {
+    return _donations
+        .map(
+          (d) => _OverallHistoryRow(
+            donationId: d.id,
+            amount: d.amount,
+            allocationType: d.allocationType ?? '',
+            status: d.status,
+            date: d.createdAt,
+            centerLabel: _overallCenterLabel(d),
+            donorName: d.donorName,
+            donorEmail: d.email,
+          ),
+        )
+        .toList();
+  }
+
+  /// "One center selected" rows: reuses fetchCenterDonationHistory's already
+  /// correct per-center amounts, so an equal-distribution donation shows
+  /// only that center's actual share, not the full donation amount.
+  List<_OverallHistoryRow> _rowsFromOverallCenterEntries(String centerName) {
+    return _overallCenterEntries
+        .map(
+          (e) => _OverallHistoryRow(
+            donationId: e.donationId,
+            amount: e.amount,
+            allocationType: e.allocationType,
+            status: e.status,
+            date: e.date,
+            centerLabel: centerName,
+            donorName: e.donorName,
+            donorEmail: e.donorEmail,
+          ),
+        )
+        .toList();
+  }
+
+  /// Combines the All-Centers/one-center source rows with the search box and
+  /// date-range dropdown. Order is left untouched -- both sources are already
+  /// newest-first, so that ordering is preserved end to end.
+  List<_OverallHistoryRow> _filteredOverallRows() {
+    final rows = _overallCenterId == null
+        ? _rowsFromAllDonations()
+        : _rowsFromOverallCenterEntries(
+            _selectedOverallCenter?['name']?.toString() ?? 'Selected Center',
+          );
+
+    final query = _overallSearch.trim().toLowerCase();
+
+    DateTime? cutoff;
+    if (_overallRange == _HistoryDateRange.thisYear) {
+      cutoff = DateTime(DateTime.now().year);
+    } else if (_overallRange.days != null) {
+      cutoff = DateTime.now().subtract(Duration(days: _overallRange.days!));
+    }
+
+    return rows.where((row) {
+      if (cutoff != null && row.date.isBefore(cutoff)) return false;
+      if (query.isEmpty) return true;
+
+      final haystack = [
+        row.donorName ?? '',
+        row.donorEmail ?? '',
+        row.donationId,
+        row.centerLabel,
+      ].join(' ').toLowerCase();
+
+      return haystack.contains(query);
+    }).toList();
+  }
+
+  void _clearOverallFilters() {
+    _overallSearchController.clear();
+    setState(() {
+      _overallSearch = '';
+      _overallRange = _HistoryDateRange.allTime;
+    });
+  }
+
+  // Sidebar (desktop/tablet) + history panel layout. Data fetching is
+  // unchanged from before -- _centers, _historyCenterId, _historyEntries,
+  // and _loadCenterHistory all still work exactly as they did with the
+  // dropdown-only version; only the selector's presentation changes based
+  // on available width, and the mobile breakpoint still reuses that same
+  // dropdown rather than inventing a new selector.
+  Widget _buildCenterHistory() {
+    if (_centers.isEmpty) {
+      return const _EmptyState(
+        icon: Icons.local_hospital_outlined,
+        title: 'No centers yet',
+        message: 'Add a dialysis center to see its donation history.',
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < _mobileBreakpoint;
+        final isTablet = !isMobile && constraints.maxWidth < _tabletBreakpoint;
+        final panelHeight =
+            isMobile ? _historyPanelHeightCompact : _historyPanelHeightWide;
+        final sidebarWidth = isTablet ? 168.0 : 224.0;
+
+        if (isMobile) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildCenterDropdown(),
+              const SizedBox(height: 16),
+              SizedBox(height: panelHeight, child: _buildHistoryPanel()),
+            ],
+          );
+        }
+
+        return SizedBox(
+          height: panelHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(width: sidebarWidth, child: _buildCenterSidebar()),
+              const SizedBox(width: 22),
+              const VerticalDivider(width: 1, color: Color(0xFFE7EFF5)),
+              const SizedBox(width: 22),
+              Expanded(child: _buildHistoryPanel()),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCenterDropdown() {
+    // Keyed on the clinic id (a String, compared by content) rather than
+    // the clinic Map itself. Map equality in Dart is by reference, and
+    // DropdownButtonFormField only reads its `initialValue` once to seed
+    // internal state -- it does not resync on every rebuild -- so passing
+    // a fresh Map instance from each _loadDonations() reload left the
+    // field holding a stale reference that no longer matched any item in
+    // `items`, crashing the page. An id string survives that because
+    // '6ec...' == '6ec...' regardless of which fetch produced it.
+    return DropdownButtonFormField<String>(
+      dropdownColor: AppTheme.surface,
+      elevation: 2,
+      borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+      icon: const Icon(
+        Icons.expand_more_rounded,
+        size: 18,
+        color: AppTheme.iconMuted,
+      ),
+      key: ValueKey(_historyCenterId),
+      initialValue: _historyCenterId,
+      items: _centers.map((center) {
+        return DropdownMenuItem<String>(
+          value: center['id'].toString(),
+          child: Text(
+            center['name']?.toString() ?? 'Unnamed Center',
+            overflow: TextOverflow.ellipsis,
+          ),
+        );
+      }).toList(),
+      decoration: _inputDecoration('Center', Icons.local_hospital_outlined),
+      onChanged: (value) async {
+        if (value == null) return;
+        setState(() => _historyCenterId = value);
+        await _loadCenterHistory(value);
+      },
+    );
+  }
+
+  Widget _buildCenterSidebar() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 6, bottom: 10),
+          child: Text(
+            'CENTERS',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: _muted,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Scrollbar(
+            thickness: 4,
+            radius: const Radius.circular(8),
+            child: ListView.builder(
+              padding: EdgeInsets.zero,
+              itemCount: _centers.length,
+              itemBuilder: (context, index) {
+                final center = _centers[index];
+                final id = center['id'].toString();
+                final isSelected = id == _historyCenterId;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: isSelected
+                        ? null
+                        : () async {
+                            setState(() => _historyCenterId = id);
+                            await _loadCenterHistory(id);
+                          },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 11,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? _primary.withAlpha(18)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border(
+                          left: BorderSide(
+                            color: isSelected ? _primary : Colors.transparent,
+                            width: 3,
+                          ),
+                        ),
+                      ),
+                      child: Text(
+                        center['name']?.toString() ?? 'Unnamed Center',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                          color: isSelected ? _dark : _muted,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHistoryPanel() {
+    final centerName = _selectedHistoryCenter?['name']?.toString() ??
+        'Select a center';
+    // TOTAL RECEIVED stays a lifetime figure for the center -- it is
+    // intentionally computed from the full list, not the filtered view.
+    final totalReceived = _historyEntries
+        .where((e) => e.status == 'verified')
+        .fold<double>(0, (sum, e) => sum + e.amount);
+
+    final visibleEntries = _filteredHistoryEntries();
+    final hasFilters =
+        _historySearch.trim().isNotEmpty || _historyRange != _HistoryDateRange.allTime;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    centerName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                      color: _dark,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Donation History',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: _muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (!_isLoadingHistory && _historyEntries.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _success.withAlpha(20),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Text(
+                      'TOTAL RECEIVED',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        color: _success,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                    Text(
+                      '₱${totalReceived.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: _success,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        const Divider(height: 1, color: Color(0xFFE7EFF5)),
+        const SizedBox(height: 6),
+        if (!_isLoadingHistory && _historyEntries.isNotEmpty) ...[
+          _buildHistoryFilters(),
+          const SizedBox(height: 10),
+        ],
+        Expanded(
+          child: _isLoadingHistory
+              ? const Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.4),
+                  ),
+                )
+              : _historyEntries.isEmpty
+                  ? const Center(
+                      child: _EmptyState(
+                        icon: Icons.receipt_long_outlined,
+                        title: 'No donation history yet',
+                        message:
+                            'This center has not received any recorded donations.',
+                      ),
+                    )
+                  : visibleEntries.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const _EmptyState(
+                                icon: Icons.search_off_rounded,
+                                title: 'No donations match your filters',
+                                message:
+                                    'Try a different search term or date range.',
+                              ),
+                              if (hasFilters)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 12),
+                                  child: TextButton.icon(
+                                    onPressed: _clearHistoryFilters,
+                                    icon: const Icon(Icons.clear_all_rounded),
+                                    label: const Text('Clear filters'),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        )
+                      : _buildHistoryTable(visibleEntries),
+        ),
+      ],
+    );
+  }
+
+  void _clearHistoryFilters() {
+    _historySearchController.clear();
+    setState(() {
+      _historySearch = '';
+      _historyRange = _HistoryDateRange.allTime;
+    });
+  }
+
+  Widget _buildHistoryFilters() {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _historySearchController,
+            onChanged: (value) => setState(() => _historySearch = value),
+            decoration: _inputDecoration(
+              'Search donor, email, or donation ID',
+              Icons.search_rounded,
+            ).copyWith(
+              suffixIcon: _historySearch.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      tooltip: 'Clear search',
+                      onPressed: () {
+                        _historySearchController.clear();
+                        setState(() => _historySearch = '');
+                      },
+                    ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        SizedBox(
+          width: 170,
+          child: DropdownButtonFormField<_HistoryDateRange>(
+            dropdownColor: AppTheme.surface,
+            elevation: 2,
+            borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+            icon: const Icon(
+              Icons.expand_more_rounded,
+              size: 18,
+              color: AppTheme.iconMuted,
+            ),
+            initialValue: _historyRange,
+            isExpanded: true,
+            decoration:
+                _inputDecoration('Date Range', Icons.date_range_rounded),
+            items: _HistoryDateRange.values
+                .map(
+                  (range) => DropdownMenuItem<_HistoryDateRange>(
+                    value: range,
+                    child: Text(
+                      range.label,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _historyRange = value);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHistoryTable(List<CenterDonationHistoryEntry> entries) {
+    const columnWidths = {
+      0: FlexColumnWidth(1.2),
+      1: FlexColumnWidth(1.3),
+      2: FlexColumnWidth(1.7),
+      3: FlexColumnWidth(1.1),
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header stays fixed above the scrollable body below it, so the
+        // column labels never scroll out of view while browsing records.
+        Table(
+          columnWidths: columnWidths,
+          children: const [
+            TableRow(
+              decoration: BoxDecoration(color: Color(0xFFF4F9FC)),
+              children: [
+                _AuditHeaderCell('Date'),
+                _AuditHeaderCell('Amount'),
+                _AuditHeaderCell('Allocation'),
+                _AuditHeaderCell('Status'),
+              ],
+            ),
+          ],
+        ),
+        Expanded(
+          child: Scrollbar(
+            thickness: 4,
+            radius: const Radius.circular(8),
+            child: SingleChildScrollView(
+              child: Table(
+                columnWidths: columnWidths,
+                border: const TableBorder(
+                  horizontalInside: BorderSide(color: Color(0xFFEDF2F6), width: 1),
+                ),
+                children: entries.map((entry) {
+                  final statusColor = _historyStatusColor(entry.status);
+
+                  return TableRow(
+                    children: [
+                      _AuditBodyCell(
+                        '${entry.date.year}-${entry.date.month.toString().padLeft(2, '0')}-${entry.date.day.toString().padLeft(2, '0')}',
+                      ),
+                      _AuditBodyCell(
+                        '₱${entry.amount.toStringAsFixed(2)}',
+                        isBold: true,
+                        color: _primary,
+                      ),
+                      _AuditBodyCell(entry.allocationLabel),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: statusColor.withAlpha(24),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              entry.statusLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: statusColor,
+                                fontSize: 11.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---- Overall Donation History (Step 3, read-only, all centers) --------
+
+  Widget _buildOverallHistory() {
+    final isLoading = _overallCenterId == null ? _isLoading : _isLoadingOverall;
+    final hasSourceData = _overallCenterId == null
+        ? _donations.isNotEmpty
+        : _overallCenterEntries.isNotEmpty;
+    final rows = _filteredOverallRows();
+    final hasFilters = _overallSearch.trim().isNotEmpty ||
+        _overallRange != _HistoryDateRange.allTime;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < _mobileBreakpoint;
+        final panelHeight =
+            isMobile ? _historyPanelHeightCompact : _historyPanelHeightWide;
+
+        return SizedBox(
+          height: panelHeight,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildOverallFilters(isMobile: isMobile),
+              const SizedBox(height: 14),
+              const Divider(height: 1, color: Color(0xFFE7EFF5)),
+              const SizedBox(height: 10),
+              Expanded(
+                child: isLoading
+                    ? const Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2.4),
+                        ),
+                      )
+                    : !hasSourceData
+                        ? const Center(
+                            child: _EmptyState(
+                              icon: Icons.fact_check_outlined,
+                              title: 'No donations recorded yet',
+                              message:
+                                  'Donation records will appear here once donors contribute.',
+                            ),
+                          )
+                        : rows.isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const _EmptyState(
+                                      icon: Icons.search_off_rounded,
+                                      title: 'No donations match your filters',
+                                      message:
+                                          'Try a different search term, center, or date range.',
+                                    ),
+                                    if (hasFilters)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 12),
+                                        child: TextButton.icon(
+                                          onPressed: _clearOverallFilters,
+                                          icon: const Icon(Icons.clear_all_rounded),
+                                          label: const Text('Clear filters'),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              )
+                            : _buildOverallTable(rows),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildOverallFilters({required bool isMobile}) {
+    final centerDropdown = SizedBox(
+      width: isMobile ? double.infinity : 200,
+      child: DropdownButtonFormField<String?>(
+        dropdownColor: AppTheme.surface,
+        elevation: 2,
+        borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+        icon: const Icon(
+          Icons.expand_more_rounded,
+          size: 18,
+          color: AppTheme.iconMuted,
+        ),
+        initialValue: _overallCenterId,
+        isExpanded: true,
+        decoration: _inputDecoration('Center', Icons.local_hospital_outlined),
+        items: [
+          const DropdownMenuItem<String?>(
+            value: null,
+            child: Text('All Centers'),
+          ),
+          ..._centers.map(
+            (center) => DropdownMenuItem<String?>(
+              value: center['id'].toString(),
+              child: Text(
+                center['name']?.toString() ?? 'Unnamed Center',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ],
+        onChanged: (value) {
+          setState(() => _overallCenterId = value);
+          if (value != null) _loadOverallHistory(value);
+        },
+      ),
+    );
+
+    final searchField = TextField(
+      controller: _overallSearchController,
+      onChanged: (value) => setState(() => _overallSearch = value),
+      decoration: _inputDecoration(
+        'Search donor, email, or donation ID',
+        Icons.search_rounded,
+      ).copyWith(
+        suffixIcon: _overallSearch.isEmpty
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.close_rounded, size: 18),
+                tooltip: 'Clear search',
+                onPressed: () {
+                  _overallSearchController.clear();
+                  setState(() => _overallSearch = '');
+                },
+              ),
+      ),
+    );
+
+    final rangeDropdown = SizedBox(
+      width: isMobile ? double.infinity : 170,
+      child: DropdownButtonFormField<_HistoryDateRange>(
+        dropdownColor: AppTheme.surface,
+        elevation: 2,
+        borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+        icon: const Icon(
+          Icons.expand_more_rounded,
+          size: 18,
+          color: AppTheme.iconMuted,
+        ),
+        initialValue: _overallRange,
+        isExpanded: true,
+        decoration: _inputDecoration('Date Range', Icons.date_range_rounded),
+        items: _HistoryDateRange.values
+            .map(
+              (range) => DropdownMenuItem<_HistoryDateRange>(
+                value: range,
+                child: Text(range.label, overflow: TextOverflow.ellipsis),
+              ),
+            )
+            .toList(),
+        onChanged: (value) {
+          if (value == null) return;
+          setState(() => _overallRange = value);
+        },
+      ),
+    );
+
+    if (isMobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          centerDropdown,
+          const SizedBox(height: 10),
+          searchField,
+          const SizedBox(height: 10),
+          rangeDropdown,
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        centerDropdown,
+        const SizedBox(width: 12),
+        Expanded(child: searchField),
+        const SizedBox(width: 12),
+        rangeDropdown,
+      ],
+    );
+  }
+
+  Widget _buildOverallTable(List<_OverallHistoryRow> rows) {
+    const columnWidths = {
+      0: FlexColumnWidth(1.1),
+      1: FlexColumnWidth(1.8),
+      2: FlexColumnWidth(1.5),
+      3: FlexColumnWidth(1.0),
+      4: FlexColumnWidth(1.2),
+      5: FlexColumnWidth(1.0),
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header stays fixed above the scrollable body below it, matching
+        // the Center Donation History and Distribution Audit Log tables.
+        Table(
+          columnWidths: columnWidths,
+          children: const [
+            TableRow(
+              decoration: BoxDecoration(color: Color(0xFFF4F9FC)),
+              children: [
+                _AuditHeaderCell('Date'),
+                _AuditHeaderCell('Donor'),
+                _AuditHeaderCell('Center'),
+                _AuditHeaderCell('Amount'),
+                _AuditHeaderCell('Allocation'),
+                _AuditHeaderCell('Status'),
+              ],
+            ),
+          ],
+        ),
+        Expanded(
+          child: Scrollbar(
+            thickness: 4,
+            radius: const Radius.circular(8),
+            child: SingleChildScrollView(
+              child: Table(
+                columnWidths: columnWidths,
+                border: const TableBorder(
+                  horizontalInside: BorderSide(color: Color(0xFFEDF2F6), width: 1),
+                ),
+                children: rows.map((row) {
+                  final statusColor = _historyStatusColor(row.status);
+                  final donorName = (row.donorName != null && row.donorName!.isNotEmpty)
+                      ? row.donorName!
+                      : 'Anonymous';
+
+                  return TableRow(
+                    children: [
+                      _AuditBodyCell(
+                        '${row.date.year}-${row.date.month.toString().padLeft(2, '0')}-${row.date.day.toString().padLeft(2, '0')}',
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              donorName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF36424C),
+                                fontSize: 13,
+                              ),
+                            ),
+                            if (row.donorEmail != null && row.donorEmail!.isNotEmpty)
+                              Text(
+                                row.donorEmail!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFF8A98A5),
+                                  fontSize: 11,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      _AuditBodyCell(row.centerLabel, maxLines: 2),
+                      _AuditBodyCell(
+                        '₱${row.amount.toStringAsFixed(2)}',
+                        isBold: true,
+                        color: _primary,
+                      ),
+                      _AuditBodyCell(row.allocationLabel),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: statusColor.withAlpha(24),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              row.statusLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: statusColor,
+                                fontSize: 11.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   InputDecoration _inputDecoration(String label, IconData icon) {
-    return InputDecoration(
+    return AppTheme.field(
       labelText: label,
-      prefixIcon: Icon(icon, color: _primary),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Color(0xFFDCEAF2)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: _primary, width: 1.6),
-      ),
-      filled: true,
-      fillColor: const Color(0xFFF6FBFF),
+      dense: true,
+      prefixIcon: Icon(icon, size: 18, color: AppTheme.blue1),
     );
   }
 }
@@ -1116,162 +1688,41 @@ class _AuditBodyCell extends StatelessWidget {
   }
 }
 
-class _DonationGroup extends StatelessWidget {
-  final String title;
-  final int count;
-  final Color color;
-  final List<DonationRecord> donations;
-  final Future<void> Function(DonationRecord donation) onDelete;
-  final Future<void> Function() onRefresh;
-  final bool isScrollable;
-
-  const _DonationGroup({
-    required this.title,
-    required this.count,
-    required this.color,
-    required this.donations,
-    required this.onDelete,
-    required this.onRefresh,
-    required this.isScrollable,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const double cardHeight = 190;
-    const double gap = 14;
-    const double scrollHeight = (cardHeight * 5) + (gap * 4);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: color,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: color.withAlpha(24),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                count.toString(),
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        if (donations.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF7FAFC),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFE5EEF4)),
-            ),
-            child: const Text(
-              'No records in this section.',
-              style: TextStyle(color: Color(0xFF647583)),
-            ),
-          )
-        else
-          SizedBox(
-            height: isScrollable ? scrollHeight : null,
-            child: ListView.separated(
-              shrinkWrap: !isScrollable,
-              physics: isScrollable
-                  ? const BouncingScrollPhysics()
-                  : const NeverScrollableScrollPhysics(),
-              itemCount: donations.length,
-              separatorBuilder: (_, __) => const SizedBox(height: gap),
-              itemBuilder: (context, index) {
-                final donation = donations[index];
-                return SizedBox(
-                  height: isScrollable ? cardHeight : null,
-                  child: _DonationRow(
-                    donation: donation,
-                    compactActions: isScrollable,
-                    onDelete: () => onDelete(donation),
-                    onRefresh: onRefresh,
-                  ),
-                );
-              },
-            ),
-          ),
-      ],
-    );
-  }
-}
-
 class _SectionCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final IconData icon;
+  final Color accent;
+  final Color accentSoft;
   final Widget child;
-  final Widget? trailing;
 
   const _SectionCard({
     required this.title,
     required this.subtitle,
     required this.icon,
     required this.child,
-    this.trailing,
+    this.accent = AppTheme.blue1,
+    this.accentSoft = AppTheme.accentBlueSoft,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: const Color(0xFFE7EFF5)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0F000000),
-            blurRadius: 24,
-            offset: Offset(0, 14),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.all(20),
+      decoration: AppTheme.card(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF8FC),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(icon, color: const Color(0xFF0F719F)),
+                width: 40,
+                height: 40,
+                decoration: AppTheme.iconBox(accentSoft),
+                child: Icon(icon, color: accent, size: 20),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1279,81 +1730,29 @@ class _SectionCard extends StatelessWidget {
                     Text(
                       title,
                       style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF0F3A55),
+                        fontSize: 16.5,
+                        height: 1.3,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
+                        color: AppTheme.blue3,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 3),
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFF647583),
-                        height: 1.5,
+                        fontSize: 12.5,
+                        height: 1.4,
+                        color: AppTheme.textMuted,
                       ),
                     ),
                   ],
                 ),
               ),
-              if (trailing != null) trailing!,
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 18),
           child,
-        ],
-      ),
-    );
-  }
-}
-
-class _LegendChip extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-
-  const _LegendChip({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: color.withAlpha(24),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withAlpha(35)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF324A5F),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              color: Color(0xFF0F3A55),
-            ),
-          ),
         ],
       ),
     );
@@ -1366,6 +1765,7 @@ class _InfoCard extends StatelessWidget {
   final String value;
   final String subtitle;
   final Color color;
+  final Color softColor;
 
   const _InfoCard({
     required this.icon,
@@ -1373,434 +1773,70 @@ class _InfoCard extends StatelessWidget {
     required this.value,
     required this.subtitle,
     required this.color,
+    this.softColor = AppTheme.accentBlueSoft,
   });
 
   @override
   Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.96, end: 1),
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeOutCubic,
-      builder: (context, scale, child) {
-        return Transform.scale(scale: scale, child: child);
-      },
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: const Color(0xFFE7EFF5)),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x0F000000),
-              blurRadius: 22,
-              offset: Offset(0, 12),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: color.withAlpha(24),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Icon(icon, color: color, size: 26),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      color: Color(0xFF647583),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: AppTheme.card(),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: AppTheme.iconBox(softColor),
+            child: Icon(icon, color: color, size: 19),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppTheme.textMuted,
+                    fontSize: 11.5,
+                    height: 1.3,
+                    fontWeight: FontWeight.w500,
                   ),
-                  const SizedBox(height: 6),
-                  Text(
+                ),
+                const SizedBox(height: 4),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
                     value,
                     style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF0F3A55),
+                      fontSize: 22,
+                      height: 1.25,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.4,
+                      color: AppTheme.blue3,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF8A98A5),
-                      fontSize: 12,
-                    ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppTheme.textMuted,
+                    fontSize: 11.5,
+                    height: 1.3,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DonationRow extends StatelessWidget {
-  final DonationRecord donation;
-  final VoidCallback onDelete;
-  final Future<void> Function() onRefresh;
-  final bool compactActions;
-
-  const _DonationRow({
-    required this.donation,
-    required this.onDelete,
-    required this.onRefresh,
-    this.compactActions = false,
-  });
-
-  Color get statusColor {
-    if (donation.status == 'verified') return const Color(0xFF2E7D32);
-    if (donation.status == 'rejected') return const Color(0xFFDE4D4D);
-    return const Color(0xFFFB8B3C);
-  }
-
-  String get statusLabel {
-    switch (donation.status) {
-      case 'verified':
-        return 'Verified';
-      case 'rejected':
-        return 'Rejected';
-      default:
-        return 'Pending';
-    }
-  }
-
-  bool get isLocked {
-    return donation.status == 'verified' || donation.status == 'rejected';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE7EFF5)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0A000000),
-            blurRadius: 18,
-            offset: Offset(0, 10),
           ),
         ],
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isCompact = constraints.maxWidth < 720;
-
-          final details = Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: statusColor.withAlpha(24),
-                child: Icon(Icons.person_outline_rounded, color: statusColor),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          donation.donorName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF0F3A55),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: statusColor.withAlpha(24),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            statusLabel,
-                            style: TextStyle(
-                              color: statusColor,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 14,
-                      runSpacing: 8,
-                      children: [
-                        _MiniInfo(
-                          icon: Icons.payments_outlined,
-                          text: '₱${donation.amount.toStringAsFixed(0)}',
-                          isStrong: true,
-                        ),
-                        _MiniInfo(
-                          icon: Icons.credit_card_rounded,
-                          text: donation.paymentMethod ?? 'No payment method',
-                        ),
-                      ],
-                    ),
-                    if (donation.proofUrl != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 14),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () {
-                            showDialog(
-                              context: context,
-                              builder: (_) => Dialog(
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(20),
-                                  child: Image.network(donation.proofUrl!),
-                                ),
-                              ),
-                            );
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 9,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFEFF8FC),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.image_outlined,
-                                  size: 17,
-                                  color: Color(0xFF0F719F),
-                                ),
-                                SizedBox(width: 7),
-                                Text(
-                                  'View Receipt',
-                                  style: TextStyle(
-                                    color: Color(0xFF0F719F),
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          );
-
-          Widget actionButtons({required bool vertical}) {
-            final children = [
-              ElevatedButton.icon(
-                onPressed: isLocked
-                    ? null
-                    : () async {
-                        try {
-                          await Supabase.instance.client
-                              .from('donations')
-                              .update({'status': 'verified'})
-                              .eq('id', donation.id)
-                              .select();
-
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Donation verified'),
-                              ),
-                            );
-                          }
-
-                          await onRefresh();
-                        } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Error: $e')),
-                            );
-                          }
-                        }
-                      },
-                icon: const Icon(Icons.check_rounded, size: 18),
-                label: Text(
-                  donation.status == 'verified' ? 'Verified' : 'Approve',
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: donation.status == 'verified'
-                      ? Colors.grey
-                      : const Color(0xFF2E7D32),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 13,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-              ElevatedButton.icon(
-                onPressed: isLocked
-                    ? null
-                    : () async {
-                        try {
-                          await Supabase.instance.client
-                              .from('donations')
-                              .update({'status': 'rejected'})
-                              .eq('id', donation.id)
-                              .select();
-
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Donation rejected'),
-                              ),
-                            );
-                          }
-
-                          await onRefresh();
-                        } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Error: $e')),
-                            );
-                          }
-                        }
-                      },
-                icon: const Icon(Icons.close_rounded, size: 18),
-                label: Text(
-                  donation.status == 'rejected' ? 'Rejected' : 'Reject',
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: donation.status == 'rejected'
-                      ? Colors.grey
-                      : const Color(0xFFDE4D4D),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 13,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-              IconButton.filledTonal(
-                onPressed: onDelete,
-                icon: const Icon(Icons.delete_outline_rounded),
-                color: const Color(0xFFDE4D4D),
-                tooltip: 'Delete donation',
-              ),
-            ];
-
-            if (vertical) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  children[0],
-                  const SizedBox(height: 10),
-                  children[1],
-                  const SizedBox(height: 8),
-                  children[2],
-                ],
-              );
-            }
-
-            return Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              alignment: WrapAlignment.end,
-              children: children,
-            );
-          }
-
-          if (isCompact || compactActions) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: details),
-                const SizedBox(width: 14),
-                actionButtons(vertical: true),
-              ],
-            );
-          }
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: details),
-              const SizedBox(width: 18),
-              SizedBox(width: 310, child: actionButtons(vertical: false)),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _MiniInfo extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  final bool isStrong;
-
-  const _MiniInfo({
-    required this.icon,
-    required this.text,
-    this.isStrong = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 17, color: const Color(0xFF647583)),
-        const SizedBox(width: 6),
-        Text(
-          text,
-          style: TextStyle(
-            color: isStrong ? const Color(0xFF0F719F) : const Color(0xFF647583),
-            fontWeight: isStrong ? FontWeight.w900 : FontWeight.w600,
-          ),
-        ),
-      ],
     );
   }
 }

@@ -1,8 +1,8 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../pages/dashboard_page.dart';
 import '../config/supabase_config.dart';
+import '../theme/app_theme.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -25,8 +25,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
 
-  static const Color primaryColor = Color(0xFF2A7898);
-  static const Color darkBg = Color(0xFF06131D);
+  static const Color primaryColor = AppTheme.blue1;
+  static const Color pageBg = AppTheme.canvas;
 
   @override
   void initState() {
@@ -142,46 +142,13 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: darkBg,
+      backgroundColor: pageBg,
       body: Stack(
         children: [
           Positioned.fill(
             child: Image.asset(
-              'assets/images/gradient_background.png',
+              'assets/images/curenurture_background.jpeg',
               fit: BoxFit.cover,
-              color: const Color(0xFF07131D).withOpacity(0.72),
-              colorBlendMode: BlendMode.multiply,
-            ),
-          ),
-
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: const Alignment(-0.55, -0.35),
-                  radius: 1.15,
-                  colors: [
-                    const Color(0xFF184E62).withOpacity(0.62),
-                    const Color(0xFF081722).withOpacity(0.90),
-                    const Color(0xFF030910).withOpacity(0.98),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withOpacity(0.10),
-                    Colors.black.withOpacity(0.42),
-                  ],
-                ),
-              ),
             ),
           ),
 
@@ -206,54 +173,43 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                           ),
                         ),
 
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 20),
 
                         const Text(
                           'CureNurture Portal',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 2.2,
+                            color: AppTheme.blue3,
+                            fontSize: 26,
+                            height: 1.2,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.4,
                           ),
                         ),
 
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
 
-                        Text(
+                        const Text(
                           'Please sign in to continue',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.72),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
+                            color: AppTheme.textSecondary,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w400,
                           ),
                         ),
 
-                        const SizedBox(height: 42),
+                        const SizedBox(height: 32),
 
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(18),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                            child: Container(
-                              width: double.infinity,
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: AppTheme.surface,
+                            borderRadius: BorderRadius.circular(AppTheme.rXl),
+                            border: Border.all(color: AppTheme.border),
+                            boxShadow: AppTheme.shadowSm,
+                          ),
+                          child: Padding(
                               padding: const EdgeInsets.all(28),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.10),
-                                borderRadius: BorderRadius.circular(18),
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(0.24),
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.24),
-                                    blurRadius: 34,
-                                    offset: const Offset(0, 20),
-                                  ),
-                                ],
-                              ),
                               child: Form(
                                 key: _formKey,
                                 child: Column(
@@ -296,8 +252,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                           _obscurePassword
                                               ? Icons.visibility_off_outlined
                                               : Icons.visibility_outlined,
-                                          color: Colors.white.withOpacity(0.62),
-                                          size: 20,
+                                          color: AppTheme.iconMuted,
+                                          size: 19,
                                         ),
                                       ),
                                       validator: (value) {
@@ -330,21 +286,23 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                                     ),
                                                 decoration: BoxDecoration(
                                                   color: const Color(
-                                                    0xFFFFEAEA,
-                                                  ).withOpacity(0.12),
+                                                    0xFFFDF2F2,
+                                                  ),
                                                   borderRadius:
-                                                      BorderRadius.circular(12),
+                                                      BorderRadius.circular(
+                                                        AppTheme.rMd,
+                                                      ),
                                                   border: Border.all(
                                                     color: const Color(
-                                                      0xFFFF8A8A,
-                                                    ).withOpacity(0.40),
+                                                      0xFFF3C7C7,
+                                                    ),
                                                   ),
                                                 ),
                                                 child: Row(
                                                   children: [
                                                     const Icon(
                                                       Icons.error_outline,
-                                                      color: Color(0xFFFFB4B4),
+                                                      color: Color(0xFFB91C1C),
                                                       size: 18,
                                                     ),
                                                     const SizedBox(width: 10),
@@ -353,11 +311,12 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                                         _message!,
                                                         style: const TextStyle(
                                                           color: Color(
-                                                            0xFFFFD0D0,
+                                                            0xFF9F1B1B,
                                                           ),
-                                                          fontSize: 13,
+                                                          fontSize: 12.5,
+                                                          height: 1.35,
                                                           fontWeight:
-                                                              FontWeight.w600,
+                                                              FontWeight.w500,
                                                         ),
                                                       ),
                                                     ),
@@ -371,17 +330,17 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
                                     SizedBox(
                                       width: double.infinity,
-                                      height: 52,
+                                      height: 50,
                                       child: ElevatedButton(
                                         onPressed: _loading ? null : _signIn,
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor: primaryColor,
                                           disabledBackgroundColor: primaryColor
-                                              .withOpacity(0.55),
+                                              .withValues(alpha: 0.45),
                                           elevation: 0,
                                           shape: RoundedRectangleBorder(
                                             borderRadius: BorderRadius.circular(
-                                              13,
+                                              AppTheme.rMd,
                                             ),
                                           ),
                                         ),
@@ -406,9 +365,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                                   'SIGN IN',
                                                   key: ValueKey('text'),
                                                   style: TextStyle(
-                                                    color: Colors.white,
-                                                    fontSize: 15,
-                                                    fontWeight: FontWeight.w800,
+                                                    color: AppTheme.white,
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w600,
                                                     letterSpacing: 0.8,
                                                   ),
                                                 ),
@@ -418,18 +377,17 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                   ],
                                 ),
                               ),
-                            ),
                           ),
                         ),
 
-                        const SizedBox(height: 38),
+                        const SizedBox(height: 28),
 
-                        Text(
+                        const Text(
                           '© 2026 CureNurture',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.36),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textMuted,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
@@ -460,51 +418,52 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       validator: validator,
       enabled: !_loading,
       style: const TextStyle(
-        color: Colors.white,
-        fontSize: 15,
-        fontWeight: FontWeight.w600,
+        color: AppTheme.textPrimary,
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
       ),
       decoration: InputDecoration(
         hintText: hintText,
-        hintStyle: TextStyle(
-          color: Colors.white.withOpacity(0.48),
-          fontSize: 14,
-          fontWeight: FontWeight.w700,
+        hintStyle: const TextStyle(
+          color: AppTheme.textMuted,
+          fontSize: 13.5,
+          fontWeight: FontWeight.w400,
         ),
-        prefixIcon: Icon(icon, color: Colors.white.withOpacity(0.65), size: 20),
+        prefixIcon: Icon(icon, color: AppTheme.iconMuted, size: 19),
         suffixIcon: suffixIcon,
         filled: true,
-        fillColor: Colors.white.withOpacity(0.10),
+        fillColor: AppTheme.surfaceTint,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
-          vertical: 17,
+          vertical: 16,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(11),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.14)),
+          borderRadius: BorderRadius.circular(AppTheme.rMd),
+          borderSide: const BorderSide(color: AppTheme.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(11),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.14)),
+          borderRadius: BorderRadius.circular(AppTheme.rMd),
+          borderSide: const BorderSide(color: AppTheme.border),
+        ),
+        disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppTheme.rMd),
+          borderSide: const BorderSide(color: AppTheme.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(11),
-          borderSide: BorderSide(
-            color: Colors.white.withOpacity(0.34),
-            width: 1.4,
-          ),
+          borderRadius: BorderRadius.circular(AppTheme.rMd),
+          borderSide: const BorderSide(color: AppTheme.blue1, width: 1.4),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(11),
-          borderSide: const BorderSide(color: Color(0xFFFF8A8A)),
+          borderRadius: BorderRadius.circular(AppTheme.rMd),
+          borderSide: const BorderSide(color: Color(0xFFD48B8B)),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(11),
-          borderSide: const BorderSide(color: Color(0xFFFF8A8A), width: 1.3),
+          borderRadius: BorderRadius.circular(AppTheme.rMd),
+          borderSide: const BorderSide(color: Color(0xFFB91C1C), width: 1.4),
         ),
         errorStyle: const TextStyle(
-          color: Color(0xFFFFC6C6),
-          fontWeight: FontWeight.w600,
+          color: Color(0xFF9F1B1B),
+          fontWeight: FontWeight.w500,
         ),
       ),
     );

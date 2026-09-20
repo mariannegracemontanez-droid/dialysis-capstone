@@ -12,7 +12,9 @@ class CenterDetailPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(center.name),
-        backgroundColor: const Color(0xFF174E71),
+        backgroundColor: const Color(0xFFFEFFFE),
+        foregroundColor: const Color(0xFF17435C),
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
       ),
       body: SingleChildScrollView(
@@ -108,7 +110,7 @@ class CenterDetailPage extends StatelessWidget {
                       Navigator.pop(context, true); // go back and refresh dashboard
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF174E71),
+                      backgroundColor: const Color(0xFF2A5F7E),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),

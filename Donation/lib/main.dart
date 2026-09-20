@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'theme/brand.dart';
 import 'pages/landing_page.dart';
 
 Future<void> main() async {
@@ -48,8 +49,39 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Donation App',
-      theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
+      title: 'CureNurture — Donate',
+      // Presentation only: gives Flutter's built-in widgets (selection
+      // handles, focus rings, progress indicators, dialogs) the CureNurture
+      // palette instead of the default Material blue.
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Brand.brand,
+          primary: Brand.brand,
+          secondary: Brand.teal,
+          surface: Brand.white,
+          error: Brand.coral,
+        ),
+        scaffoldBackgroundColor: Brand.canvas,
+        progressIndicatorTheme: const ProgressIndicatorThemeData(
+          color: Brand.teal,
+        ),
+        dialogTheme: DialogThemeData(
+          backgroundColor: Brand.white,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          titleTextStyle: Brand.heading(20),
+          contentTextStyle: Brand.body(14.5),
+        ),
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
       home: const LandingPage(),
     );
   }
