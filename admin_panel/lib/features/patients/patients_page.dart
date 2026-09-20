@@ -7,7 +7,18 @@ import '../../models/patient.dart';
 import '../../models/center_schedule.dart';
 import '../../models/schedule_recommendation.dart';
 import '../dashboard/dashboard_page.dart';
+import '../auth/logout.dart';
+import '../center/center_profile_page.dart';
+import 'session_history_modal.dart';
+import '../../widgets/admin_header.dart';
 import '../../services/health_monitoring_service.dart';
+import '../../theme/app_theme.dart';
+import '../../utils/admin_validators.dart';
+import '../../widgets/admin_card_row.dart';
+import '../../widgets/admin_modal.dart';
+import '../../widgets/admin_notice.dart';
+import '../../widgets/admin_sidebar.dart';
+import '../../widgets/admin_title.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -44,13 +55,20 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
   // attached to two scroll views.
   final ScrollController _historyScroll = ScrollController();
 
-  static const Color primary = Color(0xFF245C78);
-  static const Color primaryDark = Color(0xFF153D54);
-  static const Color background = Color(0xFFF4F8FB);
-  static const Color cardBorder = Color(0xFFE3EAF0);
-  static const Color textDark = Color(0xFF243447);
-  static const Color textMuted = Color(0xFF6B7A8C);
-  static const Color softBlue = Color(0xFFEAF5FA);
+  /// The page's own scroll controller, so the page scrollbar is bound to
+  /// the page rather than to whichever inner list also claimed the
+  /// PrimaryScrollController.
+  final ScrollController _pageScroll = ScrollController();
+
+  // Presentation only: the page palette now comes from the shared Admin
+  // theme, so it matches the Dashboard and the Super Admin portal. The
+  // names are unchanged, so nothing below had to move.
+  static const Color primary = AppTheme.blue1;
+  static const Color background = AppTheme.canvas;
+  static const Color cardBorder = AppTheme.border;
+  static const Color textDark = AppTheme.textPrimary;
+  static const Color textMuted = AppTheme.textMuted;
+  static const Color softBlue = AppTheme.accentSoft;
 
   late Future<List<Patient>> _pendingPatients;
   late Future<List<Patient>> _allPatients;
@@ -78,6 +96,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     _weeklyScroll.dispose();
     _declinedScroll.dispose();
     _historyScroll.dispose();
+    _pageScroll.dispose();
     super.dispose();
   }
 
@@ -235,32 +254,47 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: AppTheme.surfaceTint,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE4EAF0)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: const Text(
         'No schedule set',
-        style: TextStyle(color: Color(0xFF718096), fontWeight: FontWeight.w600),
+        style: TextStyle(
+          color: AppTheme.textMuted,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
 
+  /// Every outcome this page reports goes through the one notice system,
+  /// so it lands above whatever modal is open rather than in a snack bar
+  /// underneath it.
   void _showMessage(String message, {bool isError = false}) {
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError
-            ? Colors.red.shade600
-            : const Color(0xFF2A5F7E),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.all(18),
-        duration: Duration(seconds: isError ? 6 : 4),
-      ),
-    );
+    if (isError) {
+      AdminNotice.error(context, message);
+    } else {
+      AdminNotice.success(context, message);
+    }
+  }
+
+  /// Something the admin should know that is not a failure.
+  void _showInfo(String message) {
+    if (!mounted) return;
+    AdminNotice.info(context, message);
+  }
+
+  /// A field the admin has to correct before the save can go through.
+  ///
+  /// An error notice, not an info one: it waits to be acknowledged and
+  /// an outside click will not dismiss it, so a rejected save can never
+  /// be mistaken for a successful one.
+  void _showValidation(String message) {
+    if (!mounted) return;
+    AdminNotice.error(context, message, title: 'Check this before saving');
   }
 
   /// Strips Dart's "Exception: " prefix so a rejected status change reads
@@ -274,7 +308,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
   }
 
   void _showMedicalDocPreview(String fileName, String imageUrl) {
-    showDialog(
+    showAdminDialog(
       context: context,
       builder: (context) {
         return Dialog(
@@ -284,17 +318,19 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             width: 720,
             constraints: const BoxConstraints(maxHeight: 760),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(AppTheme.rXl),
+              border: Border.all(color: AppTheme.border),
+              boxShadow: AppTheme.shadowMd,
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppTheme.rXl),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(18),
-                    color: const Color(0xFF2A5F7E),
+                    color: AppTheme.blue1,
                     child: Row(
                       children: [
                         Expanded(
@@ -318,7 +354,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   Flexible(
                     child: Container(
                       width: double.infinity,
-                      color: const Color(0xFFF8FAFC),
+                      color: AppTheme.surfaceTint,
                       padding: const EdgeInsets.all(18),
                       child: InteractiveViewer(
                         child: Image.network(
@@ -329,7 +365,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                               child: Text(
                                 'Unable to preview this file.',
                                 style: TextStyle(
-                                  color: Color(0xFF718096),
+                                  color: AppTheme.textMuted,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
@@ -356,7 +392,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 18),
             child: Center(
-              child: CircularProgressIndicator(color: Color(0xFF2A5F7E)),
+              child: CircularProgressIndicator(color: AppTheme.blue1),
             ),
           );
         }
@@ -372,14 +408,14 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: AppTheme.surfaceTint,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE4EAF0)),
+              border: Border.all(color: AppTheme.border),
             ),
             child: const Text(
               'No medical documents uploaded.',
               style: TextStyle(
-                color: Color(0xFF718096),
+                color: AppTheme.textMuted,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -390,7 +426,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE4EAF0)),
+            border: Border.all(color: AppTheme.border),
           ),
           child: Column(
             children: [
@@ -400,8 +436,8 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   vertical: 14,
                 ),
                 decoration: const BoxDecoration(
-                  color: Color(0xFFF8FAFC),
-                  border: Border(bottom: BorderSide(color: Color(0xFFE4EAF0))),
+                  color: AppTheme.surfaceTint,
+                  border: Border(bottom: BorderSide(color: AppTheme.border)),
                 ),
                 child: const Row(
                   children: [
@@ -410,7 +446,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                       child: Text(
                         'FILE NAME',
                         style: TextStyle(
-                          color: Color(0xFF64748B),
+                          color: AppTheme.textMuted,
                           fontSize: 11,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 0.4,
@@ -422,7 +458,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                       child: Text(
                         'UPLOADED',
                         style: TextStyle(
-                          color: Color(0xFF64748B),
+                          color: AppTheme.textMuted,
                           fontSize: 11,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 0.4,
@@ -451,7 +487,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                     ),
                     decoration: const BoxDecoration(
                       border: Border(
-                        bottom: BorderSide(color: Color(0xFFF1F5F9)),
+                        bottom: BorderSide(color: AppTheme.surfaceTint),
                       ),
                     ),
                     child: Row(
@@ -464,13 +500,13 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                 width: 36,
                                 height: 36,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFEAF3F7),
+                                  color: AppTheme.accentSoft,
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: const Icon(
                                   Icons.description_rounded,
                                   size: 18,
-                                  color: Color(0xFF2A5F7E),
+                                  color: AppTheme.blue1,
                                 ),
                               ),
 
@@ -484,7 +520,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                       fileName,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
-                                        color: Color(0xFF1E293B),
+                                        color: AppTheme.textPrimary,
                                         fontSize: 13,
                                         fontWeight: FontWeight.w800,
                                       ),
@@ -498,8 +534,8 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                           : 'Tap to preview',
                                       style: TextStyle(
                                         color: imageUrl == 'N/A'
-                                            ? const Color(0xFFDC2626)
-                                            : const Color(0xFF64748B),
+                                            ? AppTheme.danger
+                                            : AppTheme.textMuted,
                                         fontSize: 11,
                                         fontWeight: FontWeight.w600,
                                       ),
@@ -518,7 +554,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                 ? 'N/A'
                                 : _formatDate(uploadedAt),
                             style: const TextStyle(
-                              color: Color(0xFF475569),
+                              color: AppTheme.textSecondary,
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
                             ),
@@ -543,7 +579,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Padding(
             padding: EdgeInsets.all(12),
-            child: CircularProgressIndicator(color: Color(0xFF2A5F7E)),
+            child: CircularProgressIndicator(color: AppTheme.blue1),
           );
         }
 
@@ -603,16 +639,16 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             return Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0xFFEAF3F7),
+                color: AppTheme.accentSoft,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFD7E8F0)),
+                border: Border.all(color: AppTheme.borderStrong),
               ),
               child: Text(
                 hasTime
                     ? '$day • ${_formatTime(startTime)} - ${_formatTime(endTime)}'
                     : day,
                 style: const TextStyle(
-                  color: Color(0xFF2A5F7E),
+                  color: AppTheme.blue1,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -625,34 +661,85 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: background,
-      body: Row(
-        children: [
-          _buildSidebar(),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 34, vertical: 28),
+    return AdminTitle(
+      page: 'Patients',
+      child: Scaffold(
+        backgroundColor: background,
+        body: Row(
+          // Stretch, so the sidebar and the content area both fill the
+          // viewport height and the page's scrollbar runs its full length.
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildSidebar(),
+            Expanded(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildPageHeader(),
-                  const SizedBox(height: 20),
-                  _buildPatientSummaryCards(),
-                  const SizedBox(height: 20),
-                  _buildPendingPatientsSection(),
-                  const SizedBox(height: 20),
-                  _buildAllPatientsSection(),
-                  const SizedBox(height: 20),
-                  _buildWeeklyAndDeclinedRow(),
+                  _buildAdminHeader(),
+                  Expanded(child: _buildPageBody()),
                 ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
+
+  Widget _buildPageBody() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final pad = AppTheme.pagePadding(MediaQuery.of(context).size.width);
+
+        // Padding sits inside the scroll view so the scrollbar
+        // rides the true right edge of the viewport.
+        return Scrollbar(
+          controller: _pageScroll,
+          child: SingleChildScrollView(
+            controller: _pageScroll,
+            padding: EdgeInsets.fromLTRB(pad, pad, pad, pad + 8),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: AppTheme.maxContentWidth,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildPageHeader(),
+                    const SizedBox(height: 20),
+                    _buildPatientSummaryCards(constraints.maxWidth),
+                    const SizedBox(height: 20),
+                    _buildPendingPatientsSection(),
+                    const SizedBox(height: 20),
+                    _buildAllPatientsSection(),
+                    const SizedBox(height: 20),
+                    _buildWeeklyAndDeclinedRow(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Existing navigation, unchanged - only the sidebar's appearance moved
+  /// into the shared widget.
+  void _onNavSelect(int index) {
+    setState(() => _selectedNavIndex = index);
+
+    if (index == AdminNav.dashboard) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const DashboardPage()),
+      );
+    }
+  }
+
+  /// The panel's one logout, shared with the Dashboard. The Patients page
+  /// previously had no way to sign out from its sidebar at all.
+  void _logout() => adminLogout(context);
 
   Widget _buildPageHeader() {
     return Container(
@@ -660,357 +747,268 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [primaryDark, primary, Color(0xFF4FA6BC)],
+          colors: [AppTheme.surface, AppTheme.headerTint],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: primary.withOpacity(0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(AppTheme.rXl),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: AppTheme.shadowSm,
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.16),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.20)),
-            ),
-            child: const Icon(
-              Icons.groups_rounded,
-              color: Colors.white,
-              size: 27,
-            ),
-          ),
-          const SizedBox(width: 16),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Patients Management',
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                    letterSpacing: -0.4,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const title = Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 46,
+                height: 46,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: AppTheme.accentSoft,
+                    borderRadius: BorderRadius.all(
+                      Radius.circular(AppTheme.rLg),
+                    ),
+                    border: Border.fromBorderSide(
+                      BorderSide(color: AppTheme.borderStrong),
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.groups_rounded,
+                    color: AppTheme.blue1,
+                    size: 23,
                   ),
                 ),
-                SizedBox(height: 5),
-                Text(
-                  'Review requests, monitor active patients, and manage clinical information in one organized workspace.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.white70,
-                    height: 1.35,
-                  ),
+              ),
+              SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('PATIENT MANAGEMENT', style: AppTheme.eyebrow),
+                    SizedBox(height: 6),
+                    Text('Patients', style: AppTheme.pageTitle),
+                    SizedBox(height: 7),
+                    Text(
+                      'Review requests, monitor active patients, and manage '
+                      'clinical information in one organized workspace.',
+                      style: TextStyle(
+                        color: AppTheme.textMuted,
+                        fontSize: 12.5,
+                        height: 1.45,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          ElevatedButton.icon(
-            onPressed: _refreshData,
-            icon: const Icon(Icons.refresh_rounded, size: 18),
-            label: const Text('Refresh'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: primary,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+              ),
+            ],
+          );
+
+          final refresh = SizedBox(
+            height: 42,
+            child: OutlinedButton.icon(
+              onPressed: _refreshData,
+              icon: const Icon(Icons.refresh_rounded, size: 17),
+              label: const Text('Refresh'),
+              style: AppTheme.secondaryButton(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
               ),
             ),
-          ),
-        ],
+          );
+
+          if (constraints.maxWidth < 640) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [title, const SizedBox(height: 16), refresh],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Expanded(child: title),
+              const SizedBox(width: 16),
+              refresh,
+            ],
+          );
+        },
       ),
     );
   }
 
-  Widget _buildPatientSummaryCards() {
-    return Row(
-      children: [
-        Expanded(
-          child: FutureBuilder<List<Patient>>(
-            future: _allPatients,
-            builder: (context, snapshot) {
-              return _buildSummaryCard(
-                title: 'Active Patients',
-                value: (snapshot.data?.length ?? 0).toString(),
-                icon: Icons.verified_user_rounded,
-                color: primary,
-                subtitle: 'Accepted patient records',
-              );
-            },
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: FutureBuilder<List<Patient>>(
-            future: _pendingPatients,
-            builder: (context, snapshot) {
-              return _buildSummaryCard(
-                title: 'Pending Requests',
-                value: (snapshot.data?.length ?? 0).toString(),
-                icon: Icons.pending_actions_rounded,
-                color: const Color(0xFFF59E0B),
-                subtitle: 'Needs admin review',
-              );
-            },
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: FutureBuilder<List<Patient>>(
-            future: _declinedPatients,
-            builder: (context, snapshot) {
-              return _buildSummaryCard(
-                title: 'Declined',
-                value: (snapshot.data?.length ?? 0).toString(),
-                icon: Icons.person_off_rounded,
-                color: const Color(0xFFEF4444),
-                subtitle: 'Rejected applications',
-              );
-            },
-          ),
-        ),
-      ],
-    );
+  Widget _buildPatientSummaryCards(double width) {
+    final cards = <Widget>[
+      FutureBuilder<List<Patient>>(
+        future: _allPatients,
+        builder: (context, snapshot) {
+          return _buildSummaryCard(
+            title: 'Active Patients',
+            value: snapshot.data?.length.toString(),
+            loading: snapshot.connectionState == ConnectionState.waiting,
+            icon: Icons.verified_user_rounded,
+            color: AppTheme.accentGreen,
+            soft: AppTheme.accentGreenSoft,
+            subtitle: 'Accepted patient records',
+          );
+        },
+      ),
+      FutureBuilder<List<Patient>>(
+        future: _pendingPatients,
+        builder: (context, snapshot) {
+          return _buildSummaryCard(
+            title: 'Pending Requests',
+            value: snapshot.data?.length.toString(),
+            loading: snapshot.connectionState == ConnectionState.waiting,
+            icon: Icons.pending_actions_rounded,
+            color: AppTheme.accentOrange,
+            soft: AppTheme.accentOrangeSoft,
+            subtitle: 'Needs admin review',
+          );
+        },
+      ),
+      FutureBuilder<List<Patient>>(
+        future: _declinedPatients,
+        builder: (context, snapshot) {
+          return _buildSummaryCard(
+            title: 'Declined',
+            value: snapshot.data?.length.toString(),
+            loading: snapshot.connectionState == ConnectionState.waiting,
+            icon: Icons.person_off_rounded,
+            color: AppTheme.danger,
+            soft: AppTheme.dangerSoft,
+            subtitle: 'Rejected applications',
+          );
+        },
+      ),
+    ];
+
+    return AdminCardRow(cards: cards, width: width);
   }
 
   Widget _buildSummaryCard({
     required String title,
-    required String value,
+    required String? value,
     required IconData icon,
     required Color color,
+    required Color soft,
     required String subtitle,
+    bool loading = false,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: cardBorder),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 7),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.11),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title.toUpperCase(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: textMuted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.5,
-                  ),
+    return AdminHoverCard(
+      builder: (context, hovered) {
+        return AnimatedContainer(
+          duration: AppTheme.motion(context, AppTheme.fast),
+          curve: AppTheme.ease,
+          padding: const EdgeInsets.all(18),
+          decoration: AppTheme.card(hovered: hovered),
+          child: Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: AppTheme.iconBox(soft, radius: AppTheme.rLg),
+                child: Icon(icon, color: color, size: 23),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title.toUpperCase(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTheme.eyebrow,
+                    ),
+                    const SizedBox(height: 7),
+                    // A placeholder while the count is in flight, never a
+                    // zero that could be mistaken for a real figure.
+                    if (loading && value == null)
+                      const AdminSkeleton(width: 48, height: 24)
+                    else
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          value ?? '0',
+                          style: const TextStyle(
+                            color: AppTheme.blue3,
+                            fontSize: 26,
+                            height: 1.2,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.textMuted,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    color: textDark,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF91A0AF),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _buildSidebar() {
-    return Container(
-      width: 240,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [primaryDark, primary],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 24),
-          _buildLogo(),
-          const SizedBox(height: 34),
-          _buildNavItem(0, Icons.dashboard_rounded, 'Dashboard'),
-          _buildNavItem(1, Icons.people_alt_rounded, 'Patients'),
-          const Spacer(),
-          _buildFooter(),
-        ],
-      ),
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: _adminInfo,
+      builder: (context, snapshot) {
+        final rawClinic = snapshot.data?['clinicName'];
+
+        return AdminSidebar(
+          selectedIndex: _selectedNavIndex,
+          onSelect: _onNavSelect,
+          onLogout: _logout,
+          centerName: rawClinic == null
+              ? null
+              : capitalizeWords(rawClinic.toString()),
+        );
+      },
     );
   }
 
-  Widget _buildLogo() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 48,
-            height: 48,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.asset(
-                'images/CureNurture_CircleLogo.png',
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => const Icon(
-                  Icons.local_hospital_rounded,
-                  color: primary,
-                  size: 29,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'CureNurture',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                FutureBuilder<Map<String, dynamic>?>(
-                  future: _adminInfo,
-                  builder: (context, snapshot) {
-                    final rawName = snapshot.data?['adminName'] ?? 'Admin';
-                    final adminName = capitalizeWords(rawName.toString());
+  /// The Admin header: the head nurse's name, shown once for the whole
+  /// shell, and the way through to Center Profile.
+  Widget _buildAdminHeader() {
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: _adminInfo,
+      builder: (context, snapshot) {
+        final rawName = snapshot.data?['adminName'];
+        final rawClinic = snapshot.data?['clinicName'];
 
-                    return Text(
-                      adminName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNavItem(int index, IconData icon, String title) {
-    final isSelected = _selectedNavIndex == index;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            setState(() => _selectedNavIndex = index);
-
-            if (index == 0) {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const DashboardPage()),
-              );
-            }
+        return AdminHeader(
+          adminName: rawName == null
+              ? null
+              : capitalizeWords(rawName.toString()),
+          centerName: rawClinic == null
+              ? null
+              : capitalizeWords(rawClinic.toString()),
+          onOpenCenterProfile: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const CenterProfilePage()),
+            ).then((_) {
+              // Capacity and shifts drive schedule validation on this
+              // page, so re-read them on the way back.
+              if (mounted) _refreshData();
+            });
           },
-          borderRadius: BorderRadius.circular(10),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? Colors.white.withOpacity(0.14)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: isSelected
-                    ? Colors.white.withOpacity(0.22)
-                    : Colors.transparent,
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  icon,
-                  color: isSelected ? Colors.white : Colors.white70,
-                  size: 21,
-                ),
-                const SizedBox(width: 13),
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : Colors.white70,
-                    fontSize: 14,
-                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFooter() {
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Text(
-        '© 2026 CureNurture',
-        style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 11),
-      ),
+        );
+      },
     );
   }
 
@@ -1030,7 +1028,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
         border: Border.all(color: cardBorder),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 16,
             offset: const Offset(0, 7),
           ),
@@ -1047,7 +1045,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: accentColor.withOpacity(0.11),
+                    color: accentColor.withValues(alpha: 0.11),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(icon, color: accentColor, size: 23),
@@ -1087,7 +1085,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                       vertical: 7,
                     ),
                     decoration: BoxDecoration(
-                      color: accentColor.withOpacity(0.10),
+                      color: accentColor.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
@@ -1109,10 +1107,31 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     );
   }
 
-  Widget _buildLoadingState() {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 32),
-      child: Center(child: CircularProgressIndicator(color: Color(0xFF2A5F7E))),
+  /// A placeholder in the shape of the rows that are coming, so a list
+  /// keeps its height while it loads instead of collapsing and snapping
+  /// back. It shows no names or figures - only neutral blocks - so it can
+  /// never be read as patient data.
+  Widget _buildLoadingState({int rows = 4}) {
+    return Column(
+      children: [
+        for (var i = 0; i < rows; i++) ...[
+          if (i > 0) const SizedBox(height: 12),
+          const SizedBox(
+            height: 34,
+            child: Row(
+              children: [
+                AdminSkeleton(width: 32, height: 32, radius: 16),
+                SizedBox(width: 12),
+                Expanded(flex: 3, child: AdminSkeleton(height: 11)),
+                SizedBox(width: 16),
+                Expanded(flex: 4, child: AdminSkeleton(height: 11)),
+                SizedBox(width: 16),
+                Expanded(flex: 2, child: AdminSkeleton(height: 11)),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -1125,26 +1144,40 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 34),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE4EAF0)),
+        color: AppTheme.surfaceTint,
+        borderRadius: BorderRadius.circular(AppTheme.rLg),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         children: [
-          Icon(icon, size: 36, color: const Color(0xFF9AA9B8)),
-          const SizedBox(height: 10),
+          Container(
+            width: 44,
+            height: 44,
+            decoration: AppTheme.iconBox(
+              AppTheme.accentBlueSoft,
+              radius: AppTheme.rLg,
+            ),
+            child: Icon(icon, size: 22, color: AppTheme.blue1),
+          ),
+          const SizedBox(height: 12),
           Text(
             title,
+            textAlign: TextAlign.center,
             style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF2D3748),
-              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textPrimary,
+              fontSize: 13.5,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 5),
           Text(
             subtitle,
-            style: const TextStyle(color: Color(0xFF718096), fontSize: 13),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppTheme.textMuted,
+              fontSize: 12,
+              height: 1.45,
+            ),
           ),
         ],
       ),
@@ -1156,19 +1189,19 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.red.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.red.shade100),
+        color: AppTheme.dangerSoft,
+        borderRadius: BorderRadius.circular(AppTheme.rLg),
+        border: Border.all(color: Color(0xFFF0CFCF)),
       ),
       child: Row(
         children: [
-          Icon(Icons.error_outline_rounded, color: Colors.red.shade500),
+          Icon(Icons.error_outline_rounded, color: AppTheme.danger, size: 19),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               'Error loading data: $error',
               style: TextStyle(
-                color: Colors.red.shade700,
+                color: AppTheme.danger,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -1188,7 +1221,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           title: 'Pending Patient Requests',
           subtitle: 'Accept or decline new patient applications.',
           icon: Icons.pending_actions_rounded,
-          accentColor: const Color(0xFFF59E0B),
+          accentColor: AppTheme.accentOrange,
           count: snapshot.hasData ? patients.length : null,
           child: Builder(
             builder: (_) {
@@ -1211,46 +1244,44 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
               return _scrollArea(
                 controller: _pendingScroll,
                 child: _buildTableWrapper(
-                minWidth: 980,
-                child: DataTable(
-                  headingRowHeight: 54,
-                  dataRowMinHeight: 58,
-                  dataRowMaxHeight: 64,
-                  columnSpacing: 56,
-                  headingRowColor: WidgetStateProperty.all(
-                    const Color(0xFFF4F7FA),
-                  ),
-                  border: TableBorder(
-                    horizontalInside: BorderSide(
-                      color: Colors.grey.shade200,
-                      width: 1,
+                  minWidth: 980,
+                  child: DataTable(
+                    headingRowHeight: 54,
+                    dataRowMinHeight: 58,
+                    dataRowMaxHeight: 64,
+                    columnSpacing: 56,
+                    headingRowColor: WidgetStateProperty.all(AppTheme.canvas),
+                    border: TableBorder(
+                      horizontalInside: BorderSide(
+                        color: AppTheme.border,
+                        width: 1,
+                      ),
                     ),
-                  ),
-                  columns: const [
-                    DataColumn(label: Text('Name')),
-                    DataColumn(label: Text('Contact')),
-                    DataColumn(label: Text('Address')),
-                    DataColumn(label: Text('Action')),
-                  ],
-                  rows: patients.map((patient) {
-                    return DataRow(
-                      cells: [
-                        DataCell(_buildNameCell(patient.name)),
-                        DataCell(Text(patient.phone ?? patient.email)),
-                        DataCell(Text(_safeText(patient.homeAddress))),
-                        DataCell(
-                          _actionButton(
-                            label: 'View Details',
-                            icon: Icons.visibility_rounded,
-                            color: const Color(0xFF2A5F7E),
-                            onPressed: () =>
-                                _showPendingPatientDetailsModal(patient),
+                    columns: const [
+                      DataColumn(label: Text('Name')),
+                      DataColumn(label: Text('Contact')),
+                      DataColumn(label: Text('Address')),
+                      DataColumn(label: Text('Action')),
+                    ],
+                    rows: patients.map((patient) {
+                      return DataRow(
+                        cells: [
+                          DataCell(_buildNameCell(patient.name)),
+                          DataCell(Text(patient.phone ?? patient.email)),
+                          DataCell(Text(_safeText(patient.homeAddress))),
+                          DataCell(
+                            _actionButton(
+                              label: 'View Details',
+                              icon: Icons.visibility_rounded,
+                              color: AppTheme.blue1,
+                              onPressed: () =>
+                                  _showPendingPatientDetailsModal(patient),
+                            ),
                           ),
-                        ),
-                      ],
-                    );
-                  }).toList(),
-                ),
+                        ],
+                      );
+                    }).toList(),
+                  ),
                 ),
               );
             },
@@ -1270,7 +1301,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           title: 'All Patients (Active)',
           subtitle: 'Click any row to view the complete patient details.',
           icon: Icons.groups_rounded,
-          accentColor: const Color(0xFF2A5F7E),
+          accentColor: AppTheme.blue1,
           count: snapshot.hasData ? patients.length : null,
           child: Builder(
             builder: (_) {
@@ -1293,68 +1324,69 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
               return _scrollArea(
                 controller: _activeScroll,
                 child: _buildTableWrapper(
-                minWidth: 1120,
-                child: DataTable(
-                  headingRowHeight: 54,
-                  dataRowMinHeight: 60,
-                  dataRowMaxHeight: 66,
-                  columnSpacing: 58,
-                  showCheckboxColumn: false,
-                  headingRowColor: WidgetStateProperty.all(
-                    const Color(0xFFF4F7FA),
-                  ),
-                  dataRowColor: WidgetStateProperty.resolveWith<Color?>((
-                    states,
-                  ) {
-                    if (states.contains(WidgetState.hovered)) {
-                      return const Color(0xFFEAF3F7);
-                    }
-                    return null;
-                  }),
-                  border: TableBorder(
-                    horizontalInside: BorderSide(
-                      color: Colors.grey.shade200,
-                      width: 1,
+                  minWidth: 1120,
+                  child: DataTable(
+                    headingRowHeight: 54,
+                    dataRowMinHeight: 60,
+                    dataRowMaxHeight: 66,
+                    columnSpacing: 58,
+                    showCheckboxColumn: false,
+                    headingRowColor: WidgetStateProperty.all(AppTheme.canvas),
+                    dataRowColor: WidgetStateProperty.resolveWith<Color?>((
+                      states,
+                    ) {
+                      if (states.contains(WidgetState.hovered)) {
+                        return AppTheme.accentSoft;
+                      }
+                      return null;
+                    }),
+                    border: TableBorder(
+                      horizontalInside: BorderSide(
+                        color: AppTheme.border,
+                        width: 1,
+                      ),
                     ),
-                  ),
-                  columns: const [
-                    DataColumn(label: Text('Name')),
-                    DataColumn(label: Text('Contact')),
-                    DataColumn(label: Text('Guardian')),
-                    DataColumn(label: Text('Guardian Contact')),
-                    DataColumn(label: Text('Weekly Schedule')),
-                    DataColumn(label: Text('')),
-                  ],
-                  rows: patients.map((patient) {
-                    return DataRow(
-                      onSelectChanged: (_) => _showPatientDetailsModal(patient),
-                      cells: [
-                        DataCell(_buildNameCell(patient.name)),
-                        DataCell(Text(patient.phone ?? patient.email)),
-                        DataCell(Text(_safeText(patient.emergencyContactName))),
-                        DataCell(
-                          Text(_safeText(patient.emergencyContactNumber)),
-                        ),
-                        const DataCell(
-                          Text(
-                            'View details',
-                            style: TextStyle(
-                              color: Color(0xFF2A5F7E),
-                              fontWeight: FontWeight.w700,
+                    columns: const [
+                      DataColumn(label: Text('Name')),
+                      DataColumn(label: Text('Contact')),
+                      DataColumn(label: Text('Guardian')),
+                      DataColumn(label: Text('Guardian Contact')),
+                      DataColumn(label: Text('Weekly Schedule')),
+                      DataColumn(label: Text('')),
+                    ],
+                    rows: patients.map((patient) {
+                      return DataRow(
+                        onSelectChanged: (_) =>
+                            _showPatientDetailsModal(patient),
+                        cells: [
+                          DataCell(_buildNameCell(patient.name)),
+                          DataCell(Text(patient.phone ?? patient.email)),
+                          DataCell(
+                            Text(_safeText(patient.emergencyContactName)),
+                          ),
+                          DataCell(
+                            Text(_safeText(patient.emergencyContactNumber)),
+                          ),
+                          const DataCell(
+                            Text(
+                              'View details',
+                              style: TextStyle(
+                                color: AppTheme.blue1,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
-                        ),
-                        const DataCell(
-                          Icon(
-                            Icons.arrow_forward_ios_rounded,
-                            size: 15,
-                            color: Color(0xFF9AA9B8),
+                          const DataCell(
+                            Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              size: 15,
+                              color: AppTheme.iconMuted,
+                            ),
                           ),
-                        ),
-                      ],
-                    );
-                  }).toList(),
-                ),
+                        ],
+                      );
+                    }).toList(),
+                  ),
                 ),
               );
             },
@@ -1374,7 +1406,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           title: 'Declined Patients',
           subtitle: 'Patients whose requests were declined.',
           icon: Icons.person_off_rounded,
-          accentColor: const Color(0xFFEF4444),
+          accentColor: AppTheme.danger,
           count: snapshot.hasData ? patients.length : null,
           child: Builder(
             builder: (_) {
@@ -1397,36 +1429,34 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
               return _scrollArea(
                 controller: _declinedScroll,
                 child: _buildTableWrapper(
-                minWidth: 420,
-                child: DataTable(
-                  headingRowHeight: 54,
-                  dataRowMinHeight: 58,
-                  dataRowMaxHeight: 64,
-                  columnSpacing: 70,
-                  headingRowColor: WidgetStateProperty.all(
-                    const Color(0xFFF4F7FA),
-                  ),
-                  border: TableBorder(
-                    horizontalInside: BorderSide(
-                      color: Colors.grey.shade200,
-                      width: 1,
+                  minWidth: 420,
+                  child: DataTable(
+                    headingRowHeight: 54,
+                    dataRowMinHeight: 58,
+                    dataRowMaxHeight: 64,
+                    columnSpacing: 70,
+                    headingRowColor: WidgetStateProperty.all(AppTheme.canvas),
+                    border: TableBorder(
+                      horizontalInside: BorderSide(
+                        color: AppTheme.border,
+                        width: 1,
+                      ),
                     ),
+                    columns: const [
+                      DataColumn(label: Text('Name')),
+                      DataColumn(label: Text('Contact')),
+                      DataColumn(label: Text('Status')),
+                    ],
+                    rows: patients.map((patient) {
+                      return DataRow(
+                        cells: [
+                          DataCell(_buildNameCell(patient.name)),
+                          DataCell(Text(patient.phone ?? patient.email)),
+                          DataCell(_statusPill('Declined', Colors.red)),
+                        ],
+                      );
+                    }).toList(),
                   ),
-                  columns: const [
-                    DataColumn(label: Text('Name')),
-                    DataColumn(label: Text('Contact')),
-                    DataColumn(label: Text('Status')),
-                  ],
-                  rows: patients.map((patient) {
-                    return DataRow(
-                      cells: [
-                        DataCell(_buildNameCell(patient.name)),
-                        DataCell(Text(patient.phone ?? patient.email)),
-                        DataCell(_statusPill('Declined', Colors.red)),
-                      ],
-                    );
-                  }).toList(),
-                ),
                 ),
               );
             },
@@ -1547,13 +1577,13 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
         minWidth: 900,
         child: Table(
           border: TableBorder(
-            horizontalInside: BorderSide(color: Colors.grey.shade200),
-            verticalInside: BorderSide(color: Colors.grey.shade200),
+            horizontalInside: BorderSide(color: AppTheme.border),
+            verticalInside: BorderSide(color: AppTheme.border),
           ),
           defaultColumnWidth: const FlexColumnWidth(),
           children: [
             TableRow(
-              decoration: const BoxDecoration(color: Color(0xFFF4F7FA)),
+              decoration: const BoxDecoration(color: AppTheme.canvas),
               children: days
                   .map(
                     (day) => Padding(
@@ -1627,7 +1657,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       child: Container(
         width: double.infinity,
         decoration: BoxDecoration(
-          border: Border.all(color: const Color(0xFFE4EAF0)),
+          border: Border.all(color: AppTheme.border),
           borderRadius: BorderRadius.circular(12),
         ),
         child: LayoutBuilder(
@@ -1654,11 +1684,11 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       children: [
         CircleAvatar(
           radius: 16,
-          backgroundColor: const Color(0xFFEAF3F7),
+          backgroundColor: AppTheme.accentSoft,
           child: Text(
             _getInitial(name),
             style: const TextStyle(
-              color: Color(0xFF2A5F7E),
+              color: AppTheme.blue1,
               fontSize: 12,
               fontWeight: FontWeight.w800,
             ),
@@ -1670,7 +1700,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           textAlign: TextAlign.center,
           style: const TextStyle(
             fontWeight: FontWeight.w700,
-            color: Color(0xFF2D3748),
+            color: AppTheme.textPrimary,
           ),
         ),
       ],
@@ -1702,7 +1732,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
@@ -1717,7 +1747,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
   }
 
   void _showPendingPatientDetailsModal(Patient patient) {
-    showDialog(
+    showAdminDialog(
       context: context,
       builder: (context) {
         return Dialog(
@@ -1727,11 +1757,13 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             width: 1120,
             constraints: const BoxConstraints(maxHeight: 820),
             decoration: BoxDecoration(
-              color: const Color(0xFFF4F7FA),
-              borderRadius: BorderRadius.circular(16),
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(AppTheme.rXl),
+              border: Border.all(color: AppTheme.border),
+              boxShadow: AppTheme.shadowMd,
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(AppTheme.rXl),
               child: Column(
                 children: [
                   Container(
@@ -1748,7 +1780,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w900,
-                              color: Color(0xFF1E293B),
+                              color: AppTheme.textPrimary,
                             ),
                           ),
                         ),
@@ -1756,8 +1788,8 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                           onPressed: () => Navigator.pop(context),
                           icon: const Icon(Icons.close_rounded),
                           style: IconButton.styleFrom(
-                            backgroundColor: const Color(0xFFF1F5F9),
-                            foregroundColor: const Color(0xFF475569),
+                            backgroundColor: AppTheme.surfaceTint,
+                            foregroundColor: AppTheme.textSecondary,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
@@ -1813,7 +1845,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
   }
 
   void _showPatientDetailsModal(Patient patient) {
-    showDialog(
+    showAdminDialog(
       context: context,
       builder: (context) {
         return Dialog(
@@ -1823,11 +1855,13 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             width: 1120,
             constraints: const BoxConstraints(maxHeight: 820),
             decoration: BoxDecoration(
-              color: const Color(0xFFF4F7FA),
-              borderRadius: BorderRadius.circular(16),
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(AppTheme.rXl),
+              border: Border.all(color: AppTheme.border),
+              boxShadow: AppTheme.shadowMd,
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(AppTheme.rXl),
               child: Column(
                 children: [
                   Container(
@@ -1844,7 +1878,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w900,
-                              color: Color(0xFF1E293B),
+                              color: AppTheme.textPrimary,
                             ),
                           ),
                         ),
@@ -1852,8 +1886,8 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                           onPressed: () => Navigator.pop(context),
                           icon: const Icon(Icons.close_rounded),
                           style: IconButton.styleFrom(
-                            backgroundColor: const Color(0xFFF1F5F9),
-                            foregroundColor: const Color(0xFF475569),
+                            backgroundColor: AppTheme.surfaceTint,
+                            foregroundColor: AppTheme.textSecondary,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
@@ -1892,9 +1926,39 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                     ),
                                     label: const Text('Edit Patient'),
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF2A5F7E),
+                                      backgroundColor: AppTheme.blue1,
                                       foregroundColor: Colors.white,
                                       elevation: 0,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                // Their real dialysis sessions -- NOT the
+                                // recurring weekly schedule shown in the
+                                // card above.
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => showSessionHistory(
+                                      context: context,
+                                      patient: patient,
+                                    ),
+                                    icon: const Icon(
+                                      Icons.history_rounded,
+                                      size: 17,
+                                    ),
+                                    label: const Text('View Session History'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: AppTheme.accentTeal,
+                                      side: const BorderSide(
+                                        color: AppTheme.borderStrong,
+                                      ),
                                       padding: const EdgeInsets.symmetric(
                                         vertical: 14,
                                       ),
@@ -1918,9 +1982,9 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                     ),
                                     label: const Text('Delete Patient'),
                                     style: OutlinedButton.styleFrom(
-                                      foregroundColor: const Color(0xFFDC2626),
+                                      foregroundColor: AppTheme.danger,
                                       side: const BorderSide(
-                                        color: Color(0xFFFCA5A5),
+                                        color: AppTheme.dangerSoft,
                                       ),
                                       padding: const EdgeInsets.symmetric(
                                         vertical: 14,
@@ -1968,23 +2032,19 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Row(
             children: [
-              Icon(
-                Icons.fact_check_rounded,
-                color: Color(0xFF2A5F7E),
-                size: 20,
-              ),
+              Icon(Icons.fact_check_rounded, color: AppTheme.blue1, size: 20),
               SizedBox(width: 8),
               Text(
                 'Application Review',
                 style: TextStyle(
-                  color: Color(0xFF1E293B),
+                  color: AppTheme.textPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w900,
                 ),
@@ -1995,7 +2055,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           const Text(
             'Review the submitted patient profile and clinical information before accepting the application.',
             style: TextStyle(
-              color: Color(0xFF64748B),
+              color: AppTheme.textMuted,
               fontSize: 13,
               fontWeight: FontWeight.w500,
             ),
@@ -2009,7 +2069,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   icon: Icons.person_rounded,
                   label: 'Patient',
                   value: patient.name,
-                  color: const Color(0xFF2A5F7E),
+                  color: AppTheme.blue1,
                 ),
               ),
               const SizedBox(width: 12),
@@ -2018,7 +2078,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   icon: Icons.bloodtype_rounded,
                   label: 'Blood Type',
                   value: _safeText(patient.bloodType),
-                  color: const Color(0xFFEF4444),
+                  color: AppTheme.danger,
                 ),
               ),
               const SizedBox(width: 12),
@@ -2027,7 +2087,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   icon: Icons.medical_services_rounded,
                   label: 'Dialysis Stage',
                   value: _safeText(patient.dialysisStage),
-                  color: const Color(0xFF8E44AD),
+                  color: AppTheme.accentPurple,
                 ),
               ),
             ],
@@ -2039,16 +2099,16 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             width: double.infinity,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFF7ED),
+              color: AppTheme.accentOrangeSoft,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFFED7AA)),
+              border: Border.all(color: AppTheme.accentOrangeSoft),
             ),
             child: const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(
                   Icons.warning_amber_rounded,
-                  color: Color(0xFFEA580C),
+                  color: AppTheme.accentOrange,
                   size: 20,
                 ),
                 SizedBox(width: 10),
@@ -2056,7 +2116,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   child: Text(
                     'Make sure the patient details and uploaded documents are valid before approving this request.',
                     style: TextStyle(
-                      color: Color(0xFF9A3412),
+                      color: AppTheme.accentOrange,
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
                       height: 1.35,
@@ -2081,9 +2141,9 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       height: 110,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: AppTheme.surfaceTint,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2092,7 +2152,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.10),
+              color: color.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: color, size: 18),
@@ -2101,7 +2161,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           Text(
             label,
             style: const TextStyle(
-              color: Color(0xFF64748B),
+              color: AppTheme.textMuted,
               fontSize: 11,
               fontWeight: FontWeight.w700,
             ),
@@ -2112,7 +2172,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Color(0xFF1E293B),
+              color: AppTheme.textPrimary,
               fontSize: 15,
               fontWeight: FontWeight.w900,
             ),
@@ -2129,23 +2189,19 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Row(
             children: [
-              Icon(
-                Icons.folder_copy_rounded,
-                color: Color(0xFF2A5F7E),
-                size: 20,
-              ),
+              Icon(Icons.folder_copy_rounded, color: AppTheme.blue1, size: 20),
               SizedBox(width: 8),
               Text(
                 'Medical Documents',
                 style: TextStyle(
-                  color: Color(0xFF1E293B),
+                  color: AppTheme.textPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w900,
                 ),
@@ -2156,7 +2212,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           const Text(
             'Open each submitted file to verify patient requirements.',
             style: TextStyle(
-              color: Color(0xFF64748B),
+              color: AppTheme.textMuted,
               fontSize: 13,
               fontWeight: FontWeight.w500,
             ),
@@ -2197,7 +2253,8 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           accent = textMuted;
           icon = Icons.hourglass_top_rounded;
           headline = 'Checking center capacity...';
-          detail = "Analyzing this center's weekly schedule and shift capacity.";
+          detail =
+              "Analyzing this center's weekly schedule and shift capacity.";
         } else if (snapshot.hasError || evaluation == null) {
           accent = textMuted;
           icon = Icons.help_outline_rounded;
@@ -2208,15 +2265,15 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
         } else {
           switch (evaluation.verdict) {
             case AcceptanceVerdict.canAccommodate:
-              accent = const Color(0xFF16A34A);
+              accent = AppTheme.accentGreen;
               icon = Icons.verified_rounded;
               break;
             case AcceptanceVerdict.reviewRequired:
-              accent = const Color(0xFFF59E0B);
+              accent = AppTheme.accentOrange;
               icon = Icons.info_rounded;
               break;
             case AcceptanceVerdict.cannotAccommodate:
-              accent = const Color(0xFFEF4444);
+              accent = AppTheme.danger;
               icon = Icons.report_problem_rounded;
               break;
           }
@@ -2241,7 +2298,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                     width: 38,
                     height: 38,
                     decoration: BoxDecoration(
-                      color: accent.withOpacity(0.12),
+                      color: accent.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(icon, size: 20, color: accent),
@@ -2333,7 +2390,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         children: [
@@ -2344,7 +2401,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 Text(
                   'Final Decision',
                   style: TextStyle(
-                    color: Color(0xFF1E293B),
+                    color: AppTheme.textPrimary,
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
@@ -2353,7 +2410,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 Text(
                   'Accepting the patient will move them to active records and schedule assignment.',
                   style: TextStyle(
-                    color: Color(0xFF64748B),
+                    color: AppTheme.textMuted,
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                   ),
@@ -2367,8 +2424,8 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             icon: const Icon(Icons.close_rounded, size: 17),
             label: const Text('Decline'),
             style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFFEF4444),
-              side: const BorderSide(color: Color(0xFFFCA5A5)),
+              foregroundColor: AppTheme.danger,
+              side: const BorderSide(color: AppTheme.dangerSoft),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -2382,7 +2439,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             icon: const Icon(Icons.check_rounded, size: 17),
             label: const Text('Accept'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF16A34A),
+              backgroundColor: AppTheme.accentGreen,
               foregroundColor: Colors.white,
               elevation: 0,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
@@ -2403,7 +2460,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         children: [
@@ -2411,14 +2468,14 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             width: 86,
             height: 86,
             decoration: BoxDecoration(
-              color: const Color(0xFFEAF3F7),
+              color: AppTheme.accentSoft,
               borderRadius: BorderRadius.circular(18),
             ),
             child: Center(
               child: Text(
                 _getInitial(patient.name),
                 style: const TextStyle(
-                  color: Color(0xFF2A5F7E),
+                  color: AppTheme.blue1,
                   fontSize: 34,
                   fontWeight: FontWeight.w900,
                 ),
@@ -2430,7 +2487,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             patient.name,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              color: Color(0xFF1E293B),
+              color: AppTheme.textPrimary,
               fontSize: 20,
               fontWeight: FontWeight.w900,
             ),
@@ -2440,7 +2497,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             patient.email,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              color: Color(0xFF64748B),
+              color: AppTheme.textMuted,
               fontSize: 13,
               fontWeight: FontWeight.w600,
             ),
@@ -2462,7 +2519,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2470,7 +2527,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           const Text(
             'Information',
             style: TextStyle(
-              color: Color(0xFF1E293B),
+              color: AppTheme.textPrimary,
               fontSize: 15,
               fontWeight: FontWeight.w900,
             ),
@@ -2501,7 +2558,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2511,13 +2568,13 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
               Icon(
                 Icons.calendar_month_rounded,
                 size: 18,
-                color: Color(0xFF2A5F7E),
+                color: AppTheme.blue1,
               ),
               SizedBox(width: 8),
               Text(
                 'Weekly Schedule',
                 style: TextStyle(
-                  color: Color(0xFF1E293B),
+                  color: AppTheme.textPrimary,
                   fontSize: 15,
                   fontWeight: FontWeight.w900,
                 ),
@@ -2559,7 +2616,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 label: 'Blood Pressure',
                 value: latestBp,
                 unit: bp == null ? '' : 'mmHg',
-                color: const Color(0xFFEF4444),
+                color: AppTheme.danger,
               ),
             ),
             const SizedBox(width: 12),
@@ -2569,7 +2626,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 label: 'Latest Weight',
                 value: latestWeight,
                 unit: '',
-                color: const Color(0xFF2563EB),
+                color: AppTheme.blue1,
               ),
             ),
             const SizedBox(width: 12),
@@ -2579,7 +2636,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 label: 'Blood Type',
                 value: _safeText(patient.bloodType),
                 unit: '',
-                color: const Color(0xFF2A5F7E),
+                color: AppTheme.blue1,
               ),
             ),
           ],
@@ -2601,7 +2658,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2610,7 +2667,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.10),
+              color: color.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: color, size: 20),
@@ -2619,7 +2676,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           Text(
             label,
             style: const TextStyle(
-              color: Color(0xFF64748B),
+              color: AppTheme.textMuted,
               fontSize: 12,
               fontWeight: FontWeight.w700,
             ),
@@ -2631,7 +2688,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 TextSpan(
                   text: value,
                   style: const TextStyle(
-                    color: Color(0xFF1E293B),
+                    color: AppTheme.textPrimary,
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
                   ),
@@ -2640,7 +2697,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   TextSpan(
                     text: ' $unit',
                     style: const TextStyle(
-                      color: Color(0xFF64748B),
+                      color: AppTheme.textMuted,
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                     ),
@@ -2657,19 +2714,19 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: const Color(0xFFEAF3F7),
+        color: AppTheme.accentSoft,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFD7E8F0)),
+        border: Border.all(color: AppTheme.borderStrong),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 15, color: const Color(0xFF2A5F7E)),
+          Icon(icon, size: 15, color: AppTheme.blue1),
           const SizedBox(width: 6),
           Text(
             text,
             style: const TextStyle(
-              color: Color(0xFF2A5F7E),
+              color: AppTheme.blue1,
               fontSize: 12,
               fontWeight: FontWeight.w900,
             ),
@@ -2690,7 +2747,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             child: Text(
               '$label:',
               style: const TextStyle(
-                color: Color(0xFF64748B),
+                color: AppTheme.textMuted,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -2700,7 +2757,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             child: Text(
               value,
               style: const TextStyle(
-                color: Color(0xFF1E293B),
+                color: AppTheme.textPrimary,
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
@@ -2721,14 +2778,14 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             width: 72,
             height: 72,
             decoration: BoxDecoration(
-              color: const Color(0xFFEAF3F7),
+              color: AppTheme.accentSoft,
               borderRadius: BorderRadius.circular(16),
             ),
             child: Center(
               child: Text(
                 _getInitial(patient.name),
                 style: const TextStyle(
-                  color: Color(0xFF2A5F7E),
+                  color: AppTheme.blue1,
                   fontSize: 28,
                   fontWeight: FontWeight.w900,
                 ),
@@ -2745,14 +2802,14 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   style: const TextStyle(
                     fontSize: 25,
                     fontWeight: FontWeight.w900,
-                    color: Color(0xFF1E293B),
+                    color: AppTheme.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 5),
                 Text(
                   patient.email,
                   style: const TextStyle(
-                    color: Color(0xFF64748B),
+                    color: AppTheme.textMuted,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -2783,8 +2840,8 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             onPressed: () => Navigator.pop(context),
             icon: const Icon(Icons.close_rounded),
             style: IconButton.styleFrom(
-              backgroundColor: const Color(0xFFF1F5F9),
-              foregroundColor: const Color(0xFF475569),
+              backgroundColor: AppTheme.surfaceTint,
+              foregroundColor: AppTheme.textSecondary,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -2799,19 +2856,19 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F7FA),
+        color: AppTheme.accentSoft,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFDDEAF0)),
+        border: Border.all(color: AppTheme.borderStrong),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 15, color: const Color(0xFF2A5F7E)),
+          Icon(icon, size: 15, color: AppTheme.blue1),
           const SizedBox(width: 6),
           Text(
             text,
             style: const TextStyle(
-              color: Color(0xFF2A5F7E),
+              color: AppTheme.blue1,
               fontSize: 12,
               fontWeight: FontWeight.w800,
             ),
@@ -2830,14 +2887,14 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w900,
-            color: Color(0xFF1E293B),
+            color: AppTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 4),
         const Text(
           'Complete patient profile, medical details, and emergency contact information.',
           style: TextStyle(
-            color: Color(0xFF64748B),
+            color: AppTheme.textMuted,
             fontSize: 13,
             fontWeight: FontWeight.w500,
           ),
@@ -2945,7 +3002,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w900,
-                color: Color(0xFF1E293B),
+                color: AppTheme.textPrimary,
               ),
             ),
             const SizedBox(height: 4),
@@ -2953,7 +3010,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
               'Every recorded change to this patient\'s medical and '
               'scheduling information, newest first.',
               style: TextStyle(
-                color: Color(0xFF64748B),
+                color: AppTheme.textMuted,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
@@ -2994,7 +3051,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: AppTheme.surfaceTint,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: cardBorder),
       ),
@@ -3066,23 +3123,23 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: AppTheme.surfaceTint,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, size: 19, color: const Color(0xFF2A5F7E)),
+              Icon(icon, size: 19, color: AppTheme.blue1),
               const SizedBox(width: 8),
               Text(
                 title,
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w900,
-                  color: Color(0xFF1E293B),
+                  color: AppTheme.textPrimary,
                 ),
               ),
             ],
@@ -3101,7 +3158,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         children: [
@@ -3109,10 +3166,10 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: const Color(0xFFEAF3F7),
+              color: AppTheme.accentSoft,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, size: 17, color: const Color(0xFF2A5F7E)),
+            child: Icon(icon, size: 17, color: AppTheme.blue1),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -3123,7 +3180,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   label,
                   style: const TextStyle(
                     fontSize: 11,
-                    color: Color(0xFF64748B),
+                    color: AppTheme.textMuted,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -3132,7 +3189,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   value,
                   style: const TextStyle(
                     fontSize: 13,
-                    color: Color(0xFF1E293B),
+                    color: AppTheme.textPrimary,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -3153,7 +3210,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: AppTheme.surfaceTint,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: cardBorder),
       ),
@@ -3240,7 +3297,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
               children: [
                 Icon(
                   Icons.monitor_heart_rounded,
-                  color: Color(0xFF2A5F7E),
+                  color: AppTheme.blue1,
                   size: 21,
                 ),
                 SizedBox(width: 8),
@@ -3249,7 +3306,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   style: TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 17,
-                    color: Color(0xFF26364A),
+                    color: AppTheme.blue4,
                   ),
                 ),
               ],
@@ -3259,7 +3316,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             const Text(
               'Track blood pressure and dialysis weight records per session.',
               style: TextStyle(
-                color: Color(0xFF718096),
+                color: AppTheme.textMuted,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
@@ -3275,7 +3332,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                     latestLabel: 'Latest BP',
                     latestValue: latestBp,
                     buttonLabel: 'Add BP Record',
-                    accentColor: const Color(0xFFEF4444),
+                    accentColor: AppTheme.danger,
                     onPressed: () {
                       _showAddBloodPressureModal(patient);
                     },
@@ -3290,7 +3347,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                     latestLabel: 'Latest Weight',
                     latestValue: latestWeight,
                     buttonLabel: 'Add Weight Record',
-                    accentColor: const Color(0xFF2563EB),
+                    accentColor: AppTheme.blue1,
                     onPressed: () {
                       _showAddWeightModal(patient);
                     },
@@ -3342,7 +3399,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       if (value != null) sessionsController.text = value.toString();
     });
 
-    showDialog(
+    showAdminDialog(
       context: context,
       builder: (context) {
         return Dialog(
@@ -3352,18 +3409,13 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             width: 720,
             constraints: const BoxConstraints(maxHeight: 720),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.18),
-                  blurRadius: 28,
-                  offset: const Offset(0, 14),
-                ),
-              ],
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(AppTheme.rXl),
+              border: Border.all(color: AppTheme.border),
+              boxShadow: AppTheme.shadowMd,
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppTheme.rXl),
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(28),
                 child: Column(
@@ -3374,7 +3426,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
-                        color: Color(0xFF26364A),
+                        color: AppTheme.blue4,
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -3383,7 +3435,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                       style: TextStyle(
                         fontWeight: FontWeight.w900,
                         fontSize: 15,
-                        color: Color(0xFF26364A),
+                        color: AppTheme.blue4,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -3402,7 +3454,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                       style: TextStyle(
                         fontWeight: FontWeight.w900,
                         fontSize: 15,
-                        color: Color(0xFF26364A),
+                        color: AppTheme.blue4,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -3438,7 +3490,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                       style: TextStyle(
                         fontWeight: FontWeight.w900,
                         fontSize: 15,
-                        color: Color(0xFF26364A),
+                        color: AppTheme.blue4,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -3477,21 +3529,57 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                         ElevatedButton.icon(
                           onPressed: () async {
                             final sessionsText = sessionsController.text.trim();
-                            int? sessions;
 
-                            if (sessionsText.isNotEmpty) {
-                              sessions = int.tryParse(sessionsText);
-                              if (sessions == null ||
-                                  sessions < 1 ||
-                                  sessions > 6) {
-                                _showMessage(
-                                  'Required sessions per week must be a '
-                                  'number between 1 and 6.',
-                                  isError: true,
-                                );
-                                return;
-                              }
+                            // Every editable field is checked before the
+                            // update is sent, so an invalid value can
+                            // never reach the patient record. Sessions
+                            // per week keeps its existing 1-6 rule -- the
+                            // range the scheduling validation and the
+                            // recommendation both already assume.
+                            final validationError = AdminValidators.firstError([
+                              () => AdminValidators.email(emailController.text),
+                              () => AdminValidators.phone(phoneController.text),
+                              () => AdminValidators.requiredText(
+                                addressController.text,
+                                label: 'home address',
+                                maxLength: 250,
+                              ),
+                              () => AdminValidators.requiredText(
+                                guardianNameController.text,
+                                label: 'emergency contact name',
+                                maxLength: 100,
+                              ),
+                              () => AdminValidators.phone(
+                                guardianContactController.text,
+                                label: 'emergency contact number',
+                              ),
+                              () => AdminValidators.optionalText(
+                                dialysisStageController.text,
+                                label: 'dialysis stage',
+                                maxLength: 100,
+                              ),
+                              () => AdminValidators.optionalText(
+                                existingConditionController.text,
+                                label: 'existing condition',
+                                maxLength: 500,
+                              ),
+                              () => AdminValidators.wholeNumber(
+                                sessionsText,
+                                label: 'required sessions per week',
+                                min: 1,
+                                max: 6,
+                                required: false,
+                              ),
+                            ]);
+
+                            if (validationError != null) {
+                              _showValidation(validationError);
+                              return;
                             }
+
+                            final sessions = sessionsText.isEmpty
+                                ? null
+                                : int.parse(sessionsText);
 
                             try {
                               await _service.updatePatientInfo(
@@ -3518,15 +3606,21 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
 
                               Navigator.pop(context);
                               _refreshData();
-                              _showMessage('Patient information updated');
+                              _showMessage(
+                                'The patient record has been saved.',
+                              );
                             } catch (e) {
-                              _showMessage('Error: $e', isError: true);
+                              _showMessage(
+                                'The patient\'s information could not be '
+                                'updated. $e',
+                                isError: true,
+                              );
                             }
                           },
                           icon: const Icon(Icons.save_rounded, size: 17),
                           label: const Text('Save Changes'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2A5F7E),
+                            backgroundColor: AppTheme.blue1,
                             foregroundColor: Colors.white,
                           ),
                         ),
@@ -3555,9 +3649,9 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: AppTheme.surfaceTint,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE4EAF0)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3568,7 +3662,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: accentColor.withOpacity(0.10),
+                  color: accentColor.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(icon, color: accentColor, size: 23),
@@ -3578,7 +3672,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 child: Text(
                   title,
                   style: const TextStyle(
-                    color: Color(0xFF26364A),
+                    color: AppTheme.blue4,
                     fontWeight: FontWeight.w900,
                     fontSize: 15,
                   ),
@@ -3590,7 +3684,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           Text(
             subtitle,
             style: const TextStyle(
-              color: Color(0xFF718096),
+              color: AppTheme.textMuted,
               fontSize: 13,
               fontWeight: FontWeight.w500,
               height: 1.4,
@@ -3603,7 +3697,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE4EAF0)),
+              border: Border.all(color: AppTheme.border),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3611,7 +3705,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 Text(
                   latestLabel,
                   style: const TextStyle(
-                    color: Color(0xFF718096),
+                    color: AppTheme.textMuted,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
@@ -3620,7 +3714,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 Text(
                   latestValue,
                   style: const TextStyle(
-                    color: Color(0xFF26364A),
+                    color: AppTheme.blue4,
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
@@ -3636,7 +3730,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
               icon: const Icon(Icons.add_rounded, size: 17),
               label: Text(buttonLabel),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2A5F7E),
+                backgroundColor: AppTheme.blue1,
                 foregroundColor: Colors.white,
                 elevation: 0,
                 padding: const EdgeInsets.symmetric(vertical: 13),
@@ -3667,7 +3761,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE4EAF0)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3676,7 +3770,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             children: [
               const Icon(
                 Icons.analytics_rounded,
-                color: Color(0xFF2A5F7E),
+                color: AppTheme.blue1,
                 size: 20,
               ),
               const SizedBox(width: 8),
@@ -3686,7 +3780,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 16,
-                    color: Color(0xFF26364A),
+                    color: AppTheme.blue4,
                   ),
                 ),
               ),
@@ -3696,7 +3790,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           Text(
             subtitle,
             style: const TextStyle(
-              color: Color(0xFF718096),
+              color: AppTheme.textMuted,
               fontSize: 13,
               fontWeight: FontWeight.w500,
             ),
@@ -3715,16 +3809,16 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFEAF3F7),
+        color: AppTheme.accentSoft,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFD7E8F0)),
+        border: Border.all(color: AppTheme.borderStrong),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Icon(
             Icons.info_outline_rounded,
-            color: Color(0xFF2A5F7E),
+            color: AppTheme.blue1,
             size: 20,
           ),
           const SizedBox(width: 10),
@@ -3732,7 +3826,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             child: Text(
               text,
               style: const TextStyle(
-                color: Color(0xFF2A5F7E),
+                color: AppTheme.blue1,
                 fontWeight: FontWeight.w700,
                 height: 1.4,
               ),
@@ -3751,15 +3845,15 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: AppTheme.surfaceTint,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE4EAF0)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         children: [
           const Icon(
             Icons.show_chart_rounded,
-            color: Color(0xFF9AA9B8),
+            color: AppTheme.iconMuted,
             size: 24,
           ),
           const SizedBox(width: 12),
@@ -3770,7 +3864,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 Text(
                   title,
                   style: const TextStyle(
-                    color: Color(0xFF26364A),
+                    color: AppTheme.blue4,
                     fontWeight: FontWeight.w900,
                     fontSize: 15,
                   ),
@@ -3779,7 +3873,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 Text(
                   message,
                   style: const TextStyle(
-                    color: Color(0xFF718096),
+                    color: AppTheme.textMuted,
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
                   ),
@@ -3810,14 +3904,14 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             width: double.infinity,
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: AppTheme.surfaceTint,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE4EAF0)),
+              border: Border.all(color: AppTheme.border),
             ),
             child: const Text(
               'No blood pressure records yet.',
               style: TextStyle(
-                color: Color(0xFF718096),
+                color: AppTheme.textMuted,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -3830,25 +3924,21 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE4EAF0)),
+            border: Border.all(color: AppTheme.border),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Row(
                 children: [
-                  Icon(
-                    Icons.history_rounded,
-                    color: Color(0xFF2A5F7E),
-                    size: 18,
-                  ),
+                  Icon(Icons.history_rounded, color: AppTheme.blue1, size: 18),
                   SizedBox(width: 8),
                   Text(
                     'Recent Blood Pressure Records',
                     style: TextStyle(
                       fontWeight: FontWeight.w900,
                       fontSize: 15,
-                      color: Color(0xFF26364A),
+                      color: AppTheme.blue4,
                     ),
                   ),
                 ],
@@ -3867,9 +3957,9 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
+                    color: AppTheme.surfaceTint,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE4EAF0)),
+                    border: Border.all(color: AppTheme.border),
                   ),
                   child: Row(
                     children: [
@@ -3877,12 +3967,12 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFEF2F2),
+                          color: AppTheme.dangerSoft,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
                           Icons.favorite_rounded,
-                          color: Color(0xFFEF4444),
+                          color: AppTheme.danger,
                         ),
                       ),
 
@@ -3896,7 +3986,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                               '$systolic / $diastolic mmHg',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w900,
-                                color: Color(0xFF26364A),
+                                color: AppTheme.blue4,
                                 fontSize: 15,
                               ),
                             ),
@@ -3904,7 +3994,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                             Text(
                               date,
                               style: const TextStyle(
-                                color: Color(0xFF718096),
+                                color: AppTheme.textMuted,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -3919,7 +4009,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                           vertical: 7,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFEAF3F7),
+                          color: AppTheme.accentSoft,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
@@ -3930,7 +4020,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                           style: const TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
-                            color: Color(0xFF2A5F7E),
+                            color: AppTheme.blue1,
                           ),
                         ),
                       ),
@@ -4030,7 +4120,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                             date.length >= 10 ? date.substring(5, 10) : date,
                             style: const TextStyle(
                               fontSize: 10,
-                              color: Color(0xFF718096),
+                              color: AppTheme.textMuted,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -4044,7 +4134,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 ),
                 borderData: FlBorderData(
                   show: true,
-                  border: Border.all(color: const Color(0xFFE4EAF0)),
+                  border: Border.all(color: AppTheme.border),
                 ),
                 lineBarsData: [
                   LineChartBarData(
@@ -4052,14 +4142,14 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                     isCurved: true,
                     barWidth: 3,
                     dotData: FlDotData(show: true),
-                    color: const Color(0xFFEF4444),
+                    color: AppTheme.danger,
                   ),
                   LineChartBarData(
                     spots: diastolicSpots,
                     isCurved: true,
                     barWidth: 3,
                     dotData: FlDotData(show: true),
-                    color: const Color(0xFF2563EB),
+                    color: AppTheme.blue1,
                   ),
                 ],
               ),
@@ -4092,14 +4182,14 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             width: double.infinity,
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: AppTheme.surfaceTint,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE4EAF0)),
+              border: Border.all(color: AppTheme.border),
             ),
             child: const Text(
               'No weight records yet.',
               style: TextStyle(
-                color: Color(0xFF718096),
+                color: AppTheme.textMuted,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -4112,7 +4202,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE4EAF0)),
+            border: Border.all(color: AppTheme.border),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -4121,7 +4211,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 children: [
                   Icon(
                     Icons.monitor_weight_rounded,
-                    color: Color(0xFF2563EB),
+                    color: AppTheme.blue1,
                     size: 18,
                   ),
                   SizedBox(width: 8),
@@ -4130,7 +4220,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                     style: TextStyle(
                       fontWeight: FontWeight.w900,
                       fontSize: 15,
-                      color: Color(0xFF26364A),
+                      color: AppTheme.blue4,
                     ),
                   ),
                 ],
@@ -4157,9 +4247,9 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
+                    color: AppTheme.surfaceTint,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE4EAF0)),
+                    border: Border.all(color: AppTheme.border),
                   ),
                   child: Row(
                     children: [
@@ -4167,12 +4257,12 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFDBEAFE),
+                          color: AppTheme.accentBlueSoft,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
                           Icons.monitor_weight_rounded,
-                          color: Color(0xFF2563EB),
+                          color: AppTheme.blue1,
                         ),
                       ),
 
@@ -4186,7 +4276,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                               'Before: $before kg • After: $after kg',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w900,
-                                color: Color(0xFF26364A),
+                                color: AppTheme.blue4,
                                 fontSize: 14,
                               ),
                             ),
@@ -4196,7 +4286,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                             Text(
                               'Weight Removed: $difference kg',
                               style: const TextStyle(
-                                color: Color(0xFF2563EB),
+                                color: AppTheme.blue1,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -4207,7 +4297,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                             Text(
                               date,
                               style: const TextStyle(
-                                color: Color(0xFF718096),
+                                color: AppTheme.textMuted,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -4222,7 +4312,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                           vertical: 7,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFEAF3F7),
+                          color: AppTheme.accentSoft,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
@@ -4233,7 +4323,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                           style: const TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
-                            color: Color(0xFF2A5F7E),
+                            color: AppTheme.blue1,
                           ),
                         ),
                       ),
@@ -4349,7 +4439,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                             date.length >= 10 ? date.substring(5, 10) : date,
                             style: const TextStyle(
                               fontSize: 10,
-                              color: Color(0xFF718096),
+                              color: AppTheme.textMuted,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -4363,7 +4453,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 ),
                 borderData: FlBorderData(
                   show: true,
-                  border: Border.all(color: const Color(0xFFE4EAF0)),
+                  border: Border.all(color: AppTheme.border),
                 ),
                 lineBarsData: [
                   LineChartBarData(
@@ -4371,14 +4461,14 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                     isCurved: true,
                     barWidth: 3,
                     dotData: FlDotData(show: true),
-                    color: const Color(0xFF2563EB),
+                    color: AppTheme.blue1,
                   ),
                   LineChartBarData(
                     spots: afterSpots,
                     isCurved: true,
                     barWidth: 3,
                     dotData: FlDotData(show: true),
-                    color: const Color(0xFF16A34A),
+                    color: AppTheme.accentGreen,
                   ),
                 ],
               ),
@@ -4402,7 +4492,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
 
     bool isSaving = false;
 
-    showDialog(
+    showAdminDialog(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -4414,8 +4504,10 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 width: 520,
                 padding: const EdgeInsets.all(28),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(AppTheme.rXl),
+                  border: Border.all(color: AppTheme.border),
+                  boxShadow: AppTheme.shadowMd,
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -4425,7 +4517,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                       children: [
                         Icon(
                           Icons.favorite_rounded,
-                          color: Color(0xFFEF4444),
+                          color: AppTheme.danger,
                           size: 24,
                         ),
                         SizedBox(width: 10),
@@ -4434,7 +4526,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w900,
-                            color: Color(0xFF26364A),
+                            color: AppTheme.blue4,
                           ),
                         ),
                       ],
@@ -4445,7 +4537,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                     Text(
                       patient.name,
                       style: const TextStyle(
-                        color: Color(0xFF718096),
+                        color: AppTheme.textMuted,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -4457,7 +4549,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                       'Session Date',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF26364A),
+                        color: AppTheme.blue4,
                       ),
                     ),
 
@@ -4485,15 +4577,15 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                           vertical: 16,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
+                          color: AppTheme.surfaceTint,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFE4EAF0)),
+                          border: Border.all(color: AppTheme.border),
                         ),
                         child: Text(
                           selectedDate.toString().split(' ')[0],
                           style: const TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: Color(0xFF26364A),
+                            color: AppTheme.blue4,
                           ),
                         ),
                       ),
@@ -4548,21 +4640,23 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                           onPressed: isSaving
                               ? null
                               : () async {
-                                  final systolic = int.tryParse(
+                                  final bpError = AdminValidators.bloodPressure(
+                                    systolic: systolicController.text,
+                                    diastolic: diastolicController.text,
+                                  );
+
+                                  if (bpError != null) {
+                                    _showValidation(bpError);
+                                    return;
+                                  }
+
+                                  final systolic = int.parse(
                                     systolicController.text.trim(),
                                   );
 
-                                  final diastolic = int.tryParse(
+                                  final diastolic = int.parse(
                                     diastolicController.text.trim(),
                                   );
-
-                                  if (systolic == null || diastolic == null) {
-                                    _showMessage(
-                                      'Please enter valid BP values.',
-                                      isError: true,
-                                    );
-                                    return;
-                                  }
 
                                   try {
                                     setModalState(() {
@@ -4597,7 +4691,11 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
 
                                     setState(() {});
                                   } catch (e) {
-                                    _showMessage('Error: $e', isError: true);
+                                    _showMessage(
+                                      'The blood pressure record could not '
+                                      'be saved. $e',
+                                      isError: true,
+                                    );
                                   } finally {
                                     if (mounted) {
                                       setModalState(() {
@@ -4618,7 +4716,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                               : const Icon(Icons.save_rounded, size: 17),
                           label: Text(isSaving ? 'Saving...' : 'Save Record'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2A5F7E),
+                            backgroundColor: AppTheme.blue1,
                             foregroundColor: Colors.white,
                           ),
                         ),
@@ -4643,7 +4741,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
 
     bool isSaving = false;
 
-    showDialog(
+    showAdminDialog(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -4655,8 +4753,10 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                 width: 520,
                 padding: const EdgeInsets.all(28),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(AppTheme.rXl),
+                  border: Border.all(color: AppTheme.border),
+                  boxShadow: AppTheme.shadowMd,
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -4666,7 +4766,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                       children: [
                         Icon(
                           Icons.monitor_weight_rounded,
-                          color: Color(0xFF2563EB),
+                          color: AppTheme.blue1,
                           size: 24,
                         ),
                         SizedBox(width: 10),
@@ -4675,7 +4775,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w900,
-                            color: Color(0xFF26364A),
+                            color: AppTheme.blue4,
                           ),
                         ),
                       ],
@@ -4686,7 +4786,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                     Text(
                       patient.name,
                       style: const TextStyle(
-                        color: Color(0xFF718096),
+                        color: AppTheme.textMuted,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -4698,7 +4798,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                       'Session Date',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF26364A),
+                        color: AppTheme.blue4,
                       ),
                     ),
 
@@ -4726,15 +4826,15 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                           vertical: 16,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
+                          color: AppTheme.surfaceTint,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFE4EAF0)),
+                          border: Border.all(color: AppTheme.border),
                         ),
                         child: Text(
                           selectedDate.toString().split(' ')[0],
                           style: const TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: Color(0xFF26364A),
+                            color: AppTheme.blue4,
                           ),
                         ),
                       ),
@@ -4789,22 +4889,30 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                           onPressed: isSaving
                               ? null
                               : () async {
-                                  final beforeWeight = double.tryParse(
+                                  final weightError =
+                                      AdminValidators.firstError([
+                                        () => AdminValidators.weightKg(
+                                          beforeController.text,
+                                          label: 'weight before dialysis',
+                                        ),
+                                        () => AdminValidators.weightKg(
+                                          afterController.text,
+                                          label: 'weight after dialysis',
+                                        ),
+                                      ]);
+
+                                  if (weightError != null) {
+                                    _showValidation(weightError);
+                                    return;
+                                  }
+
+                                  final beforeWeight = double.parse(
                                     beforeController.text.trim(),
                                   );
 
-                                  final afterWeight = double.tryParse(
+                                  final afterWeight = double.parse(
                                     afterController.text.trim(),
                                   );
-
-                                  if (beforeWeight == null ||
-                                      afterWeight == null) {
-                                    _showMessage(
-                                      'Please enter valid weights.',
-                                      isError: true,
-                                    );
-                                    return;
-                                  }
 
                                   try {
                                     setModalState(() {
@@ -4837,7 +4945,11 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
 
                                     setState(() {});
                                   } catch (e) {
-                                    _showMessage('Error: $e', isError: true);
+                                    _showMessage(
+                                      'The weight record could not be '
+                                      'saved. $e',
+                                      isError: true,
+                                    );
                                   } finally {
                                     if (mounted) {
                                       setModalState(() {
@@ -4858,7 +4970,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                               : const Icon(Icons.save_rounded, size: 17),
                           label: Text(isSaving ? 'Saving...' : 'Save Record'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2A5F7E),
+                            backgroundColor: AppTheme.blue1,
                             foregroundColor: Colors.white,
                           ),
                         ),
@@ -4880,18 +4992,18 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: AppTheme.surfaceTint,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE4EAF0)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         children: [
-          const Icon(Icons.lock_rounded, size: 18, color: Color(0xFF9AA9B8)),
+          const Icon(Icons.lock_rounded, size: 18, color: AppTheme.iconMuted),
           const SizedBox(width: 10),
           Text(
             '$label: ',
             style: const TextStyle(
-              color: Color(0xFF718096),
+              color: AppTheme.textMuted,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -4899,7 +5011,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             child: Text(
               value,
               style: const TextStyle(
-                color: Color(0xFF26364A),
+                color: AppTheme.blue4,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -4922,20 +5034,20 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
         maxLines: maxLines,
         decoration: InputDecoration(
           labelText: label,
-          prefixIcon: Icon(icon, color: const Color(0xFF2A5F7E)),
+          prefixIcon: Icon(icon, color: AppTheme.blue1),
           filled: true,
-          fillColor: const Color(0xFFF8FAFC),
+          fillColor: AppTheme.surfaceTint,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFFE4EAF0)),
+            borderSide: const BorderSide(color: AppTheme.border),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFFE4EAF0)),
+            borderSide: const BorderSide(color: AppTheme.border),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF2A5F7E), width: 1.5),
+            borderSide: const BorderSide(color: AppTheme.blue1, width: 1.5),
           ),
         ),
       ),
@@ -5018,7 +5130,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     required bool isAccept,
   }) async {
     if (isAccept) {
-      final confirm = await showDialog<bool>(
+      final confirm = await showAdminDialog<bool>(
         context: context,
         barrierDismissible: false,
         builder: (confirmContext) {
@@ -5028,7 +5140,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
             ),
             title: const Row(
               children: [
-                Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A)),
+                Icon(Icons.check_circle_rounded, color: AppTheme.accentGreen),
                 SizedBox(width: 10),
                 Text('Accept Patient?'),
               ],
@@ -5044,7 +5156,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
               ElevatedButton(
                 onPressed: () => Navigator.of(confirmContext).pop(true),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF16A34A),
+                  backgroundColor: AppTheme.accentGreen,
                   foregroundColor: Colors.white,
                 ),
                 child: const Text('Accept'),
@@ -5082,7 +5194,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
     bool isSaving = false;
     String? errorText;
 
-    final declined = await showDialog<bool>(
+    final declined = await showAdminDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
@@ -5099,7 +5211,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   borderRadius: BorderRadius.circular(18),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.18),
+                      color: Colors.black.withValues(alpha: 0.18),
                       blurRadius: 28,
                       offset: const Offset(0, 14),
                     ),
@@ -5115,12 +5227,12 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                           width: 48,
                           height: 48,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFEF2F2),
+                            color: AppTheme.dangerSoft,
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: const Icon(
                             Icons.person_off_rounded,
-                            color: Color(0xFFDC2626),
+                            color: AppTheme.danger,
                           ),
                         ),
                         const SizedBox(width: 14),
@@ -5131,7 +5243,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                               const Text(
                                 'Decline Patient Request',
                                 style: TextStyle(
-                                  color: Color(0xFF1E293B),
+                                  color: AppTheme.textPrimary,
                                   fontSize: 21,
                                   fontWeight: FontWeight.w900,
                                 ),
@@ -5140,7 +5252,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                               Text(
                                 patient.name,
                                 style: const TextStyle(
-                                  color: Color(0xFF64748B),
+                                  color: AppTheme.textMuted,
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -5154,7 +5266,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                     const Text(
                       'Reason for declining',
                       style: TextStyle(
-                        color: Color(0xFF334155),
+                        color: AppTheme.textSecondary,
                         fontSize: 13,
                         fontWeight: FontWeight.w900,
                       ),
@@ -5167,28 +5279,24 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                         hintText:
                             'Example: Submitted documents are incomplete or requirements were not verified.',
                         hintStyle: const TextStyle(
-                          color: Color(0xFF94A3B8),
+                          color: AppTheme.iconMuted,
                           fontWeight: FontWeight.w500,
                         ),
                         errorText: errorText,
                         filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
+                        fillColor: AppTheme.surfaceTint,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFE2E8F0),
-                          ),
+                          borderSide: const BorderSide(color: AppTheme.border),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFE2E8F0),
-                          ),
+                          borderSide: const BorderSide(color: AppTheme.border),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
                           borderSide: const BorderSide(
-                            color: Color(0xFF2A5F7E),
+                            color: AppTheme.blue1,
                             width: 1.5,
                           ),
                         ),
@@ -5199,14 +5307,14 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(13),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFF7ED),
+                        color: AppTheme.accentOrangeSoft,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFFED7AA)),
+                        border: Border.all(color: AppTheme.accentOrangeSoft),
                       ),
                       child: const Text(
                         'This reason will be saved in the patient record and can be shown in the mobile app.',
                         style: TextStyle(
-                          color: Color(0xFF9A3412),
+                          color: AppTheme.accentOrange,
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                           height: 1.35,
@@ -5238,10 +5346,22 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                 : () async {
                                     final reason = reasonController.text.trim();
 
-                                    if (reason.isEmpty) {
+                                    // The reason is saved on the patient
+                                    // record and can be shown to them in
+                                    // the mobile app, so it has to be a
+                                    // real sentence rather than a stray
+                                    // character.
+                                    final reasonError =
+                                        AdminValidators.requiredText(
+                                          reason,
+                                          label: 'decline reason',
+                                          minLength: 5,
+                                          maxLength: 500,
+                                        );
+
+                                    if (reasonError != null) {
                                       setModalState(() {
-                                        errorText =
-                                            'Decline reason is required.';
+                                        errorText = reasonError;
                                       });
                                       return;
                                     }
@@ -5287,7 +5407,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                 : const Icon(Icons.close_rounded, size: 17),
                             label: Text(isSaving ? 'Saving...' : 'Decline'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFDC2626),
+                              backgroundColor: AppTheme.danger,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
@@ -5334,7 +5454,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
       'Others',
     ];
 
-    final deleted = await showDialog<bool>(
+    final deleted = await showAdminDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
@@ -5352,7 +5472,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                   borderRadius: BorderRadius.circular(18),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.18),
+                      color: Colors.black.withValues(alpha: 0.18),
                       blurRadius: 28,
                       offset: const Offset(0, 14),
                     ),
@@ -5369,12 +5489,12 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                             width: 48,
                             height: 48,
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFEF2F2),
+                              color: AppTheme.dangerSoft,
                               borderRadius: BorderRadius.circular(14),
                             ),
                             child: const Icon(
                               Icons.person_remove_rounded,
-                              color: Color(0xFFDC2626),
+                              color: AppTheme.danger,
                             ),
                           ),
                           const SizedBox(width: 14),
@@ -5385,7 +5505,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                 const Text(
                                   'Delete Patient Record',
                                   style: TextStyle(
-                                    color: Color(0xFF1E293B),
+                                    color: AppTheme.textPrimary,
                                     fontSize: 21,
                                     fontWeight: FontWeight.w900,
                                   ),
@@ -5394,7 +5514,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                 Text(
                                   patient.name,
                                   style: const TextStyle(
-                                    color: Color(0xFF64748B),
+                                    color: AppTheme.textMuted,
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -5409,14 +5529,14 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(13),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFEF2F2),
+                          color: AppTheme.dangerSoft,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFFECACA)),
+                          border: Border.all(color: AppTheme.dangerSoft),
                         ),
                         child: const Text(
                           'This will remove the patient from the active list by changing the status to deleted. The reason and deletion time will remain saved for records and review.',
                           style: TextStyle(
-                            color: Color(0xFF991B1B),
+                            color: AppTheme.danger,
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                             height: 1.35,
@@ -5427,7 +5547,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                       const Text(
                         'Reason category',
                         style: TextStyle(
-                          color: Color(0xFF334155),
+                          color: AppTheme.textSecondary,
                           fontSize: 13,
                           fontWeight: FontWeight.w900,
                         ),
@@ -5449,17 +5569,17 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                       reasonError = null;
                                     });
                                   },
-                            selectedColor: const Color(0xFFEAF3F7),
-                            backgroundColor: const Color(0xFFF8FAFC),
+                            selectedColor: AppTheme.accentSoft,
+                            backgroundColor: AppTheme.surfaceTint,
                             side: BorderSide(
                               color: isSelected
-                                  ? const Color(0xFF2A5F7E)
-                                  : const Color(0xFFE2E8F0),
+                                  ? AppTheme.blue1
+                                  : AppTheme.border,
                             ),
                             labelStyle: TextStyle(
                               color: isSelected
-                                  ? const Color(0xFF2A5F7E)
-                                  : const Color(0xFF334155),
+                                  ? AppTheme.blue1
+                                  : AppTheme.textSecondary,
                               fontWeight: FontWeight.w800,
                               fontSize: 12,
                             ),
@@ -5471,7 +5591,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                         Text(
                           reasonError!,
                           style: const TextStyle(
-                            color: Color(0xFFDC2626),
+                            color: AppTheme.danger,
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                           ),
@@ -5481,7 +5601,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                       const Text(
                         'Detailed reason',
                         style: TextStyle(
-                          color: Color(0xFF334155),
+                          color: AppTheme.textSecondary,
                           fontSize: 13,
                           fontWeight: FontWeight.w900,
                         ),
@@ -5494,28 +5614,28 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                           hintText:
                               'Add details or supporting notes for this patient removal.',
                           hintStyle: const TextStyle(
-                            color: Color(0xFF94A3B8),
+                            color: AppTheme.iconMuted,
                             fontWeight: FontWeight.w500,
                           ),
                           errorText: notesError,
                           filled: true,
-                          fillColor: const Color(0xFFF8FAFC),
+                          fillColor: AppTheme.surfaceTint,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(14),
                             borderSide: const BorderSide(
-                              color: Color(0xFFE2E8F0),
+                              color: AppTheme.border,
                             ),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(14),
                             borderSide: const BorderSide(
-                              color: Color(0xFFE2E8F0),
+                              color: AppTheme.border,
                             ),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(14),
                             borderSide: const BorderSide(
-                              color: Color(0xFF2A5F7E),
+                              color: AppTheme.blue1,
                               width: 1.5,
                             ),
                           ),
@@ -5558,10 +5678,17 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                         return;
                                       }
 
-                                      if (notes.isEmpty) {
+                                      final notesProblem =
+                                          AdminValidators.requiredText(
+                                            notes,
+                                            label: 'detailed reason',
+                                            minLength: 5,
+                                            maxLength: 500,
+                                          );
+
+                                      if (notesProblem != null) {
                                         setModalState(() {
-                                          notesError =
-                                              'Detailed reason is required.';
+                                          notesError = notesProblem;
                                         });
                                         return;
                                       }
@@ -5614,7 +5741,7 @@ class _PatientsPageState extends ConsumerState<PatientsPage> {
                                     ),
                               label: Text(isSaving ? 'Saving...' : 'Delete'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFDC2626),
+                                backgroundColor: AppTheme.danger,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 14,

@@ -8,19 +8,22 @@ import '../../models/schedule_recommendation.dart';
 import '../../services/center_schedule_service.dart';
 import '../../services/dashboard_service.dart';
 import '../../services/schedule_recommendation_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/admin_modal.dart';
+import '../../widgets/admin_notice.dart';
 
-// Mirrors dashboard_page.dart's palette so this modal reads as part of the
-// same screen -- kept local since those constants are private to that
-// file's State class.
-const Color _primary = Color(0xFF245C78);
-const Color _primaryDark = Color(0xFF17435C);
-const Color _border = Color(0xFFE1E8EF);
-const Color _textDark = Color(0xFF1F2D3D);
-const Color _textMuted = Color(0xFF6B7A8C);
-const Color _green = Color(0xFF10B981);
-const Color _orange = Color(0xFFF59E0B);
-const Color _red = Color(0xFFEF4444);
-const Color _softBg = Color(0xFFF8FAFC);
+// Mirrors the dashboard's palette so this modal reads as part of the same
+// screen. Presentation only -- the names are the ones this file already
+// used, now pointing at the shared Admin theme.
+const Color _primary = AppTheme.blue1;
+const Color _primaryDark = AppTheme.blue3;
+const Color _border = AppTheme.border;
+const Color _textDark = AppTheme.textPrimary;
+const Color _textMuted = AppTheme.textMuted;
+const Color _green = AppTheme.accentGreen;
+const Color _orange = AppTheme.accentOrange;
+const Color _red = AppTheme.danger;
+const Color _softBg = AppTheme.surfaceTint;
 
 /// Opens the recurring schedule assignment modal for a patient who
 /// doesn't have one yet (the "Patients Needing Schedule" table).
@@ -35,12 +38,10 @@ Future<void> showPatientScheduleModal(
   required Patient patient,
   required VoidCallback onScheduled,
 }) {
-  return showDialog(
+  return showAdminDialog(
     context: context,
-    builder: (_) => _PatientScheduleModal(
-      patient: patient,
-      onScheduled: onScheduled,
-    ),
+    builder: (_) =>
+        _PatientScheduleModal(patient: patient, onScheduled: onScheduled),
   );
 }
 
@@ -93,15 +94,17 @@ class _PatientScheduleModalState extends State<_PatientScheduleModal> {
     _loadContext();
   }
 
+  /// This whole widget *is* a modal, so a snack bar raised from it was
+  /// painted underneath itself. Outcomes go through the notice system,
+  /// which sits above the modal.
   void _showSnack(String message, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? _red : _green,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+
+    if (isError) {
+      AdminNotice.error(context, message);
+    } else {
+      AdminNotice.success(context, message);
+    }
   }
 
   Future<void> _loadContext() async {
@@ -111,7 +114,8 @@ class _PatientScheduleModalState extends State<_PatientScheduleModal> {
     });
 
     try {
-      final clinicId = widget.patient.clinicId ??
+      final clinicId =
+          widget.patient.clinicId ??
           await _dashboardService.getCurrentClinicId();
 
       if (clinicId == null) {
@@ -122,12 +126,11 @@ class _PatientScheduleModalState extends State<_PatientScheduleModal> {
         clinicId,
         activeOnly: true,
       );
-      final sessionsPerWeek =
-          await _centerScheduleService.getSessionsPerWeek(widget.patient.id);
-      final existingSchedule =
-          await _centerScheduleService.getPatientRecurringSchedule(
+      final sessionsPerWeek = await _centerScheduleService.getSessionsPerWeek(
         widget.patient.id,
       );
+      final existingSchedule = await _centerScheduleService
+          .getPatientRecurringSchedule(widget.patient.id);
 
       if (!mounted) return;
       setState(() {
@@ -264,12 +267,12 @@ class _PatientScheduleModalState extends State<_PatientScheduleModal> {
       // schedule, operating day, shift availability, capacity), re-run
       // against current data. The database enforces the same rules again
       // on write.
-      final validationError =
-          await _centerScheduleService.validateFinalAssignment(
-        patientId: widget.patient.id,
-        clinicId: clinicId,
-        dayShifts: _selections,
-      );
+      final validationError = await _centerScheduleService
+          .validateFinalAssignment(
+            patientId: widget.patient.id,
+            clinicId: clinicId,
+            dayShifts: _selections,
+          );
 
       if (validationError != null) {
         setState(() => _isSaving = false);
@@ -306,18 +309,13 @@ class _PatientScheduleModalState extends State<_PatientScheduleModal> {
         width: 600,
         constraints: const BoxConstraints(maxHeight: 760),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.18),
-              blurRadius: 26,
-              offset: const Offset(0, 14),
-            ),
-          ],
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(AppTheme.rXl),
+          border: Border.all(color: AppTheme.border),
+          boxShadow: AppTheme.shadowMd,
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppTheme.rXl),
           child: SingleChildScrollView(
             child: Column(
               children: [
@@ -332,8 +330,8 @@ class _PatientScheduleModalState extends State<_PatientScheduleModal> {
                           ),
                         )
                       : _contextError != null
-                          ? _buildErrorState()
-                          : _buildContent(),
+                      ? _buildErrorState()
+                      : _buildContent(),
                 ),
               ],
             ),
@@ -419,9 +417,9 @@ class _PatientScheduleModalState extends State<_PatientScheduleModal> {
       return Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: _orange.withOpacity(0.08),
+          color: _orange.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: _orange.withOpacity(0.3)),
+          border: Border.all(color: _orange.withValues(alpha: 0.3)),
         ),
         child: const Text(
           'This patient already has an active recurring schedule. Managing '
@@ -467,8 +465,9 @@ class _PatientScheduleModalState extends State<_PatientScheduleModal> {
 
   Widget _buildPatientInfo() {
     final stage = widget.patient.dialysisStage;
-    final sessionsLabel =
-        _sessionsPerWeek == null ? 'Not specified' : '$_sessionsPerWeek / week';
+    final sessionsLabel = _sessionsPerWeek == null
+        ? 'Not specified'
+        : '$_sessionsPerWeek / week';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -637,43 +636,43 @@ class _PatientScheduleModalState extends State<_PatientScheduleModal> {
             )
           else
             SizedBox(
-              width: 260,
-              child: DropdownButtonFormField<String>(
-                key: ValueKey('default-shift-$_defaultShiftId'),
-                initialValue: _defaultShiftId,
-                isDense: true,
-                decoration: InputDecoration(
+              width: 280,
+              child: AppMenuTheme(
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey('default-shift-$_defaultShiftId'),
+                  initialValue: _defaultShiftId,
                   isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 12,
+                  isExpanded: true,
+                  borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+                  dropdownColor: AppTheme.surface,
+                  icon: const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: AppTheme.iconMuted,
+                    size: 20,
                   ),
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: _border),
+                  style: AppTheme.fieldTextStyle,
+                  decoration: AppTheme.field(dense: true),
+                  hint: const Text(
+                    'Select shift',
+                    style: TextStyle(
+                      color: AppTheme.textMuted,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w400,
+                    ),
                   ),
-                ),
-                hint: const Text(
-                  'Select shift',
-                  style: TextStyle(fontSize: 13),
-                ),
-                items: _shifts
-                    .map(
-                      (s) => DropdownMenuItem(
-                        value: s.id,
-                        child: Text(
-                          '${s.shiftCode} — ${s.displayLabel}',
-                          style: const TextStyle(fontSize: 13),
+                  items: _shifts
+                      .map(
+                        (s) => DropdownMenuItem(
+                          value: s.id,
+                          child: Text('${s.shiftCode} — ${s.displayLabel}'),
                         ),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  setState(() => _defaultShiftId = value);
-                  _revalidate();
-                },
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    setState(() => _defaultShiftId = value);
+                    _revalidate();
+                  },
+                ),
               ),
             ),
         ],
@@ -713,7 +712,7 @@ class _PatientScheduleModalState extends State<_PatientScheduleModal> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.12),
+          color: color.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(99),
         ),
         child: Text(
@@ -732,8 +731,8 @@ class _PatientScheduleModalState extends State<_PatientScheduleModal> {
     final result = _recommendationResult;
     final best =
         (result != null && result.success && result.recommendations.isNotEmpty)
-            ? result.recommendations.first
-            : null;
+        ? result.recommendations.first
+        : null;
 
     return Container(
       width: double.infinity,
@@ -795,7 +794,7 @@ class _PatientScheduleModalState extends State<_PatientScheduleModal> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: _primary.withOpacity(0.4)),
+                border: Border.all(color: _primary.withValues(alpha: 0.4)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -811,7 +810,7 @@ class _PatientScheduleModalState extends State<_PatientScheduleModal> {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFEAF5FA),
+                              color: AppTheme.accentSoft,
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
@@ -833,13 +832,13 @@ class _PatientScheduleModalState extends State<_PatientScheduleModal> {
                       vertical: 5,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.green.shade50,
+                      color: AppTheme.accentGreenSoft,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
                       '${best.matchPercent}% Match',
                       style: TextStyle(
-                        color: Colors.green.shade700,
+                        color: AppTheme.accentGreen,
                         fontWeight: FontWeight.w900,
                         fontSize: 12,
                       ),

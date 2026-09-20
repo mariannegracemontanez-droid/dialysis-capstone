@@ -119,13 +119,16 @@ class CenterScheduleService {
     required int capacity,
     required bool isActive,
   }) async {
-    await supabase.from('clinic_shifts').update({
-      'shift_label': shiftLabel,
-      'start_time': startTime,
-      'end_time': endTime,
-      'capacity': capacity,
-      'is_active': isActive,
-    }).eq('id', shiftId);
+    await supabase
+        .from('clinic_shifts')
+        .update({
+          'shift_label': shiftLabel,
+          'start_time': startTime,
+          'end_time': endTime,
+          'capacity': capacity,
+          'is_active': isActive,
+        })
+        .eq('id', shiftId);
   }
 
   /// Optional day-level safety cap (clinics.target_daily_capacity): a
@@ -152,8 +155,10 @@ class CenterScheduleService {
   }) async {
     final rows = await supabase
         .from('patient_schedule_days')
-        .select('weekly_schedule_id, day_of_week, shift_id, '
-            'weekly_schedules(is_active)')
+        .select(
+          'weekly_schedule_id, day_of_week, shift_id, '
+          'weekly_schedules(is_active)',
+        )
         .eq('clinic_id', clinicId);
 
     final load = <String, int>{};
@@ -166,8 +171,9 @@ class CenterScheduleService {
       }
 
       final related = row['weekly_schedules'];
-      final isActive =
-          related is Map ? (related['is_active'] as bool? ?? true) : true;
+      final isActive = related is Map
+          ? (related['is_active'] as bool? ?? true)
+          : true;
       if (!isActive) continue;
 
       final key = '${row['day_of_week']}|${row['shift_id']}';
@@ -184,16 +190,28 @@ class CenterScheduleService {
     String clinicId, {
     String? excludeWeeklyScheduleId,
   }) async {
-    final operatingDays = await getOperatingDays(clinicId);
-    final shifts = await getClinicShifts(clinicId, activeOnly: true);
-    final dailyCap = await _getDailyCap(clinicId);
-    final load = await _loadRecurringLoad(
-      clinicId,
-      excludeWeeklyScheduleId: excludeWeeklyScheduleId,
-    );
+    // Four independent reads. They used to run one after another, which
+    // cost four sequential round trips on every capacity check; issuing
+    // them together returns exactly the same four results.
+    final results = await Future.wait<Object?>([
+      getOperatingDays(clinicId),
+      getClinicShifts(clinicId, activeOnly: true),
+      _getDailyCap(clinicId),
+      _loadRecurringLoad(
+        clinicId,
+        excludeWeeklyScheduleId: excludeWeeklyScheduleId,
+      ),
+    ]);
 
-    final totalShiftCapacity =
-        shifts.fold<int>(0, (sum, s) => sum + s.capacity);
+    final operatingDays = results[0] as List<String>;
+    final shifts = results[1] as List<ClinicShift>;
+    final dailyCap = results[2] as int?;
+    final load = results[3] as Map<String, int>;
+
+    final totalShiftCapacity = shifts.fold<int>(
+      0,
+      (sum, s) => sum + s.capacity,
+    );
 
     final days = <DayCapacity>[];
 
@@ -277,20 +295,31 @@ class CenterScheduleService {
   /// recurring schedule, mapped to their default shift code. Lets the
   /// daily view label a session as recurring rather than a one-off
   /// addition, without needing a new column on daily_schedules.
+  ///
+  /// [shifts] lets a caller that has already read this clinic's shifts
+  /// pass them in instead of paying for the same read again. Omitting it
+  /// reads them here, exactly as before.
   Future<Map<String, String>> getRecurringPatientShiftsForDay({
     required String clinicId,
     required String day,
+    List<ClinicShift>? shifts,
   }) async {
-    final dayRows = await supabase
-        .from('patient_schedule_days')
-        .select('weekly_schedule_id, shift_id')
-        .eq('clinic_id', clinicId)
-        .eq('day_of_week', day);
+    // The day's rows and the clinic's shifts don't depend on each other.
+    final results = await Future.wait<Object>([
+      supabase
+          .from('patient_schedule_days')
+          .select('weekly_schedule_id, shift_id')
+          .eq('clinic_id', clinicId)
+          .eq('day_of_week', day),
+      if (shifts == null) getClinicShifts(clinicId),
+    ]);
+
+    final dayRows = results[0] as List<dynamic>;
 
     if (dayRows.isEmpty) return {};
 
-    final shifts = await getClinicShifts(clinicId);
-    final shiftCodeById = {for (final s in shifts) s.id: s.shiftCode};
+    final clinicShifts = shifts ?? results[1] as List<ClinicShift>;
+    final shiftCodeById = {for (final s in clinicShifts) s.id: s.shiftCode};
 
     final weeklyIds = dayRows
         .map((r) => r['weekly_schedule_id'].toString())
@@ -342,14 +371,17 @@ class CenterScheduleService {
       throw Exception('No logged in user found.');
     }
 
-    await supabase.rpc('set_patient_recurring_schedule', params: {
-      'p_patient_id': patientId,
-      'p_clinic_id': clinicId,
-      'p_created_by': user.id,
-      'p_day_shifts': dayShifts
-          .map((d) => {'day': d.day, 'shift_id': d.shiftId})
-          .toList(),
-    });
+    await supabase.rpc(
+      'set_patient_recurring_schedule',
+      params: {
+        'p_patient_id': patientId,
+        'p_clinic_id': clinicId,
+        'p_created_by': user.id,
+        'p_day_shifts': dayShifts
+            .map((d) => {'day': d.day, 'shift_id': d.shiftId})
+            .toList(),
+      },
+    );
   }
 
   /// Every active recurring schedule at the clinic, grouped by weekday --
@@ -388,8 +420,8 @@ class CenterScheduleService {
 
     final nameById = {
       for (final row in patientRows)
-        row['id'].toString():
-            (row['full_name'] ?? 'Unknown patient').toString(),
+        row['id'].toString(): (row['full_name'] ?? 'Unknown patient')
+            .toString(),
     };
 
     // Default shifts, where they've been assigned.
@@ -403,8 +435,8 @@ class CenterScheduleService {
 
     final shiftByScheduleDay = <String, String>{
       for (final row in shiftRows)
-        '${row['weekly_schedule_id']}|${row['day_of_week']}':
-            row['shift_id'].toString(),
+        '${row['weekly_schedule_id']}|${row['day_of_week']}': row['shift_id']
+            .toString(),
     };
 
     for (final weekly in weeklyRows) {
@@ -443,8 +475,8 @@ class CenterScheduleService {
         final byShift = aCode.compareTo(bCode);
         if (byShift != 0) return byShift;
         return a.patientName.toLowerCase().compareTo(
-              b.patientName.toLowerCase(),
-            );
+          b.patientName.toLowerCase(),
+        );
       });
     }
 
@@ -463,7 +495,8 @@ class CenterScheduleService {
     String? excludeWeeklyScheduleId,
     CenterCapacitySnapshot? snapshot,
   }) async {
-    final capacity = snapshot ??
+    final capacity =
+        snapshot ??
         await getCapacitySnapshot(
           clinicId,
           excludeWeeklyScheduleId: excludeWeeklyScheduleId,
@@ -492,7 +525,8 @@ class CenterScheduleService {
       }
 
       final label = shiftCapacity.shift.displayLabel;
-      final used = '${shiftCapacity.scheduled}/${shiftCapacity.effectiveCapacity}';
+      final used =
+          '${shiftCapacity.scheduled}/${shiftCapacity.effectiveCapacity}';
 
       if (shiftCapacity.isFull) {
         return DayShiftStatus(
@@ -580,7 +614,7 @@ class CenterScheduleService {
       return existing.isActive
           ? 'This patient already has an active weekly schedule.'
           : 'This patient already has a weekly schedule on record (currently '
-              'inactive). Reactivate or remove it before assigning a new one.';
+                'inactive). Reactivate or remove it before assigning a new one.';
     }
 
     final sessionsPerWeek = await getSessionsPerWeek(patientId);
@@ -617,9 +651,16 @@ class CenterScheduleService {
   /// row that already exists for a patient on that date (manually added,
   /// in progress, completed, or previously generated), and never exceeds
   /// a shift's configured capacity for that date.
+  ///
+  /// [snapshot] lets a caller that has already built the capacity picture
+  /// hand it over instead of paying for a second one. It is the same
+  /// snapshot this method would have read for itself -- capacity comes
+  /// from the center's configuration and recurring load, neither of which
+  /// this method writes to.
   Future<void> generateTodayDefaultSchedule({
     required String clinicId,
     required DateTime date,
+    CenterCapacitySnapshot? snapshot,
   }) async {
     if (date.weekday == DateTime.sunday) return;
 
@@ -628,19 +669,31 @@ class CenterScheduleService {
 
     final dayName = allDays[date.weekday - 1];
 
-    final snapshot = await getCapacitySnapshot(clinicId);
-    final dayCapacity = snapshot.dayByName(dayName);
+    final capacity = snapshot ?? await getCapacitySnapshot(clinicId);
+    final dayCapacity = capacity.dayByName(dayName);
     if (dayCapacity == null || !dayCapacity.isOperating) return;
-    if (snapshot.activeShifts.isEmpty) return;
+    if (capacity.activeShifts.isEmpty) return;
 
-    final shiftsById = {for (final s in snapshot.activeShifts) s.id: s};
+    final shiftsById = {for (final s in capacity.activeShifts) s.id: s};
     final isoDate = date.toIso8601String().split('T')[0];
 
-    final dayRows = await supabase
-        .from('patient_schedule_days')
-        .select('weekly_schedule_id, shift_id')
-        .eq('clinic_id', clinicId)
-        .eq('day_of_week', dayName);
+    // The weekday's recurring rows and this date's existing occupancy are
+    // independent reads, so they go out together.
+    final reads = await Future.wait([
+      supabase
+          .from('patient_schedule_days')
+          .select('weekly_schedule_id, shift_id')
+          .eq('clinic_id', clinicId)
+          .eq('day_of_week', dayName),
+      supabase
+          .from('daily_schedules')
+          .select('patient_id, shift, status')
+          .eq('clinic_id', clinicId)
+          .eq('schedule_date', isoDate),
+    ]);
+
+    final dayRows = reads[0];
+    final existingToday = reads[1];
 
     if (dayRows.isEmpty) return;
 
@@ -660,15 +713,9 @@ class CenterScheduleService {
         row['id'].toString(): row['patient_id'].toString(),
     };
 
-    final existingToday = await supabase
-        .from('daily_schedules')
-        .select('patient_id, shift, status')
-        .eq('clinic_id', clinicId)
-        .eq('schedule_date', isoDate);
-
     final alreadyAssigned = <String>{};
     final currentShiftCounts = <String, int>{
-      for (final s in snapshot.activeShifts) s.shiftCode: 0,
+      for (final s in capacity.activeShifts) s.shiftCode: 0,
     };
 
     for (final row in existingToday) {
@@ -774,23 +821,23 @@ class CenterScheduleService {
 
     final shifts = baseDay == null
         ? capacity.activeShifts
-            .map(
-              (shift) => ShiftCapacity(
-                shift: shift,
-                scheduled: counts[shift.shiftCode] ?? 0,
-                effectiveCapacity: 0,
-              ),
-            )
-            .toList()
+              .map(
+                (shift) => ShiftCapacity(
+                  shift: shift,
+                  scheduled: counts[shift.shiftCode] ?? 0,
+                  effectiveCapacity: 0,
+                ),
+              )
+              .toList()
         : baseDay.shifts
-            .map(
-              (entry) => ShiftCapacity(
-                shift: entry.shift,
-                scheduled: counts[entry.shift.shiftCode] ?? 0,
-                effectiveCapacity: entry.effectiveCapacity,
-              ),
-            )
-            .toList();
+              .map(
+                (entry) => ShiftCapacity(
+                  shift: entry.shift,
+                  scheduled: counts[entry.shift.shiftCode] ?? 0,
+                  effectiveCapacity: entry.effectiveCapacity,
+                ),
+              )
+              .toList();
 
     return DayCapacity(
       day: dayName ?? 'Sunday',
@@ -809,7 +856,7 @@ class CenterScheduleService {
   /// Everything already on a date, keyed by patient -- the live rows and
   /// the cancelled (one-day-off) rows kept apart.
   Future<(Map<String, Map<String, dynamic>>, Map<String, Map<String, dynamic>>)>
-      _occurrencesByPatient({
+  _occurrencesByPatient({
     required String clinicId,
     required DateTime date,
   }) async {
@@ -848,84 +895,92 @@ class CenterScheduleService {
   /// A patient who is already live on this date is never offered -- the
   /// unique (patient, date) constraint means they can only be *moved*,
   /// which is a separate operation on their existing row.
+  ///
+  /// [shifts] lets a caller reuse clinic shifts it has already read.
   Future<List<DateScheduleCandidate>> getDateCandidates({
     required String clinicId,
     required DateTime date,
+    List<ClinicShift>? shifts,
   }) async {
     final dayName = dayNameFor(date);
     if (dayName == null) return [];
 
-    final (live, cancelled) = await _occurrencesByPatient(
-      clinicId: clinicId,
-      date: date,
-    );
+    // Four independent reads: what is already on the date, the weekday's
+    // recurring rows, the clinic's shifts, and any approved reschedule
+    // that lands here. None of them depends on another, so they are
+    // issued together rather than one after the next.
+    final results = await Future.wait<Object>([
+      _occurrencesByPatient(clinicId: clinicId, date: date),
+      supabase
+          .from('patient_schedule_days')
+          .select('weekly_schedule_id, shift_id')
+          .eq('clinic_id', clinicId)
+          .eq('day_of_week', dayName),
+      if (shifts == null) getClinicShifts(clinicId),
+      // Adding a patient to a day is the core workflow; the reschedule
+      // feature layers on top of it. If reschedule_requests isn't
+      // reachable (its migration hasn't been run yet), fall back to the
+      // recurring candidates rather than failing the whole modal.
+      _grantedReschedules(clinicId: clinicId, date: date),
+    ]);
 
-    // --- recurring candidates for this weekday -------------------------
-    final dayRows = await supabase
-        .from('patient_schedule_days')
-        .select('weekly_schedule_id, shift_id')
-        .eq('clinic_id', clinicId)
-        .eq('day_of_week', dayName);
+    final (live, cancelled) =
+        results[0]
+            as (
+              Map<String, Map<String, dynamic>>,
+              Map<String, Map<String, dynamic>>,
+            );
+    final dayRows = results[1] as List<dynamic>;
+    final clinicShifts = shifts ?? results[2] as List<ClinicShift>;
+    final grantedRows = results.last as List<Map<String, dynamic>>;
 
-    final shifts = await getClinicShifts(clinicId);
-    final shiftCodeById = {for (final s in shifts) s.id: s.shiftCode};
+    final shiftCodeById = {for (final s in clinicShifts) s.id: s.shiftCode};
 
-    final weeklyIdsForDay =
-        dayRows.map((r) => r['weekly_schedule_id'].toString()).toSet().toList();
+    final weeklyIdsForDay = dayRows
+        .map((r) => r['weekly_schedule_id'].toString())
+        .toSet()
+        .toList();
+
+    final grantedPatientIds = grantedRows
+        .map((r) => r['patient_id'].toString())
+        .toSet()
+        .toList();
+
+    // Both weekly_schedules lookups depend on the reads above but not on
+    // each other, so they form one more round trip rather than two.
+    final weeklyResults = await Future.wait([
+      if (weeklyIdsForDay.isNotEmpty)
+        supabase
+            .from('weekly_schedules')
+            .select('id, patient_id')
+            .inFilter('id', weeklyIdsForDay)
+            .eq('is_active', true),
+      if (grantedPatientIds.isNotEmpty)
+        supabase
+            .from('weekly_schedules')
+            .select('id, patient_id')
+            .eq('clinic_id', clinicId)
+            .inFilter('patient_id', grantedPatientIds)
+            .eq('is_active', true),
+    ]);
 
     final patientIdByWeeklyId = <String, String>{};
 
     if (weeklyIdsForDay.isNotEmpty) {
-      final weeklyRows = await supabase
-          .from('weekly_schedules')
-          .select('id, patient_id')
-          .inFilter('id', weeklyIdsForDay)
-          .eq('is_active', true);
-
-      for (final row in weeklyRows) {
-        patientIdByWeeklyId[row['id'].toString()] =
-            row['patient_id'].toString();
+      for (final row in weeklyResults.first) {
+        patientIdByWeeklyId[row['id'].toString()] = row['patient_id']
+            .toString();
       }
     }
-
-    // --- approved reschedules landing on this date ---------------------
-    // Adding a patient to a day is the core workflow; the reschedule
-    // feature layers on top of it. If reschedule_requests isn't reachable
-    // (its migration hasn't been run yet), fall back to the recurring
-    // candidates rather than failing the whole modal.
-    List<Map<String, dynamic>> grantedRows = [];
-
-    try {
-      final rows = await supabase
-          .from('reschedule_requests')
-          .select('id, patient_id, original_date, requested_date, resolved_date')
-          .eq('clinic_id', clinicId)
-          .inFilter('status', ['approved', 'changed_date'])
-          .eq('resolved_date', isoDate(date));
-
-      grantedRows = List<Map<String, dynamic>>.from(rows as List);
-    } on PostgrestException catch (e) {
-      debugPrint('Approved reschedule lookup skipped: ${e.message}');
-    }
-
-    final grantedPatientIds =
-        grantedRows.map((r) => r['patient_id'].toString()).toSet().toList();
 
     // A rescheduled patient needs a weekly_schedules row too -- it is
     // what daily_schedules.weekly_schedule_id points at.
     final weeklyIdByPatientId = <String, String>{};
 
     if (grantedPatientIds.isNotEmpty) {
-      final weeklyRows = await supabase
-          .from('weekly_schedules')
-          .select('id, patient_id')
-          .eq('clinic_id', clinicId)
-          .inFilter('patient_id', grantedPatientIds)
-          .eq('is_active', true);
-
-      for (final row in weeklyRows) {
-        weeklyIdByPatientId[row['patient_id'].toString()] =
-            row['id'].toString();
+      for (final row in weeklyResults.last) {
+        weeklyIdByPatientId[row['patient_id'].toString()] = row['id']
+            .toString();
       }
     }
 
@@ -946,7 +1001,8 @@ class CenterScheduleService {
 
     final nameById = {
       for (final row in patientRows)
-        row['id'].toString(): (row['full_name'] ?? 'Unknown patient').toString(),
+        row['id'].toString(): (row['full_name'] ?? 'Unknown patient')
+            .toString(),
     };
 
     final candidates = <String, DateScheduleCandidate>{};
@@ -979,7 +1035,8 @@ class CenterScheduleService {
       final name = nameById[patientId];
       if (name == null) continue;
 
-      final weeklyScheduleId = weeklyIdByPatientId[patientId] ??
+      final weeklyScheduleId =
+          weeklyIdByPatientId[patientId] ??
           candidates[patientId]?.weeklyScheduleId;
       if (weeklyScheduleId == null) continue;
 
@@ -996,10 +1053,12 @@ class CenterScheduleService {
         dailyScheduleId: cancelledRow?['id']?.toString(),
         currentShiftCode: cancelledRow?['shift']?.toString(),
         rescheduleRequestId: request['id'].toString(),
-        rescheduleOriginalDate:
-            DateTime.tryParse(request['original_date']?.toString() ?? ''),
-        rescheduleNewDate:
-            DateTime.tryParse(request['resolved_date']?.toString() ?? ''),
+        rescheduleOriginalDate: DateTime.tryParse(
+          request['original_date']?.toString() ?? '',
+        ),
+        rescheduleNewDate: DateTime.tryParse(
+          request['resolved_date']?.toString() ?? '',
+        ),
       );
     }
 
@@ -1012,6 +1071,31 @@ class CenterScheduleService {
     });
 
     return ordered;
+  }
+
+  /// Approved reschedule requests that grant [date]. Returns an empty
+  /// list -- rather than throwing -- when the reschedule_requests
+  /// migration hasn't been run, exactly as the inline try/catch this
+  /// replaced did.
+  Future<List<Map<String, dynamic>>> _grantedReschedules({
+    required String clinicId,
+    required DateTime date,
+  }) async {
+    try {
+      final rows = await supabase
+          .from('reschedule_requests')
+          .select(
+            'id, patient_id, original_date, requested_date, resolved_date',
+          )
+          .eq('clinic_id', clinicId)
+          .inFilter('status', ['approved', 'changed_date'])
+          .eq('resolved_date', isoDate(date));
+
+      return List<Map<String, dynamic>>.from(rows as List);
+    } on PostgrestException catch (e) {
+      debugPrint('Approved reschedule lookup skipped: ${e.message}');
+      return [];
+    }
   }
 
   /// Adds a patient to one shift on one date, or revives/moves the row
@@ -1229,7 +1313,9 @@ class CenterScheduleService {
     final shiftCapacity = _shiftCapacityByCode(dayCapacity, toShiftCode);
 
     if (shiftCapacity == null || !shiftCapacity.shift.isActive) {
-      throw Exception('The $toShiftCode shift is not available at this center.');
+      throw Exception(
+        'The $toShiftCode shift is not available at this center.',
+      );
     }
 
     if (shiftCapacity.isFull) {

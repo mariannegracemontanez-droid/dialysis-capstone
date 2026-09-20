@@ -4,6 +4,9 @@ import 'package:intl/intl.dart';
 import '../../models/clinic_shift.dart';
 import '../../models/reschedule_request.dart';
 import '../../services/reschedule_request_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/admin_modal.dart';
+import '../../widgets/admin_notice.dart';
 
 /// The Center Admin view of patient reschedule requests submitted from the
 /// mobile app. Reads the same `reschedule_requests` rows the mobile app
@@ -34,15 +37,17 @@ class RescheduleRequestsSection extends StatefulWidget {
 class RescheduleRequestsSectionState extends State<RescheduleRequestsSection> {
   final RescheduleRequestService _service = RescheduleRequestService();
 
-  static const Color primary = Color(0xFF245C78);
-  static const Color border = Color(0xFFE1E8EF);
-  static const Color textDark = Color(0xFF1F2D3D);
-  static const Color textMuted = Color(0xFF6B7A8C);
-  static const Color green = Color(0xFF10B981);
-  static const Color orange = Color(0xFFF59E0B);
-  static const Color purple = Color(0xFF8E44AD);
-  static const Color red = Color(0xFFDC2626);
-  static const Color softBg = Color(0xFFF8FAFC);
+  // Presentation only: the shared Admin theme's palette, under the names
+  // this file already used.
+  static const Color primary = AppTheme.blue1;
+  static const Color border = AppTheme.border;
+  static const Color textDark = AppTheme.textPrimary;
+  static const Color textMuted = AppTheme.textMuted;
+  static const Color green = AppTheme.accentGreen;
+  static const Color orange = AppTheme.accentOrange;
+  static const Color purple = AppTheme.accentPurple;
+  static const Color red = AppTheme.danger;
+  static const Color softBg = AppTheme.surfaceTint;
 
   List<RescheduleRequest> _requests = [];
   bool _isLoading = true;
@@ -92,16 +97,16 @@ class RescheduleRequestsSectionState extends State<RescheduleRequestsSection> {
     return text;
   }
 
+  /// Decisions here are taken from inside a modal, so the outcome goes
+  /// through the notice system rather than a snack bar the modal covers.
   void _showMessage(String message, {bool isError = false}) {
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? red : green,
-        duration: Duration(seconds: isError ? 6 : 4),
-      ),
-    );
+    if (isError) {
+      AdminNotice.error(context, message);
+    } else {
+      AdminNotice.success(context, message);
+    }
   }
 
   String _formatDate(DateTime? date, {String fallback = 'Not set'}) {
@@ -141,25 +146,21 @@ class RescheduleRequestsSectionState extends State<RescheduleRequestsSection> {
     if (!mounted) return;
 
     if (problem != null) {
-      final pickAnother = await showDialog<bool>(
+      final pickAnother = await showAdminConfirm(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('That date cannot be used'),
-          content: Text('$problem\n\nWould you like to pick another date?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Close'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primary,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Change Date'),
-            ),
-          ],
+        title: 'That date cannot be used',
+        icon: Icons.event_busy_rounded,
+        message: problem,
+        confirmLabel: 'Change date',
+        cancelLabel: 'Close',
+        detail: const Text(
+          'Would you like to pick another date?',
+          style: TextStyle(
+            color: AppTheme.textSecondary,
+            fontSize: 13.5,
+            height: 1.5,
+            fontWeight: FontWeight.w500,
+          ),
         ),
       );
 
@@ -167,31 +168,18 @@ class RescheduleRequestsSectionState extends State<RescheduleRequestsSection> {
       return;
     }
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAdminConfirm(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Accept reschedule request'),
-        content: Text(
+      title: 'Accept reschedule request',
+      icon: Icons.event_available_rounded,
+      confirmLabel: 'Accept',
+      message:
           'Move ${request.patientName}\'s session from '
           '${_formatDate(request.originalDate, fallback: 'their usual day')} '
-          'to ${_formatDate(date)}?\n\n'
-          'This is a one-time change. Their recurring weekly schedule stays '
-          'exactly as it is.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: green,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Accept'),
-          ),
-        ],
+          'to ${_formatDate(date)}?',
+      detail: _noticeBox(
+        'This is a one-time change. Their recurring weekly schedule stays '
+        'exactly as it is.',
       ),
     );
 
@@ -207,52 +195,97 @@ class RescheduleRequestsSectionState extends State<RescheduleRequestsSection> {
     });
   }
 
+  /// The tinted footnote under a decision's question, used wherever the
+  /// scope of the change is the thing worth spelling out.
+  static Widget _noticeBox(String text) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceTint,
+        borderRadius: BorderRadius.circular(AppTheme.rMd),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.event_repeat_rounded,
+            size: 16,
+            color: AppTheme.blue1,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 12.5,
+                height: 1.45,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _reject(RescheduleRequest request) async {
     final noteController = TextEditingController();
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAdminDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reject reschedule request'),
-        content: SizedBox(
-          width: 380,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Reject ${request.patientName}\'s request? Their schedule is '
-                'not changed in any way.',
-                style: const TextStyle(color: textDark, height: 1.4),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: noteController,
-                maxLines: 3,
-                maxLength: 300,
-                decoration: const InputDecoration(
-                  labelText: 'Reason for the patient (optional)',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-            ],
-          ),
-        ),
+      builder: (ctx) => AdminModal(
+        title: 'Reject reschedule request',
+        subtitle: 'The patient sees your reason in the mobile app.',
+        icon: Icons.event_busy_rounded,
+        accent: AppTheme.danger,
+        accentSoft: AppTheme.dangerSoft,
+        size: AdminModalSize.small,
         actions: [
-          TextButton(
+          OutlinedButton(
             onPressed: () => Navigator.of(ctx).pop(false),
+            style: AppTheme.secondaryButton(),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: red,
-              foregroundColor: Colors.white,
-            ),
+            style: AppTheme.dangerButton(),
             child: const Text('Reject request'),
           ),
         ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Reject ${request.patientName}\'s request? Their schedule is '
+              'not changed in any way.',
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 13.5,
+                height: 1.5,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+            const AdminFieldGap(),
+            AdminField(
+              label: 'Reason for the patient',
+              helper: 'Optional',
+              child: TextField(
+                controller: noteController,
+                maxLines: 3,
+                maxLength: 300,
+                textCapitalization: TextCapitalization.sentences,
+                style: AppTheme.fieldTextStyle,
+                decoration: AppTheme.field(
+                  hintText: 'Let them know why, so they can plan around it.',
+                ).copyWith(counterText: '', alignLabelWithHint: true),
+              ),
+            ),
+          ],
+        ),
       ),
     );
 
@@ -278,7 +311,7 @@ class RescheduleRequestsSectionState extends State<RescheduleRequestsSection> {
     final shifts = await _service.getActiveShifts(widget.clinicId);
     if (!mounted) return;
 
-    final result = await showDialog<(DateTime, String?, String?)>(
+    final result = await showAdminDialog<(DateTime, String?, String?)>(
       context: context,
       builder: (ctx) => _ChangeDateDialog(
         request: request,
@@ -351,9 +384,9 @@ class RescheduleRequestsSectionState extends State<RescheduleRequestsSection> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.11),
+        color: color.withValues(alpha: 0.11),
         borderRadius: BorderRadius.circular(99),
-        border: Border.all(color: color.withOpacity(0.25)),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Text(
         label,
@@ -409,7 +442,7 @@ class RescheduleRequestsSectionState extends State<RescheduleRequestsSection> {
         color: request.isPending ? Colors.white : softBg,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: request.isPending ? orange.withOpacity(0.35) : border,
+          color: request.isPending ? orange.withValues(alpha: 0.35) : border,
         ),
       ),
       child: Column(
@@ -421,13 +454,13 @@ class RescheduleRequestsSectionState extends State<RescheduleRequestsSection> {
               children: [
                 CircleAvatar(
                   radius: 14,
-                  backgroundColor: const Color(0xFFE0F2FE),
+                  backgroundColor: AppTheme.accentBlueSoft,
                   child: Text(
                     request.patientName.trim().isEmpty
                         ? 'P'
                         : request.patientName.trim()[0].toUpperCase(),
                     style: const TextStyle(
-                      color: Color(0xFF0369A1),
+                      color: AppTheme.blue1,
                       fontWeight: FontWeight.w900,
                       fontSize: 12,
                     ),
@@ -507,7 +540,7 @@ class RescheduleRequestsSectionState extends State<RescheduleRequestsSection> {
                     _detailLine(
                       'Scheduled for',
                       '${_formatDate(request.resolvedDate)}'
-                      '${request.resolvedShift == null ? '' : ' • ${request.resolvedShift} shift'}',
+                          '${request.resolvedShift == null ? '' : ' • ${request.resolvedShift} shift'}',
                     ),
                   if (request.adminNotes != null)
                     _detailLine('Your note', request.adminNotes!),
@@ -553,7 +586,7 @@ class RescheduleRequestsSectionState extends State<RescheduleRequestsSection> {
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: red,
                                   side: BorderSide(
-                                    color: red.withOpacity(0.45),
+                                    color: red.withValues(alpha: 0.45),
                                   ),
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 14,
@@ -570,15 +603,12 @@ class RescheduleRequestsSectionState extends State<RescheduleRequestsSection> {
                               ),
                               OutlinedButton.icon(
                                 onPressed: () => _changeDate(request),
-                                icon: const Icon(
-                                  Icons.event_rounded,
-                                  size: 15,
-                                ),
+                                icon: const Icon(Icons.event_rounded, size: 15),
                                 label: const Text('Change Date'),
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: primary,
                                   side: BorderSide(
-                                    color: primary.withOpacity(0.45),
+                                    color: primary.withValues(alpha: 0.45),
                                   ),
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 14,
@@ -626,9 +656,9 @@ class RescheduleRequestsSectionState extends State<RescheduleRequestsSection> {
       return Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: red.withOpacity(0.06),
+          color: red.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: red.withOpacity(0.25)),
+          border: Border.all(color: red.withValues(alpha: 0.25)),
         ),
         child: Row(
           children: [
@@ -738,11 +768,6 @@ class _ChangeDateDialog extends StatefulWidget {
 }
 
 class _ChangeDateDialogState extends State<_ChangeDateDialog> {
-  static const Color primary = Color(0xFF245C78);
-  static const Color textDark = Color(0xFF1F2D3D);
-  static const Color textMuted = Color(0xFF6B7A8C);
-  static const Color red = Color(0xFFDC2626);
-
   DateTime? _date;
 
   /// Null means "keep the patient's own default shift for that weekday",
@@ -824,125 +849,25 @@ class _ChangeDateDialogState extends State<_ChangeDateDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Change dialysis date'),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${widget.request.patientName} — this changes one session only. '
-              'Their recurring weekly schedule and default shift stay as they '
-              'are.',
-              style: const TextStyle(
-                fontSize: 12,
-                color: textMuted,
-                height: 1.4,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 14),
-            OutlinedButton.icon(
-              onPressed: _isChecking ? null : _pickDate,
-              icon: const Icon(Icons.event_rounded, size: 17),
-              label: Text(
-                _date == null
-                    ? 'Pick a new date'
-                    : DateFormat('EEE, MMM d, yyyy').format(_date!),
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: primary,
-                alignment: Alignment.centerLeft,
-                minimumSize: const Size(double.infinity, 44),
-              ),
-            ),
-            const SizedBox(height: 14),
-            const Text(
-              'Shift',
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w900,
-                color: textDark,
-              ),
-            ),
-            const SizedBox(height: 6),
-            DropdownButtonFormField<String?>(
-              initialValue: _shiftCode,
-              isDense: true,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-              items: [
-                const DropdownMenuItem<String?>(
-                  value: null,
-                  child: Text("Use the patient's usual shift"),
-                ),
-                ...widget.shifts.map(
-                  (shift) => DropdownMenuItem<String?>(
-                    value: shift.shiftCode,
-                    child: Text(
-                      '${shift.shiftCode} — ${shift.displayLabel}',
-                    ),
-                  ),
-                ),
-              ],
-              onChanged: _isChecking
-                  ? null
-                  : (value) => setState(() {
-                      _shiftCode = value;
-                      _problem = null;
-                    }),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _noteController,
-              maxLines: 2,
-              maxLength: 300,
-              enabled: !_isChecking,
-              decoration: const InputDecoration(
-                labelText: 'Note for the patient (optional)',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-            if (_problem != null) ...[
-              const SizedBox(height: 4),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: red.withOpacity(0.07),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: red.withOpacity(0.25)),
-                ),
-                child: Text(
-                  _problem!,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    color: red,
-                    fontWeight: FontWeight.w700,
-                    height: 1.4,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+    return AdminModal(
+      title: 'Change dialysis date',
+      subtitle:
+          '${widget.request.patientName} \u2014 this changes one session '
+          'only. Their recurring weekly schedule and default shift stay as '
+          'they are.',
+      icon: Icons.edit_calendar_rounded,
+      size: AdminModalSize.medium,
+      errorText: _problem,
+      busy: _isChecking,
       actions: [
-        TextButton(
+        OutlinedButton(
           onPressed: _isChecking ? null : () => Navigator.of(context).pop(),
+          style: AppTheme.secondaryButton(),
           child: const Text('Cancel'),
         ),
         ElevatedButton(
           onPressed: _isChecking ? null : _confirm,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: primary,
-            foregroundColor: Colors.white,
-          ),
+          style: AppTheme.primaryButton(),
           child: _isChecking
               ? const SizedBox(
                   width: 16,
@@ -955,6 +880,111 @@ class _ChangeDateDialogState extends State<_ChangeDateDialog> {
               : const Text('Save new date'),
         ),
       ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AdminField(
+            label: 'New date',
+            required: true,
+            child: SizedBox(
+              height: 50,
+              child: OutlinedButton.icon(
+                onPressed: _isChecking ? null : _pickDate,
+                icon: const Icon(Icons.event_rounded, size: 18),
+                label: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _date == null
+                        ? 'Pick a new date'
+                        : DateFormat('EEE, MMM d, yyyy').format(_date!),
+                    style: TextStyle(
+                      fontWeight: _date == null
+                          ? FontWeight.w400
+                          : FontWeight.w600,
+                    ),
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: AppTheme.surfaceTint,
+                  foregroundColor: _date == null
+                      ? AppTheme.textMuted
+                      : AppTheme.textPrimary,
+                  iconColor: _date == null
+                      ? AppTheme.iconMuted
+                      : AppTheme.blue1,
+                  side: const BorderSide(color: AppTheme.border),
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppTheme.rMd),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          const AdminFieldGap(),
+
+          AdminField(
+            label: 'Shift',
+            helper: 'Optional',
+            child: AppMenuTheme(
+              child: DropdownButtonFormField<String?>(
+                initialValue: _shiftCode,
+                isExpanded: true,
+                borderRadius: BorderRadius.circular(AppTheme.menuRadius),
+                dropdownColor: AppTheme.surface,
+                icon: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: AppTheme.iconMuted,
+                  size: 20,
+                ),
+                style: AppTheme.fieldTextStyle,
+                decoration: AppTheme.field(dense: true),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text("Use the patient's usual shift"),
+                  ),
+                  ...widget.shifts.map(
+                    (shift) => DropdownMenuItem<String?>(
+                      value: shift.shiftCode,
+                      child: Text(
+                        '${shift.shiftCode} \u2014 ${shift.displayLabel}',
+                      ),
+                    ),
+                  ),
+                ],
+                onChanged: _isChecking
+                    ? null
+                    : (value) => setState(() {
+                        _shiftCode = value;
+                        _problem = null;
+                      }),
+              ),
+            ),
+          ),
+
+          const AdminFieldGap(),
+
+          AdminField(
+            label: 'Note for the patient',
+            helper: 'Optional',
+            child: TextField(
+              controller: _noteController,
+              maxLines: 3,
+              maxLength: 300,
+              enabled: !_isChecking,
+              textCapitalization: TextCapitalization.sentences,
+              style: AppTheme.fieldTextStyle,
+              decoration: AppTheme.field(
+                hintText: 'Anything they should know about the new date.',
+              ).copyWith(counterText: '', alignLabelWithHint: true),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
