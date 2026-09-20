@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../services/appointment_service.dart';
+import '../../services/health_monitoring_service.dart';
 
 class AppointmentHistoryPage extends StatefulWidget {
   const AppointmentHistoryPage({super.key});
@@ -14,11 +15,17 @@ class AppointmentHistoryPage extends StatefulWidget {
 
 class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
   final AppointmentService _appointmentService = AppointmentService();
+  final HealthMonitoringService _healthService = HealthMonitoringService();
 
   bool _isLoading = true;
   String? _errorMessage;
   List<String> _scheduledDays = [];
   DateTime? _scheduleCreatedAt;
+
+  // Dates (yyyy-MM-dd) the patient actually has a logged BP or weight
+  // reading for — used to tell a completed session apart from a missed
+  // one, matching the History section on the Schedule tab.
+  Set<String> _loggedSessionDates = {};
 
   static const Map<int, String> _weekdayNames = {
     DateTime.monday: 'Monday',
@@ -38,9 +45,25 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
 
   Future<void> _loadSchedule() async {
     try {
-      final data = await _appointmentService.getMySchedule();
+      final results = await Future.wait([
+        _appointmentService.getMySchedule(),
+        _healthService.getBloodPressureRecords(),
+        _healthService.getWeightRecords(),
+      ]);
 
       if (!mounted) return;
+
+      final data = results[0] as Map<String, dynamic>?;
+      final bpRecords = results[1] as List<Map<String, dynamic>>;
+      final weightRecords = results[2] as List<Map<String, dynamic>>;
+
+      final loggedDates = <String>{};
+      for (final record in [...bpRecords, ...weightRecords]) {
+        final sessionDate = record['session_date']?.toString();
+        if (sessionDate != null && sessionDate.isNotEmpty) {
+          loggedDates.add(sessionDate.split('T').first);
+        }
+      }
 
       setState(() {
         _scheduledDays = _parseScheduledDays(
@@ -49,6 +72,7 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
         _scheduleCreatedAt = DateTime.tryParse(
           data?['weekly_schedule']?['created_at']?.toString() ?? '',
         );
+        _loggedSessionDates = loggedDates;
         _isLoading = false;
       });
     } catch (e) {
@@ -59,6 +83,11 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
         _isLoading = false;
       });
     }
+  }
+
+  bool _hasLoggedSessionOn(DateTime date) {
+    final key = DateFormat('yyyy-MM-dd').format(date);
+    return _loggedSessionDates.contains(key);
   }
 
   List<String> _parseScheduledDays(dynamic scheduledDays) {
@@ -282,7 +311,7 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
                       padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
                       children: [
                         const Text(
-                          'Completed Sessions',
+                          'Past Sessions',
                           style: TextStyle(
                             color: Color(0xFF173B4F),
                             fontSize: 18,
@@ -291,14 +320,20 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
                         ),
                         const SizedBox(height: 12),
                         ...historyDates.map((date) {
+                          final attended = _hasLoggedSessionOn(date);
+
                           return Container(
                             margin: const EdgeInsets.only(bottom: 12),
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: attended
+                                  ? Colors.white
+                                  : const Color(0xFFFFF3F0),
                               borderRadius: BorderRadius.circular(18),
                               border: Border.all(
-                                color: const Color(0xFFE1EAF0),
+                                color: attended
+                                    ? const Color(0xFFE1EAF0)
+                                    : const Color(0xFFF7C9BE),
                               ),
                               boxShadow: [
                                 BoxShadow(
@@ -314,12 +349,18 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
                                   width: 46,
                                   height: 46,
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFE8F1F5),
+                                    color: attended
+                                        ? const Color(0xFFE8F1F5)
+                                        : const Color(0xFFFBE2DB),
                                     borderRadius: BorderRadius.circular(14),
                                   ),
-                                  child: const Icon(
-                                    Icons.check_circle_outline,
-                                    color: Color(0xFF2C5F7D),
+                                  child: Icon(
+                                    attended
+                                        ? Icons.check_circle_outline
+                                        : Icons.error_outline,
+                                    color: attended
+                                        ? const Color(0xFF2C5F7D)
+                                        : const Color(0xFFC0432A),
                                   ),
                                 ),
                                 const SizedBox(width: 14),
@@ -339,11 +380,18 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
                                         ),
                                       ),
                                       const SizedBox(height: 4),
-                                      const Text(
-                                        'Dialysis session completed',
+                                      Text(
+                                        attended
+                                            ? 'Dialysis session completed'
+                                            : 'Patient did not take dialysis session today',
                                         style: TextStyle(
-                                          color: Color(0xFF5B6D7D),
+                                          color: attended
+                                              ? const Color(0xFF5B6D7D)
+                                              : const Color(0xFFC0432A),
                                           fontSize: 12,
+                                          fontWeight: attended
+                                              ? FontWeight.normal
+                                              : FontWeight.w700,
                                         ),
                                       ),
                                     ],

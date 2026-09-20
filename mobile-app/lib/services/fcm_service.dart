@@ -17,10 +17,15 @@ class FcmService {
       FlutterLocalNotificationsPlugin();
 
   AndroidNotificationChannel? _channel;
+  bool _localNotificationsReady = false;
+  bool _initialized = false;
 
   Future<void> initialize() async {
-    await _requestPermission();
+    if (_initialized) return;
+    _initialized = true;
+
     await _initializeLocalNotifications();
+    await _requestPermission();
     await _notificationService.saveFcmToken();
 
     FirebaseMessaging.instance.onTokenRefresh.listen((token) async {
@@ -30,6 +35,42 @@ class FcmService {
     FirebaseMessaging.onMessage.listen((message) async {
       await _showLocalNotification(message);
     });
+
+    FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      debugPrint('Notification tapped: ${message.messageId}');
+    });
+  }
+
+  /// Shows a system notification directly, without needing an incoming FCM
+  /// [RemoteMessage] — used for notifications this app creates for the
+  /// current device itself (e.g. water intake alerts, schedule reminders),
+  /// so the user sees a real phone notification, not just an in-app row.
+  Future<void> showLocalNotification({
+    required String title,
+    required String body,
+  }) async {
+    await initialize();
+
+    try {
+      await _localNotificationsPlugin.show(
+        DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        title,
+        body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            _channel?.id ?? 'cure_nurture_notifications',
+            _channel?.name ?? 'CureNurture Notifications',
+            channelDescription: _channel?.description,
+            importance: Importance.high,
+            priority: Priority.high,
+            icon: '@mipmap/ic_launcher',
+          ),
+          iOS: const DarwinNotificationDetails(),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Show local notification error: $e');
+    }
   }
 
   Future<void> _requestPermission() async {
@@ -44,9 +85,24 @@ class FcmService {
     } catch (e) {
       debugPrint('FCM request permission error: $e');
     }
+
+    // Android 13+ requires this separate runtime permission for any
+    // notification (local or push) to actually be allowed to show.
+    try {
+      await _localNotificationsPlugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.requestNotificationsPermission();
+    } catch (e) {
+      debugPrint('Android notification permission request error: $e');
+    }
   }
 
   Future<void> _initializeLocalNotifications() async {
+    if (_localNotificationsReady) return;
+    _localNotificationsReady = true;
+
     const androidSettings = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
     );

@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/user_model.dart';
 import '../../services/auth/auth_service.dart';
 import '../notifications/notification_page.dart';
+import '../profile/medical_records_page.dart';
 import 'edit_profile_page.dart';
 import 'medical_info_page.dart';
 import 'privacy_security_page.dart';
@@ -589,7 +590,14 @@ class _ProfileTabState extends State<ProfileTab> {
                       context,
                       'Medical Records',
                       Icons.folder_open_outlined,
-                      () {},
+                      () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                MedicalRecordsPage(user: _currentUser),
+                          ),
+                        );
+                      },
                     ),
                     _buildLinkTile(
                       context,

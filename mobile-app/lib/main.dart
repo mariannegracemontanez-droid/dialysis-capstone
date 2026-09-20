@@ -18,12 +18,25 @@ import 'pages/home/privacy_security_page.dart';
 import 'pages/auth/application_complete_page.dart';
 import 'config/supabase_config.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
+
+/// Must be a top-level (or static) function — this is what actually lets a
+/// real FCM push be processed while the app is backgrounded or terminated.
+/// It currently just logs; once server-side push sending exists, this is
+/// where a data-only background message could, e.g., refresh local state.
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // ignore: avoid_print
+  print('Background FCM message received: ${message.messageId}');
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   String? initError;
 

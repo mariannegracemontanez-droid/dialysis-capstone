@@ -5,6 +5,7 @@ import '../../models/signup_data.dart';
 import '../../models/user_model.dart';
 import '../../services/auth/auth_service.dart';
 import '../../services/appointment_service.dart';
+import '../../services/fcm_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/patient_service.dart';
 import 'health_monitoring_page.dart';
@@ -28,12 +29,45 @@ class _HomePageState extends State<HomePage> {
   bool _isPreparingReapply = false;
   List<Map<String, dynamic>> _pendingApplications = [];
   RealtimeChannel? _patientChannel;
+  RealtimeChannel? _notificationChannel;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
     _setupPatientRealtime();
+    _setupNotificationRealtime();
+  }
+
+  /// Makes every notification this patient receives — whether created by
+  /// this device (e.g. a water intake alert) or by the clinic/admin from
+  /// elsewhere — also pop up as a real system notification, not just a row
+  /// on the in-app Notifications page.
+  void _setupNotificationRealtime() {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    FcmService().initialize();
+
+    _notificationChannel = Supabase.instance.client
+        .channel('notifications-${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'notifications',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'recipient_id',
+            value: user.id,
+          ),
+          callback: (payload) {
+            final row = payload.newRecord;
+            final title = row['title']?.toString() ?? 'CureNurture';
+            final message = row['message']?.toString() ?? '';
+            FcmService().showLocalNotification(title: title, body: message);
+          },
+        )
+        .subscribe();
   }
 
   void _setupPatientRealtime() {
@@ -1034,6 +1068,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _patientChannel?.unsubscribe();
+    _notificationChannel?.unsubscribe();
     super.dispose();
   }
 

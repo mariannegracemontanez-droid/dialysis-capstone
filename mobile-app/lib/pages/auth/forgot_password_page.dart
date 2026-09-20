@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth/auth_service.dart';
 import '../../utils/validators.dart';
 
@@ -54,7 +55,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     setState(() {
       _otpError = value.isEmpty
           ? null
-          : (value.length < 6 ? 'OTP must be 6 digits' : null);
+          : (value.length < 8 ? 'OTP must be 8 digits' : null);
     });
   }
 
@@ -108,10 +109,10 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       return;
     }
 
-    if (otp.length < 6) {
+    if (otp.length < 8) {
       setState(() {
-        _otpError = 'OTP must be 6 digits';
-        _errorMessage = 'OTP must be at least 6 characters';
+        _otpError = 'OTP must be 8 digits';
+        _errorMessage = 'OTP must be 8 digits';
         _successMessage = null;
       });
       return;
@@ -124,9 +125,13 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     });
 
     try {
-      // In a real app, this would verify the OTP with backend
-      // For now, we'll simulate OTP verification
-      await Future.delayed(const Duration(seconds: 1));
+      // Real verification against Supabase — a wrong or expired OTP throws
+      // an AuthException below and never reaches the success branch.
+      await Supabase.instance.client.auth.verifyOTP(
+        email: _emailController.text.trim(),
+        token: otp,
+        type: OtpType.recovery,
+      );
 
       setState(() {
         _successMessage = 'OTP verified! You can now change your password.';
@@ -138,9 +143,13 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
           Navigator.of(context).pushReplacementNamed('/change-password');
         }
       });
+    } on AuthException catch (e) {
+      setState(() {
+        _errorMessage = e.message;
+      });
     } catch (e) {
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = 'Something went wrong. Please try again.';
       });
     } finally {
       setState(() {
@@ -337,7 +346,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                               TextField(
                                 controller: _otpController,
                                 keyboardType: TextInputType.number,
-                                maxLength: 6,
+                                maxLength: 8,
                                 onChanged: _onOtpChanged,
                                 style: const TextStyle(
                                   color: Colors.white,
@@ -352,7 +361,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                                   errorStyle: const TextStyle(
                                     color: Color(0xFFFFC1C1),
                                   ),
-                                  hintText: '000000',
+                                  hintText: '00000000',
                                   hintStyle: TextStyle(
                                     color: Colors.white.withOpacity(0.55),
                                     fontWeight: FontWeight.w600,

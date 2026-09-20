@@ -4,6 +4,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
 
+enum _Platform { android, ios, other }
+
+_Platform get _currentPlatform {
+  if (kIsWeb) return _Platform.other;
+  if (defaultTargetPlatform == TargetPlatform.android) return _Platform.android;
+  if (defaultTargetPlatform == TargetPlatform.iOS) return _Platform.ios;
+  return _Platform.other;
+}
+
 class NotificationService {
   final SupabaseClient _supabase = SupabaseConfig.client;
 
@@ -97,7 +106,7 @@ class NotificationService {
       await _supabase.from('device_tokens').upsert({
         'token': fcmToken,
         'user_id': userId,
-        'platform': 'android',
+        'platform': _currentPlatform.name,
       }, onConflict: 'token');
     } catch (e) {
       debugPrint('Save FCM token error: $e');

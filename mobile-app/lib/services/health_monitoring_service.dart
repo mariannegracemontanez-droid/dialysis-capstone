@@ -67,6 +67,24 @@ class HealthMonitoringService {
     return List<Map<String, dynamic>>.from(data as List<dynamic>);
   }
 
+  /// Full water intake history, with no 30-day cap — used for exports
+  /// (e.g. "Download My Data") where the complete record is wanted.
+  Future<List<Map<String, dynamic>>> getAllWaterHistory() async {
+    final patientId = await getCurrentPatientId();
+    if (patientId == null) {
+      return [];
+    }
+
+    final data = await _supabase
+        .from('water_intake_logs')
+        .select('id, amount_ml, logged_at, log_date, notes')
+        .eq('patient_id', patientId)
+        .order('log_date', ascending: false)
+        .order('logged_at', ascending: false);
+
+    return List<Map<String, dynamic>>.from(data as List<dynamic>);
+  }
+
   Future<void> addWaterIntake(int amountMl) async {
     final patientId = await getCurrentPatientId();
     if (patientId == null) {

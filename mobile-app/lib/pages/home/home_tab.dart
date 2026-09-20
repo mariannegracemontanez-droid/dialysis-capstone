@@ -411,6 +411,17 @@ class _HomeTabState extends State<HomeTab> {
 
   double get _waterProgressValue => min(_todayTotalMl / _dailyGoalMl, 1.0);
 
+  bool get _isWaterExceeded => _todayTotalMl > _dailyGoalMl;
+
+  bool get _isWaterNearLimit =>
+      !_isWaterExceeded && _todayTotalMl >= _dailyGoalMl * 0.8;
+
+  Color get _waterStatusColor {
+    if (_isWaterExceeded) return const Color(0xFFE53935);
+    if (_isWaterNearLimit) return const Color(0xFFF2A93B);
+    return const Color(0xFF1D9BD1);
+  }
+
   String _getBpSummary() {
     if (_latestBloodPressure == null) return 'No BP record yet';
 
@@ -1048,7 +1059,7 @@ class _HomeTabState extends State<HomeTab> {
                   title: 'Water Goal',
                   value:
                       '$waterPercent% • $_todayTotalMl mL / $_dailyGoalMl mL',
-                  color: const Color(0xFF1D9BD1),
+                  color: _waterStatusColor,
                 ),
                 const SizedBox(height: 12),
                 ClipRRect(
@@ -1057,9 +1068,30 @@ class _HomeTabState extends State<HomeTab> {
                     value: _waterProgressValue,
                     minHeight: 9,
                     backgroundColor: const Color(0xFFE8F1F5),
-                    color: const Color(0xFF1D9BD1),
+                    color: _waterStatusColor,
                   ),
                 ),
+                if (_isWaterExceeded) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'You have exceeded your recommended water intake for today.',
+                    style: TextStyle(
+                      color: Color(0xFFE53935),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ] else if (_isWaterNearLimit) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'You are close to your daily water intake limit.',
+                    style: TextStyle(
+                      color: Color(0xFFB4690E),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 _buildStatusRow(
                   icon: Icons.favorite_border_rounded,

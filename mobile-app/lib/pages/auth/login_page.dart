@@ -3,6 +3,7 @@ import 'package:CureNurture/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth/auth_service.dart';
+import '../../services/notification_preferences_service.dart';
 import '../../theme/auth_theme_controller.dart';
 import '../../utils/validators.dart';
 
@@ -89,11 +90,15 @@ class _LoginPageState extends State<LoginPage> {
         try {
           await FcmService().initialize();
 
-          await NotificationService().createNotification(
-            title: 'Account Login',
-            message: 'Your account was accessed just now.',
-            type: 'security',
-          );
+          final loginNotificationsEnabled = await NotificationPreferencesService()
+              .isLoginNotificationsEnabled();
+          if (loginNotificationsEnabled) {
+            await NotificationService().createNotification(
+              title: 'Account Login',
+              message: 'Your account was accessed just now.',
+              type: 'security',
+            );
+          }
         } catch (e) {
           debugPrint('Notification setup error: $e');
         }

@@ -54,6 +54,10 @@ dependencies:
   firebase_core: ^4.7.0
   firebase_messaging: ^16.2.0
   flutter_local_notifications: ^17.2.3
+  pdf: ^3.11.1
+  printing: ^5.13.4
+  http: ^1.2.2
+  shared_preferences: ^2.3.2
 
 dev_dependencies:
   flutter_test:
@@ -65,9 +69,10 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "asset/Image/CureNurture_CircleLogo.png"
+  remove_alpha_ios: true
+  image_path: "lib/asset/Image/CureNurture_CircleLogo.png"
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "asset/Image/CureNurture_CircleLogo.png"
+  adaptive_icon_foreground: "lib/asset/Image/CureNurture_CircleLogo.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

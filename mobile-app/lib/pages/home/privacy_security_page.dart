@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 import 'login_history_page.dart';
+import '../../services/auth/auth_service.dart';
+import '../../services/data_export_service.dart';
+import '../../services/notification_preferences_service.dart';
 import '../profile/privacy_policy_page.dart';
 
 class PrivacySecurityPage extends StatefulWidget {
@@ -10,8 +14,56 @@ class PrivacySecurityPage extends StatefulWidget {
 }
 
 class _PrivacySecurityPageState extends State<PrivacySecurityPage> {
+  final NotificationPreferencesService _notificationPrefs =
+      NotificationPreferencesService();
   bool _twoFactorAuth = false;
   bool _loginNotifications = false;
+  bool _isExportingData = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreferences();
+  }
+
+  Future<void> _loadPreferences() async {
+    final enabled = await _notificationPrefs.isLoginNotificationsEnabled();
+    if (!mounted) return;
+    setState(() => _loginNotifications = enabled);
+  }
+
+  Future<void> _setLoginNotifications(bool value) async {
+    setState(() => _loginNotifications = value);
+    await _notificationPrefs.setLoginNotificationsEnabled(value);
+  }
+
+  Future<void> _downloadMyData() async {
+    setState(() => _isExportingData = true);
+
+    try {
+      final user = await AuthService().getCurrentUser();
+      if (user == null) {
+        throw Exception('Unable to identify your account.');
+      }
+
+      final bytes = await DataExportService().generateMyDataPdf(user);
+
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: 'CureNurture_MyData_${DateTime.now().millisecondsSinceEpoch}.pdf',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unable to generate your data: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isExportingData = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -134,11 +186,7 @@ class _PrivacySecurityPageState extends State<PrivacySecurityPage> {
                           title: const Text('Login Notifications'),
                           subtitle: const Text('Receive alerts for new logins'),
                           value: _loginNotifications,
-                          onChanged: (value) {
-                            setState(() {
-                              _loginNotifications = value;
-                            });
-                          },
+                          onChanged: _setLoginNotifications,
                         ),
                       ],
                     ),
@@ -204,13 +252,25 @@ class _PrivacySecurityPageState extends State<PrivacySecurityPage> {
                     child: Column(
                       children: [
                         ListTile(
-                          leading: const Icon(
-                            Icons.download_outlined,
-                            color: Color(0xFF2C5F7D),
-                          ),
+                          leading: _isExportingData
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                    color: Color(0xFF2C5F7D),
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.download_outlined,
+                                  color: Color(0xFF2C5F7D),
+                                ),
                           title: const Text('Download My Data'),
+                          subtitle: const Text(
+                            'PDF of your schedule, health logs, and submitted documents',
+                          ),
                           trailing: const Icon(Icons.chevron_right),
-                          onTap: () {},
+                          onTap: _isExportingData ? null : _downloadMyData,
                         ),
                         const Divider(height: 1),
                         ListTile(
