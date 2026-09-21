@@ -5,6 +5,7 @@ import '../models/donation_record.dart';
 import '../models/fund_distribution.dart';
 import 'package:super_admin_app/services/donation_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/super_admin_notice.dart';
 
 int verifiedCount = 0;
 
@@ -221,9 +222,7 @@ class _DonationsPageState extends State<DonationsPage> {
       }
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load donations: $error')),
-      );
+      SuperAdminNotice.error(context, 'Failed to load donations: $error');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -242,8 +241,9 @@ class _DonationsPageState extends State<DonationsPage> {
       setState(() => _historyEntries = entries);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load center history: $error')),
+      SuperAdminNotice.error(
+        context,
+        'Failed to load center history: $error',
       );
     } finally {
       if (mounted) {
@@ -267,8 +267,9 @@ class _DonationsPageState extends State<DonationsPage> {
       setState(() => _overallCenterEntries = entries);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load overall donation history: $error')),
+      SuperAdminNotice.error(
+        context,
+        'Failed to load overall donation history: $error',
       );
     } finally {
       if (mounted) {

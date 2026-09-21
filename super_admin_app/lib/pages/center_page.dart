@@ -9,6 +9,7 @@ import '../services/dashboard_service.dart';
 import '../config/supabase_config.dart';
 import '../services/profile_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/super_admin_notice.dart';
 import 'dart:ui';
 
 bool isCenterOpenByOperatingHours(String? operatingHours) {
@@ -268,9 +269,7 @@ class _ClinicsPageState extends State<ClinicsPage> {
     } catch (error) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to load centers: $error')));
+      SuperAdminNotice.error(context, 'Failed to load centers: $error');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -410,52 +409,31 @@ class _ClinicsPageState extends State<ClinicsPage> {
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          clinic == null
-              ? 'Center created successfully.'
-              : 'Center updated successfully.',
-        ),
-      ),
+    SuperAdminNotice.success(
+      context,
+      clinic == null
+          ? 'Center created successfully.'
+          : 'Center updated successfully.',
     );
   }
 
   Future<void> _deleteClinic(CenterModel clinic) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: Color(0xFFEA5353)),
-            SizedBox(width: 10),
-            Text('Delete Center'),
-          ],
-        ),
-        content: Text(
-          'Deleting ${clinic.name} will deactivate all assigned admins.\n\nContinue?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFEA5353),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    // A warning notice rather than a dialog of its own, so the question is
+    // raised into the root overlay -- above the center form modal when it is
+    // asked from there -- and an outside click cannot answer it.
+    final confirmed = await SuperAdminNotice.confirm(
+      context,
+      title: 'Delete center?',
+      message:
+          'Deleting ${clinic.name} will deactivate all assigned admins. '
+          'This action cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+      icon: Icons.delete_outline_rounded,
     );
 
-    if (confirmed != true) return;
+    if (!confirmed) return;
+    if (!mounted) return;
 
     try {
       await SupabaseConfig.client
@@ -481,17 +459,16 @@ class _ClinicsPageState extends State<ClinicsPage> {
       await _loadClinics();
       widget.onUpdated?.call();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Center deleted. Admins set to inactive.'),
-        ),
+      if (!mounted) return;
+
+      SuperAdminNotice.success(
+        context,
+        'Center deleted. Admins set to inactive.',
       );
     } catch (error) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Unable to delete center: $error')),
-      );
+      SuperAdminNotice.error(context, 'Unable to delete center: $error');
     }
   }
 
@@ -929,10 +906,10 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
       final query = '${addressController.text} ${cityController.text}'.trim();
 
       if (query.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please enter an address or city first.'),
-          ),
+        SuperAdminNotice.error(
+          context,
+          'Please enter an address or city first.',
+          title: 'Check this before searching',
         );
         return;
       }
@@ -962,19 +939,14 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
 
             mapController.move(LatLng(lat, lon), 16);
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'No location found. Try a more specific address.',
-                ),
-              ),
+            SuperAdminNotice.info(
+              context,
+              'No location found. Try a more specific address.',
             );
           }
         }
       } catch (error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Unable to find location: $error')),
-        );
+        SuperAdminNotice.error(context, 'Unable to find location: $error');
       } finally {
         if (mounted) {
           setState(() => isFindingLocation = false);
@@ -1657,14 +1629,11 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
 
                                           if (selectedLatitude == null ||
                                               selectedLongitude == null) {
-                                            ScaffoldMessenger.of(
+                                            SuperAdminNotice.error(
                                               context,
-                                            ).showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                  'Please select a location on the map.',
-                                                ),
-                                              ),
+                                              'Please select a location on the map.',
+                                              title:
+                                                  'Check this before saving',
                                             );
                                             return;
                                           }
@@ -1755,14 +1724,11 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
                                             // this point.
                                             Navigator.of(context).pop(true);
                                           } catch (error) {
-                                            ScaffoldMessenger.of(
+                                            if (!mounted) return;
+
+                                            SuperAdminNotice.error(
                                               context,
-                                            ).showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  'Unable to save center: $error',
-                                                ),
-                                              ),
+                                              'Unable to save center: $error',
                                             );
                                           } finally {
                                             if (mounted) {

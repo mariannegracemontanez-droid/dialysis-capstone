@@ -38,6 +38,11 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   supabase_flutter: ^2.12.4
+  # The notice (message) system, shared with the Super Admin portal so both
+  # halves of the product report an outcome the same way. See
+  # packages/curenurture_notice/README.md.
+  curenurture_notice:
+    path: ../packages/curenurture_notice
   flutter_riverpod: ^2.0.0
   flutter_dotenv: ^5.0.2
   table_calendar: ^3.0.9

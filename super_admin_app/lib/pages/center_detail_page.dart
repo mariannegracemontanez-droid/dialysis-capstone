@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/center_model.dart';
 import '../services/dashboard_service.dart'; // make sure this import path is correct
+import '../widgets/super_admin_notice.dart';
 
 class CenterDetailPage extends StatelessWidget {
   final CenterModel center;
@@ -101,10 +102,9 @@ class CenterDetailPage extends StatelessWidget {
                       contactNumber: center.contactNumber ?? '',
                     );
                       
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Center updated successfully!'),
-                        ),
+                      SuperAdminNotice.success(
+                        context,
+                        'Center updated successfully.',
                       );
 
                       Navigator.pop(context, true); // go back and refresh dashboard

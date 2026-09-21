@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../services/profile_service.dart';
 import '../config/supabase_config.dart';
 import '../theme/app_theme.dart';
+import '../widgets/super_admin_notice.dart';
 
 /// Limits a phone-style field to at most [maxDigits] digits while still
 /// letting the existing supported formatting characters (spaces, +, -,
@@ -35,6 +36,18 @@ class _MaxDigitsTextInputFormatter extends TextInputFormatter {
 
     return newValue;
   }
+}
+
+/// Strips Dart's "Exception: " prefix so a rejected save reads as the plain
+/// explanation the service wrote rather than as a fragment of a stack trace.
+/// Mirrors the Admin panel's helper of the same name, so both portals word a
+/// failure the same way.
+String _friendlyError(Object error) {
+  final text = error.toString();
+
+  return text.startsWith('Exception: ')
+      ? text.substring('Exception: '.length)
+      : text;
 }
 
 /// User-controlled sort options for the account list. Sorting only reorders
@@ -138,10 +151,9 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Head nurse account created successfully.'),
-        ),
+      SuperAdminNotice.success(
+        context,
+        'Head nurse account created successfully.',
       );
     }
   }
@@ -179,10 +191,9 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Head nurse account updated successfully.'),
-        ),
+      SuperAdminNotice.success(
+        context,
+        'Head nurse account updated successfully.',
       );
     }
   }
@@ -218,40 +229,32 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Head nurse account reactivated successfully.'),
-        ),
+      SuperAdminNotice.success(
+        context,
+        'Head nurse account reactivated successfully.',
       );
     }
   }
 
   Future<void> _deleteAdmin(Map<String, dynamic> admin) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('Deactivate head nurse account'),
-        content: Text(
+    // A warning notice rather than a dialog of its own: it is raised into
+    // the root overlay, so it is still readable and still answerable when
+    // this page is reached from on top of another modal, and an outside
+    // click cannot silently answer a question this consequential.
+    final confirmed = await SuperAdminNotice.confirm(
+      context,
+      title: 'Deactivate head nurse account?',
+      message:
           'Deactivate ${admin['full_name'] ?? admin['email']}? '
           'The account will become inactive and lose its active clinic access. '
           'It can be reactivated later by assigning a clinic again.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: _danger),
-            child: const Text('Deactivate'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Deactivate',
+      destructive: true,
+      icon: Icons.person_off_rounded,
     );
 
-    if (confirmed != true) return;
+    if (!confirmed) return;
+    if (!mounted) return;
 
     try {
       await _service.deleteAdmin(adminId: admin['id'] as String);
@@ -262,21 +265,18 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
         targetName: admin['full_name'],
       );
 
-      if (!mounted) return;
-
       await _refresh();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Head nurse account deleted successfully.'),
-        ),
+      if (!mounted) return;
+
+      SuperAdminNotice.success(
+        context,
+        'Head nurse account deleted successfully.',
       );
     } catch (error) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to delete admin: $error')));
+      SuperAdminNotice.error(context, 'Failed to delete admin: $error');
     }
   }
 
@@ -1072,7 +1072,6 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
   final ProfileService _service = ProfileService();
 
   bool _isSaving = false;
-  String? _errorMessage;
 
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
@@ -1153,15 +1152,16 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
     final confirm = _confirmPasswordController.text.trim();
 
     if (_changePassword && password != confirm) {
-      setState(() {
-        _errorMessage = 'Passwords do not match.';
-      });
+      SuperAdminNotice.error(
+        context,
+        'Passwords do not match.',
+        title: 'Check this before saving',
+      );
       return;
     }
 
     setState(() {
       _isSaving = true;
-      _errorMessage = null;
     });
 
     try {
@@ -1186,9 +1186,9 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (error) {
-      setState(() {
-        _errorMessage = error.toString().replaceFirst('Exception: ', '');
-      });
+      if (!mounted) return;
+
+      SuperAdminNotice.error(context, _friendlyError(error));
     } finally {
       if (mounted) {
         setState(() {
@@ -1353,40 +1353,6 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      if (_errorMessage != null)
-                        Container(
-                          width: double.infinity,
-                          margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.all(13),
-                          decoration: BoxDecoration(
-                            color: AppTheme.dangerSoft,
-                            borderRadius: BorderRadius.circular(AppTheme.rMd),
-                            border: Border.all(
-                              color: AppTheme.danger.withValues(alpha: 0.25),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.error_outline_rounded,
-                                size: 18,
-                                color: AppTheme.danger,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  _errorMessage!,
-                                  style: const TextStyle(
-                                    color: AppTheme.danger,
-                                    fontSize: 12.5,
-                                    height: 1.35,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
                       DropdownButtonFormField<String?>(
                         // Long clinic names ellipsize instead of overflowing the field.
                         isExpanded: true,
@@ -1624,7 +1590,6 @@ class _BlurredAdminReactivateModalState
   final ProfileService _service = ProfileService();
 
   bool _isSubmitting = false;
-  String? _errorMessage;
 
   List<Map<String, dynamic>> _clinics = [];
   Set<String> _clinicsWithAdmin = {};
@@ -1693,15 +1658,16 @@ class _BlurredAdminReactivateModalState
     if (!_formKey.currentState!.validate()) return;
 
     if (_selectedClinicId == null) {
-      setState(() {
-        _errorMessage = 'Please select a clinic.';
-      });
+      SuperAdminNotice.error(
+        context,
+        'Please select a clinic.',
+        title: 'Check this before saving',
+      );
       return;
     }
 
     setState(() {
       _isSubmitting = true;
-      _errorMessage = null;
     });
 
     try {
@@ -1724,9 +1690,7 @@ class _BlurredAdminReactivateModalState
     } catch (error) {
       if (!mounted) return;
 
-      setState(() {
-        _errorMessage = error.toString().replaceFirst('Exception: ', '');
-      });
+      SuperAdminNotice.error(context, _friendlyError(error));
     } finally {
       if (mounted) {
         setState(() {
@@ -1875,40 +1839,6 @@ class _BlurredAdminReactivateModalState
                         ),
                       ),
                       const SizedBox(height: 18),
-                      if (_errorMessage != null)
-                        Container(
-                          width: double.infinity,
-                          margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.all(13),
-                          decoration: BoxDecoration(
-                            color: AppTheme.dangerSoft,
-                            borderRadius: BorderRadius.circular(AppTheme.rMd),
-                            border: Border.all(
-                              color: AppTheme.danger.withValues(alpha: 0.25),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.error_outline_rounded,
-                                size: 18,
-                                color: AppTheme.danger,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  _errorMessage!,
-                                  style: const TextStyle(
-                                    color: AppTheme.danger,
-                                    fontSize: 12.5,
-                                    height: 1.35,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
@@ -2064,7 +1994,6 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
   final _confirmPasswordController = TextEditingController();
 
   bool _isSubmitting = false;
-  String? _errorMessage;
 
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
@@ -2138,15 +2067,16 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
     // call just checked -- re-checking it here would be redundant.
 
     if (selectedClinicId == null) {
-      setState(() {
-        _errorMessage = 'Please select a clinic.';
-      });
+      SuperAdminNotice.error(
+        context,
+        'Please select a clinic.',
+        title: 'Check this before saving',
+      );
       return;
     }
 
     setState(() {
       _isSubmitting = true;
-      _errorMessage = null;
     });
 
     try {
@@ -2182,9 +2112,7 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
     } catch (error) {
       if (!mounted) return;
 
-      setState(() {
-        _errorMessage = error.toString().replaceFirst('Exception: ', '');
-      });
+      SuperAdminNotice.error(context, _friendlyError(error));
     } finally {
       if (mounted) {
         setState(() {
@@ -2392,40 +2320,6 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      if (_errorMessage != null)
-                        Container(
-                          width: double.infinity,
-                          margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.all(13),
-                          decoration: BoxDecoration(
-                            color: AppTheme.dangerSoft,
-                            borderRadius: BorderRadius.circular(AppTheme.rMd),
-                            border: Border.all(
-                              color: AppTheme.danger.withValues(alpha: 0.25),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.error_outline_rounded,
-                                size: 18,
-                                color: AppTheme.danger,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  _errorMessage!,
-                                  style: const TextStyle(
-                                    color: AppTheme.danger,
-                                    fontSize: 12.5,
-                                    height: 1.35,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
                       DropdownButtonFormField<String>(
                         // Long clinic names ellipsize instead of overflowing the field.
                         isExpanded: true,

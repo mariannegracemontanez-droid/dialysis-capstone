@@ -8,6 +8,7 @@ import '../models/notification_item.dart';
 import '../models/user_model.dart';
 import '../services/dashboard_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/super_admin_notice.dart';
 import 'admin_accounts_page.dart';
 import 'center_page.dart';
 import 'donations_page.dart';
@@ -147,9 +148,7 @@ class _DashboardPageState extends State<DashboardPage>
       });
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Dashboard error: $error')));
+        SuperAdminNotice.error(context, 'Dashboard error: $error');
       }
     } finally {
       if (mounted) {
@@ -1727,10 +1726,9 @@ class _DashboardPageState extends State<DashboardPage>
 
     await showDialog<void>(
       context: context,
-      builder: (context) {
-        final messenger = ScaffoldMessenger.of(context);
+      builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (context, setDialogState) {
+          builder: (dialogContext, setDialogState) {
             return AlertDialog(
               title: const Text('Add Center'),
               shape: RoundedRectangleBorder(
@@ -1780,7 +1778,9 @@ class _DashboardPageState extends State<DashboardPage>
               ),
               actions: [
                 TextButton(
-                  onPressed: isSaving ? null : () => Navigator.pop(context),
+                  onPressed: isSaving
+                      ? null
+                      : () => Navigator.pop(dialogContext),
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
@@ -1814,20 +1814,20 @@ class _DashboardPageState extends State<DashboardPage>
                               contactNumber: contactController.text.trim(),
                             );
 
-                            Navigator.pop(context);
+                            if (!mounted) return;
 
-                            messenger.showSnackBar(
-                              const SnackBar(
-                                content: Text('Center added successfully.'),
-                              ),
+                            Navigator.pop(dialogContext);
+
+                            SuperAdminNotice.success(
+                              context,
+                              'Center added successfully.',
                             );
                           } catch (error) {
-                            messenger.showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Unable to add center: ${error.toString()}',
-                                ),
-                              ),
+                            if (!mounted) return;
+
+                            SuperAdminNotice.error(
+                              context,
+                              'Unable to add center: $error',
                             );
                           } finally {
                             setDialogState(() {
@@ -1862,7 +1862,7 @@ class _DashboardPageState extends State<DashboardPage>
   Future<void> _showExportDialog() async {
     await showDialog<void>(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
           title: const Text('Export Reports'),
           shape: RoundedRectangleBorder(
@@ -1873,15 +1873,13 @@ class _DashboardPageState extends State<DashboardPage>
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Cancel'),
             ),
             ElevatedButton(
               onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Reports export started.')),
-                );
+                Navigator.pop(dialogContext);
+                SuperAdminNotice.info(context, 'Reports export started.');
               },
               child: const Text('Export CSV'),
             ),
