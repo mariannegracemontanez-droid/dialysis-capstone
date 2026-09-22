@@ -33,6 +33,19 @@ class CenterModel {
     required this.createdAt,
   });
 
+  /// The one LIFECYCLE value `clinics.status` can hold. Everything else it
+  /// can hold ('open', 'busy', 'full') is an OPERATIONAL AVAILABILITY value.
+  /// Kept here, next to the model that reads the column, so the centres page
+  /// and the dashboard test for "closed" the same way instead of each
+  /// repeating the literal.
+  static const String closedStatus = 'closed';
+
+  /// True when this centre has been soft-closed. A closed centre is not an
+  /// active operational centre: it is excluded from the centres list, from
+  /// the dashboard's operational figures, and its lifecycle state must
+  /// survive an ordinary edit (see DashboardService.updateCenter).
+  bool get isClosed => status.toLowerCase().trim() == closedStatus;
+
   bool get isOpen => status.toLowerCase() == 'open';
   String get statusText => isOpen ? 'Open' : 'Closed';
 

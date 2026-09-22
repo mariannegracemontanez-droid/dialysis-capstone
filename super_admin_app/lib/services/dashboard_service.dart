@@ -102,20 +102,15 @@ class DashboardService {
     return totalDonations;
   }
 
-  Future<Map<String, int>> fetchOverviewStats() async {
-    final patients = await _supabase.from('patients').select('id');
-    final appointments = await _supabase.from('appointments').select('id');
-    final centers = await _supabase.from('clinics').select('id');
-
-    final totalDonations = await fetchVerifiedDonationTotal();
-
-    return {
-      'patients': (patients as List).length,
-      'appointments': (appointments as List).length,
-      'centers': (centers as List).length,
-      'donations': totalDonations,
-    };
-  }
+  // fetchOverviewStats() was removed (R6). It ran four unbounded full-table
+  // scans -- patients, appointments, clinics and every donation row -- on
+  // every dashboard load, and not one of the four values it returned reached
+  // the UI: three were never read, and its donation total was overwritten by
+  // the caller before the map was ever assigned to _stats. It also ran ahead
+  // of fetchCenters() in the same try block, so a failure in a scan nobody
+  // used (a denied policy, or the appointments table) aborted the whole
+  // dashboard load. The donation figure the dashboard actually shows still
+  // comes from the page's own _fetchVerifiedDonationTotal().
 
   Future<List<CenterModel>> fetchCenters() async {
     final response = await _supabase
@@ -189,6 +184,18 @@ class DashboardService {
     });
   }
 
+  /// [currentStatus] is the centre's stored `clinics.status` as it was when
+  /// the edit form was opened. It exists only so a soft-closed centre keeps
+  /// its lifecycle state: `computeStatus` can only ever return an
+  /// OPERATIONAL value ('open'/'busy'/'full'), so writing it
+  /// unconditionally -- as this did before -- silently reopened any centre
+  /// that was 'closed'. When the centre is closed the `status` key is left
+  /// out of the update entirely, so the column keeps its existing value and
+  /// every other field still saves normally. Passing null (or any
+  /// non-closed value) keeps the previous behaviour exactly.
+  ///
+  /// This deliberately does NOT reactivate anything and does not change what
+  /// soft-close means -- it only stops an ordinary edit from undoing it.
   Future<void> updateCenter({
     required String centerId,
     required String name,
@@ -202,26 +209,45 @@ class DashboardService {
     required int shifts,
     required String operatingHours,
     required String contactNumber,
+    String? currentStatus,
   }) async {
-    final status = computeStatus(slotAvailable);
+    final isClosed =
+        currentStatus?.toLowerCase().trim() == CenterModel.closedStatus;
 
-    await _supabase
+    final payload = <String, dynamic>{
+      'name': name,
+      'address': address,
+      'city': city,
+      'requirements': _parseRequirements(requirements),
+      'latitude': latitude,
+      'longitude': longitude,
+      'slots_available': slotAvailable,
+      'machine': machines,
+      'shifts': shifts,
+      'operating_hours': operatingHours,
+      'contact_number': contactNumber,
+    };
+
+    if (!isClosed) {
+      payload['status'] = computeStatus(slotAvailable);
+    }
+
+    // .select() so the update reports which rows it actually changed. A
+    // PostgREST update that matches nothing is NOT an error -- it quietly
+    // affects zero rows -- so a center deleted or otherwise unreachable
+    // between opening the Edit form and saving it still reported success.
+    final updated = await _supabase
         .from('clinics')
-        .update({
-          'name': name,
-          'address': address,
-          'city': city,
-          'requirements': _parseRequirements(requirements),
-          'latitude': latitude,
-          'longitude': longitude,
-          'slots_available': slotAvailable,
-          'machine': machines,
-          'shifts': shifts,
-          'status': status,
-          'operating_hours': operatingHours,
-          'contact_number': contactNumber,
-        })
-        .eq('id', centerId);
+        .update(payload)
+        .eq('id', centerId)
+        .select();
+
+    if (updated.isEmpty) {
+      throw Exception(
+        'This center could not be updated. It may have been removed or '
+        'changed by someone else. Refresh and try again.',
+      );
+    }
   }
 
   Future<void> deleteCenter(String centerId) async {

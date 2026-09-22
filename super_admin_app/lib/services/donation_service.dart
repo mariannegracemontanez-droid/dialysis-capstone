@@ -137,10 +137,23 @@ class DonationService {
     return (response as List).length;
   }
 
+  /// Centers offered by the Super Admin donation-history SELECTORS.
+  ///
+  /// Soft-closed centers are excluded, using the same filter every other
+  /// clinic query in this app already applies -- this was the only live one
+  /// still missing it, so a closed center could be picked from the history
+  /// selectors and could even become the default selection.
+  ///
+  /// This does NOT hide any donation. The Overall Donation History "All
+  /// Centers" view builds from the donation records themselves, and each
+  /// row's center name comes from the clinics join on the donation, so a
+  /// closed center's donations stay visible and correctly attributed there.
+  /// Only the center-picker lists stop offering closed centers.
   Future<List<Map<String, dynamic>>> fetchCenters() async {
     final response = await _supabase
         .from('clinics')
         .select('id, name')
+        .or('status.is.null,status.neq.closed')
         .order('name', ascending: true);
 
     return List<Map<String, dynamic>>.from(response);

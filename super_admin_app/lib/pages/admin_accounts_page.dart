@@ -1066,25 +1066,26 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
 
   final ProfileService _service = ProfileService();
 
   bool _isSaving = false;
   String? _errorMessage;
 
-  bool _obscurePassword = true;
-  bool _obscureConfirm = true;
-  bool _changePassword = false;
+  // No password state here on purpose. Editing a head nurse's password was
+  // removed (R4): the only client-side API available, auth.updateUser(), acts
+  // on the CURRENTLY AUTHENTICATED user and takes no target id, so it changed
+  // the Super Admin's own password instead of the nurse's while reporting
+  // success. Setting another user's password needs a privileged server-side
+  // call, which a client holding only the anon key cannot make. The Create
+  // modal keeps its password fields -- those set the new account's own
+  // password at sign-up time and are unaffected.
 
   List<Map<String, dynamic>> _clinics = [];
   Set<String> _clinicsWithAdmin = {};
   String? selectedClinicId;
 
   static const Color _primary = Color(0xFF0F719F);
-  static const Color _dark = Color(0xFF0F3A55);
-  static const Color _muted = Color(0xFF647583);
 
   @override
   void initState() {
@@ -1102,8 +1103,6 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -1149,16 +1148,6 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
 
     if (!_formKey.currentState!.validate()) return;
 
-    final password = _passwordController.text.trim();
-    final confirm = _confirmPasswordController.text.trim();
-
-    if (_changePassword && password != confirm) {
-      setState(() {
-        _errorMessage = 'Passwords do not match.';
-      });
-      return;
-    }
-
     setState(() {
       _isSaving = true;
       _errorMessage = null;
@@ -1169,7 +1158,6 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
         adminId: widget.admin['id'],
         fullName: _nameController.text.trim(),
         phone: _phoneController.text.trim(),
-        password: _changePassword && password.isNotEmpty ? password : null,
         clinicId: selectedClinicId,
       );
 
@@ -1288,7 +1276,7 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                                 ),
                                 SizedBox(height: 2),
                                 Text(
-                                  'Update account details and password settings.',
+                                  'Update account details.',
                                   style: TextStyle(
                                     color: AppTheme.textMuted,
                                     fontSize: 12.5,
@@ -1458,87 +1446,6 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                           icon: Icons.phone_outlined,
                         ),
                       ),
-                      const SizedBox(height: 14),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: const Color(0xFFE2EDF4)),
-                        ),
-                        child: SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text(
-                            'Change Password',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: _dark,
-                            ),
-                          ),
-                          subtitle: const Text(
-                            'Enable this only if the head nurse needs a new password.',
-                            style: TextStyle(color: _muted, fontSize: 12),
-                          ),
-                          value: _changePassword,
-                          activeThumbColor: _primary,
-                          onChanged: (val) {
-                            setState(() {
-                              _changePassword = val;
-                            });
-                          },
-                        ),
-                      ),
-                      if (_changePassword) ...[
-                        const SizedBox(height: 14),
-                        TextFormField(
-                          controller: _passwordController,
-                          obscureText: _obscurePassword,
-                          decoration:
-                              _inputDecoration(
-                                label: 'New Password',
-                                icon: Icons.lock_outline_rounded,
-                              ).copyWith(
-                                suffixIcon: IconButton(
-                                  icon: Icon(
-                                    _obscurePassword
-                                        ? Icons.visibility_off_outlined
-                                        : Icons.visibility_outlined,
-                                  ),
-                                  onPressed: () {
-                                    setState(() {
-                                      _obscurePassword = !_obscurePassword;
-                                    });
-                                  },
-                                ),
-                              ),
-                        ),
-                        const SizedBox(height: 14),
-                        TextFormField(
-                          controller: _confirmPasswordController,
-                          obscureText: _obscureConfirm,
-                          decoration:
-                              _inputDecoration(
-                                label: 'Confirm Password',
-                                icon: Icons.lock_reset_rounded,
-                              ).copyWith(
-                                suffixIcon: IconButton(
-                                  icon: Icon(
-                                    _obscureConfirm
-                                        ? Icons.visibility_off_outlined
-                                        : Icons.visibility_outlined,
-                                  ),
-                                  onPressed: () {
-                                    setState(() {
-                                      _obscureConfirm = !_obscureConfirm;
-                                    });
-                                  },
-                                ),
-                              ),
-                        ),
-                      ],
                       const SizedBox(height: 24),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
@@ -2144,13 +2051,51 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
       return;
     }
 
+    // MITIGATION (R3): auth.signUp() is Supabase's SELF-REGISTRATION call --
+    // whenever the project returns a session for the new account, the SDK
+    // stores it as the current session, so the Super Admin is silently
+    // replaced by the head nurse being created. Everything after that point
+    // (the profiles insert, the audit entry) would then run as the wrong
+    // user. So the Super Admin's own session is captured here, restored
+    // immediately after signUp(), and proven to be back before anything is
+    // written.
+    //
+    // This does NOT fix the underlying provisioning problem: creating another
+    // user without assuming their identity needs a privileged server-side
+    // call, which a client holding only the anon key cannot make. It narrows
+    // a reliable failure to a brief window -- see the failure path in
+    // _abandonToRelogin.
+    //
+    // Tokens captured here are only handed back to the SDK; they are never
+    // logged, printed, or stored.
+    final client = SupabaseConfig.client;
+    final superAdminSession = client.auth.currentSession;
+    final superAdminId = superAdminSession?.user.id;
+    final superAdminRefreshToken = superAdminSession?.refreshToken;
+    final superAdminAccessToken = superAdminSession?.accessToken;
+
+    if (superAdminId == null || superAdminRefreshToken == null) {
+      setState(() {
+        _errorMessage =
+            'Your session could not be verified. Please log in again before '
+            'creating an account.';
+      });
+      return;
+    }
+
+    // Resolved before any await so the modal's BuildContext is never used
+    // across an async gap -- both survive this route being removed, which the
+    // failure path below does.
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
     setState(() {
       _isSubmitting = true;
       _errorMessage = null;
     });
 
     try {
-      final authResponse = await SupabaseConfig.client.auth.signUp(
+      final authResponse = await client.auth.signUp(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
@@ -2161,7 +2106,31 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
         throw Exception('User creation failed');
       }
 
-      await SupabaseConfig.client.from('profiles').insert({
+      // Put the Super Admin's session back before anything is written. Only
+      // needed when signUp() actually returned a session (with email
+      // confirmation enabled it does not, and the session was never
+      // replaced), but a failure here is deliberately swallowed: the identity
+      // check below is the real gate, and it fails safe either way.
+      if (authResponse.session != null) {
+        try {
+          await client.auth.setSession(
+            superAdminRefreshToken,
+            accessToken: superAdminAccessToken,
+          );
+        } catch (_) {
+          // Fall through to the identity check.
+        }
+      }
+
+      // The gate. Nothing is written until the current user is provably the
+      // Super Admin who started this. Checked even when signUp() returned no
+      // session, so an unexpected identity can never slip past.
+      if (client.auth.currentUser?.id != superAdminId) {
+        await _abandonToRelogin(messenger, navigator);
+        return;
+      }
+
+      await client.from('profiles').insert({
         'id': user.id,
         'full_name': _nameController.text.trim(),
         'email': _emailController.text.trim(),
@@ -2178,7 +2147,7 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
       );
 
       if (!mounted) return;
-      Navigator.of(context).pop(true);
+      navigator.pop(true);
     } catch (error) {
       if (!mounted) return;
 
@@ -2192,6 +2161,45 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
         });
       }
     }
+  }
+
+  /// Failure path for the R3 session-restore mitigation above: the current
+  /// user is not the Super Admin who opened this modal, so the app is holding
+  /// a session it cannot vouch for -- possibly the newly created head nurse's.
+  ///
+  /// Nothing is written and no success is reported. The unknown session is
+  /// cleared and the Super Admin is sent back to Login, which is safer than
+  /// continuing in an unverified identity. signOut() failing must not block
+  /// the redirect, so it is swallowed; it clears the local session before it
+  /// attempts the server call anyway.
+  ///
+  /// The message says what actually happened: signUp() may well have created
+  /// the auth user before the session was lost, so this does not claim the
+  /// account was not created -- it says setup stopped and asks the Super Admin
+  /// to check before retrying (a retry with the same email would be rejected
+  /// as already taken).
+  Future<void> _abandonToRelogin(
+    ScaffoldMessengerState messenger,
+    NavigatorState navigator,
+  ) async {
+    try {
+      await SupabaseConfig.client.auth.signOut();
+    } catch (_) {
+      // Ignored on purpose -- the redirect below matters more.
+    }
+
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Your Super Admin session could not be restored, so setting up the '
+          'new account was stopped. Please log in again and check the account '
+          'list before retrying.',
+        ),
+        duration: Duration(seconds: 6),
+      ),
+    );
+
+    navigator.pushNamedAndRemoveUntil('/login', (route) => false);
   }
 
   InputDecoration _inputDecoration({

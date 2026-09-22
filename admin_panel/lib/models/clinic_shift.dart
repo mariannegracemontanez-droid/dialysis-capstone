@@ -3,6 +3,13 @@
 /// and the mobile app already use -- while label/times/capacity are fully
 /// admin-configurable per clinic instead of hardcoded.
 class ClinicShift {
+  /// The only two shift codes the system runs on, in reading order.
+  /// `clinic_shifts.shift_code` is constrained to exactly these values,
+  /// so this is the full set a center can ever have -- which is what
+  /// lets the Center Profile page offer an editor per code rather than
+  /// per stored row.
+  static const List<String> codes = ['AM', 'PM'];
+
   final String id;
   final String clinicId;
   final String shiftCode;
@@ -38,4 +45,18 @@ class ClinicShift {
 
   /// Falls back to the shift code ('AM'/'PM') when no label has been set.
   String get displayLabel => shiftLabel.trim().isEmpty ? shiftCode : shiftLabel;
+
+  /// The row for [shiftCode] among [shifts], or null when that shift has
+  /// never been created for the center.
+  ///
+  /// Null is an ordinary state, not an error: a center created by the
+  /// Super Admin after center_scheduling_foundation.sql ran was never
+  /// covered by that migration's one-time seed and starts with no rows
+  /// at all, until the Center Admin configures them.
+  static ClinicShift? byCode(List<ClinicShift> shifts, String shiftCode) {
+    for (final shift in shifts) {
+      if (shift.shiftCode == shiftCode) return shift;
+    }
+    return null;
+  }
 }

@@ -65,29 +65,60 @@ class ProfileService {
     return user.id;
   }
 
+  /// Updates an admin's own profile row only.
+  ///
+  /// There is deliberately no password parameter (R4). The only client-side
+  /// API available, auth.updateUser(), acts on the CURRENTLY AUTHENTICATED
+  /// user and accepts no target user id, so passing a password here changed
+  /// the Super Admin's own password rather than [adminId]'s, while the UI
+  /// reported success. Setting another user's password requires a privileged
+  /// server-side call (auth.admin.updateUserById) that a client holding only
+  /// the anon key cannot make, so the capability was removed rather than
+  /// faked. Account creation is unaffected -- there the password belongs to
+  /// the account being registered.
   Future<void> updateAdmin({
     required String adminId,
     required String fullName,
     String? phone,
-    String? password,
     String? clinicId,
   }) async {
-    await _supabase
+    // .select() so the update reports which rows it actually changed. A
+    // PostgREST update that matches nothing is NOT an error -- it quietly
+    // affects zero rows -- so without this an account that no longer exists,
+    // or that this session cannot change, still reported success.
+    final updated = await _supabase
         .from('profiles')
         .update({'full_name': fullName, 'phone': phone, 'clinic_id': clinicId})
-        .eq('id', adminId);
+        .eq('id', adminId)
+        .select();
 
-    if (password != null && password.isNotEmpty) {
-      await _supabase.auth.updateUser(UserAttributes(password: password));
+    if (updated.isEmpty) {
+      throw Exception(
+        'This account could not be updated. It may have been removed or '
+        'changed by someone else. Refresh and try again.',
+      );
     }
+
   }
 
   Future<void> deleteAdmin({required String adminId}) async {
-    await SupabaseConfig.client
+    // Verified with .select() for the same reason as updateAdmin: a zero-row
+    // update is silent. Here the row must also still match role='admin', so
+    // an id that is not an admin account changes nothing and must not be
+    // reported as a successful deactivation.
+    final updated = await SupabaseConfig.client
         .from('profiles')
         .update({'status': 'inactive', 'is_active': false, 'clinic_id': null})
         .eq('id', adminId)
-        .eq('role', 'admin');
+        .eq('role', 'admin')
+        .select();
+
+    if (updated.isEmpty) {
+      throw Exception(
+        'This account could not be deactivated. It may have been removed or '
+        'changed by someone else. Refresh and try again.',
+      );
+    }
   }
 
   /// Mirrors deleteAdmin() in reverse. The previous clinic assignment is not
@@ -98,7 +129,10 @@ class ProfileService {
     required String adminId,
     required String clinicId,
   }) async {
-    await SupabaseConfig.client
+    // Verified with .select(), mirroring deleteAdmin() -- a zero-row update
+    // is silent, so a reactivation that matched no admin account must not
+    // report success.
+    final updated = await SupabaseConfig.client
         .from('profiles')
         .update({
           'status': 'active',
@@ -106,7 +140,15 @@ class ProfileService {
           'clinic_id': clinicId,
         })
         .eq('id', adminId)
-        .eq('role', 'admin');
+        .eq('role', 'admin')
+        .select();
+
+    if (updated.isEmpty) {
+      throw Exception(
+        'This account could not be reactivated. It may have been removed or '
+        'changed by someone else. Refresh and try again.',
+      );
+    }
   }
 
   Future<void> logAction({

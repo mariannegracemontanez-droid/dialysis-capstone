@@ -1,12 +1,8 @@
 ﻿import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
 import '../models/center_donation_history_entry.dart';
 import '../models/donation_record.dart';
-import '../models/fund_distribution.dart';
 import 'package:super_admin_app/services/donation_service.dart';
 import '../theme/app_theme.dart';
-
-int verifiedCount = 0;
 
 /// Preset date windows for the Center Donation History filter. Applied
 /// client-side against the existing donation date -- no new fields or queries.
@@ -86,14 +82,17 @@ class _DonationsPageState extends State<DonationsPage> {
 
   bool _isLoading = true;
   List<DonationRecord> _donations = [];
-  List<FundDistribution> _fundDistributions = [];
   List<Map<String, dynamic>> _centers = [];
 
   double _totalVerifiedDonations = 0;
-  double _totalDistributedFunds = 0;
-  double _availableFunds = 0;
 
-  final Map<String, double> centerTotals = {};
+  /// How many of the loaded donations are verified, shown under the Total
+  /// Donations figure. Owned by this State rather than being a top-level
+  /// variable (R21): as a global it was shared by every DonationsPage and
+  /// outlived each one, so re-entering the page briefly showed the previous
+  /// visit's count until the fresh load completed. Same value, same
+  /// calculation -- only where it lives has changed.
+  int _verifiedCount = 0;
 
   // Center Donation History section.
   String? _historyCenterId;
@@ -182,37 +181,43 @@ class _DonationsPageState extends State<DonationsPage> {
 
     try {
       final donations = await _service.fetchDonations();
-      final distributions = await _service.fetchFundDistributions();
       final centers = await _service.fetchCenters();
       final totalDonations = await _service.fetchTotalDonations();
-      final totalDistributed = await _service.fetchTotalDistributed();
 
       if (!mounted) return;
 
       setState(() {
         _donations = donations;
-        _fundDistributions = distributions;
         _centers = centers;
 
         _totalVerifiedDonations = totalDonations;
-        _totalDistributedFunds = totalDistributed;
-        _availableFunds = (totalDonations - totalDistributed)
-            .clamp(0, double.infinity)
-            .toDouble();
 
-        verifiedCount = donations.where((d) => d.status == 'verified').length;
-
-        centerTotals.clear();
-        for (final item in distributions) {
-          centerTotals[item.centerName] =
-              (centerTotals[item.centerName] ?? 0.0) + item.amount.toDouble();
-        }
+        _verifiedCount = donations.where((d) => d.status == 'verified').length;
 
         // Keep the current selection if that center still exists in this
         // fresh list, otherwise fall back to the first center.
         final stillExists = centers.any((c) => c['id'].toString() == _historyCenterId);
         if (_historyCenterId == null || !stillExists) {
           _historyCenterId = centers.isNotEmpty ? centers.first['id'].toString() : null;
+        }
+
+        // Same reconciliation for the Overall Donation History selector,
+        // which previously had none. Now that closed centers are filtered
+        // out of this list, a selection made before a center was closed can
+        // point at an id the dropdown no longer offers -- and its items must
+        // contain the selected value exactly once.
+        //
+        // Reset goes to null, not to centers.first: null is this dropdown's
+        // own "All Centers" option (unlike the Center Donation History
+        // selector above, which has no such option and must always hold a
+        // center). So null is always a valid item here, it is this section's
+        // normal default, and it avoids silently switching the Super Admin
+        // onto an unrelated center's records. A null selection is therefore
+        // left exactly as it is.
+        final overallCenterId = _overallCenterId;
+        if (overallCenterId != null &&
+            !centers.any((c) => c['id'].toString() == overallCenterId)) {
+          _overallCenterId = null;
         }
       });
 
@@ -279,19 +284,7 @@ class _DonationsPageState extends State<DonationsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final verifiedRecords = verifiedCount;
-    final distributionCount = _fundDistributions.length;
-
-    // Both derived from lists already in memory -- no extra query, no new
-    // backend surface, just more useful context under the same three figures.
-    final pendingRecords = _donations
-        .where((d) => d.status.toLowerCase().trim() != 'verified')
-        .length;
-    final centersFunded = centerTotals.keys.length;
-
-    final double maxY = centerTotals.isNotEmpty
-        ? centerTotals.values.reduce((a, b) => a > b ? a : b) + 1000.0
-        : 1000.0;
+    final verifiedRecords = _verifiedCount;
 
     final pagePadding = AppTheme.pagePadding(
       MediaQuery.of(context).size.width,
@@ -335,192 +328,19 @@ class _DonationsPageState extends State<DonationsPage> {
                           value: _formatCompactCurrency(
                             _totalVerifiedDonations,
                           ),
-                          subtitle: pendingRecords > 0
-                              ? '$verifiedRecords verified · $pendingRecords awaiting review'
-                              : '$verifiedRecords verified donation(s)',
+                          // No "awaiting review" figure: donations are
+                          // recorded as verified at submission time, so
+                          // there is no pending queue and no review action
+                          // in this UI. The old count was the negation of
+                          // 'verified', so it also swept in rejected and
+                          // legacy/null-status rows and labelled them as
+                          // work awaiting the Super Admin.
+                          subtitle: '$verifiedRecords verified donation(s)',
                           color: AppTheme.accentPink,
                           softColor: AppTheme.accentPinkSoft,
                         ),
                       ),
-                      SizedBox(
-                        width: statWidth,
-                        child: _InfoCard(
-                          icon: Icons.account_balance_outlined,
-                          label: 'Available Funds',
-                          value: _formatCompactCurrency(_availableFunds),
-                          subtitle: 'Verified funds minus distributed amount',
-                          color: AppTheme.accentGreen,
-                          softColor: AppTheme.accentGreenSoft,
-                        ),
-                      ),
-                      SizedBox(
-                        width: statWidth,
-                        child: _InfoCard(
-                          icon: Icons.send_time_extension_outlined,
-                          label: 'Distributed',
-                          value: _formatCompactCurrency(_totalDistributedFunds),
-                          subtitle: centersFunded > 0
-                              ? '$distributionCount logs across $centersFunded center(s)'
-                              : '$distributionCount distribution logs',
-                          color: AppTheme.accentOrange,
-                          softColor: AppTheme.accentOrangeSoft,
-                        ),
-                      ),
                     ],
-                  ),
-                  const SizedBox(height: AppTheme.gapLg),
-                  Wrap(
-                    spacing: 20,
-                    runSpacing: 20,
-                    children: [
-                      SizedBox(
-                        width: constraints.maxWidth,
-                        child: _SectionCard(
-                          title: 'Donations Per Center',
-                          subtitle:
-                              'Compare how much funding each center has received.',
-                          icon: Icons.bar_chart_rounded,
-                          accent: AppTheme.blue1,
-                          accentSoft: AppTheme.accentBlueSoft,
-                          child: SizedBox(
-                            height: 330,
-                            child: centerTotals.isEmpty
-                                ? const _EmptyState(
-                                    icon: Icons.analytics_outlined,
-                                    title: 'No distribution data',
-                                    message:
-                                        'Distributed funds will be visualized here.',
-                                  )
-                                : BarChart(
-                                    BarChartData(
-                                      alignment: BarChartAlignment.spaceAround,
-                                      maxY: maxY,
-                                      barTouchData: BarTouchData(enabled: true),
-                                      gridData: FlGridData(
-                                        show: true,
-                                        drawVerticalLine: false,
-                                        horizontalInterval: maxY / 4,
-                                        getDrawingHorizontalLine: (value) =>
-                                            const FlLine(
-                                              color: AppTheme.border,
-                                              strokeWidth: 1,
-                                            ),
-                                      ),
-                                      titlesData: FlTitlesData(
-                                        leftTitles: AxisTitles(
-                                          sideTitles: SideTitles(
-                                            showTitles: true,
-                                            interval: maxY / 4,
-                                            reservedSize: 48,
-                                            getTitlesWidget: (value, meta) {
-                                              return Text(
-                                                '₱${value.toInt()}',
-                                                style: const TextStyle(
-                                                  color: Color(0xFF7F8B9B),
-                                                  fontSize: 11,
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        ),
-                                        topTitles: const AxisTitles(
-                                          sideTitles: SideTitles(
-                                            showTitles: false,
-                                          ),
-                                        ),
-                                        rightTitles: const AxisTitles(
-                                          sideTitles: SideTitles(
-                                            showTitles: false,
-                                          ),
-                                        ),
-                                        bottomTitles: AxisTitles(
-                                          sideTitles: SideTitles(
-                                            showTitles: true,
-                                            reservedSize: 44,
-                                            getTitlesWidget: (value, meta) {
-                                              final keys = centerTotals.keys
-                                                  .toList();
-                                              if (value.toInt() >=
-                                                  keys.length) {
-                                                return const SizedBox();
-                                              }
-
-                                              return Padding(
-                                                padding: const EdgeInsets.only(
-                                                  top: 10,
-                                                ),
-                                                child: SizedBox(
-                                                  width: 86,
-                                                  child: Text(
-                                                    keys[value.toInt()],
-                                                    maxLines: 2,
-                                                    textAlign: TextAlign.center,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: const TextStyle(
-                                                      color: Color(0xFF7F8B9B),
-                                                      fontSize: 11,
-                                                      height: 1.2,
-                                                    ),
-                                                  ),
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        ),
-                                      ),
-                                      borderData: FlBorderData(show: false),
-                                      barGroups: centerTotals.entries
-                                          .toList()
-                                          .asMap()
-                                          .entries
-                                          .map((entry) {
-                                            final index = entry.key;
-                                            final item = entry.value;
-
-                                            return BarChartGroupData(
-                                              x: index,
-                                              barRods: [
-                                                BarChartRodData(
-                                                  toY: item.value.toDouble(),
-                                                  width: 28,
-                                                  borderRadius:
-                                                      BorderRadius.circular(6),
-                                                  // One blue per center, from
-                                                  // the shared brand scale, so
-                                                  // bars stay distinguishable
-                                                  // without leaving the palette.
-                                                  color: AppTheme.chartBlue(
-                                                    index,
-                                                  ),
-                                                  backDrawRodData:
-                                                      BackgroundBarChartRodData(
-                                                        show: true,
-                                                        toY: maxY,
-                                                        color: AppTheme
-                                                            .surfaceTint,
-                                                      ),
-                                                ),
-                                              ],
-                                            );
-                                          })
-                                          .toList(),
-                                    ),
-                                  ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppTheme.gapLg),
-                  _SectionCard(
-                    title: 'Distribution Audit Log',
-                    subtitle:
-                        'Track fund allocation history, remarks, dates, and distribution status.',
-                    icon: Icons.history_rounded,
-                    accent: AppTheme.accentOrange,
-                    accentSoft: AppTheme.accentOrangeSoft,
-                    child: _buildAuditLog(),
                   ),
                   const SizedBox(height: AppTheme.gapLg),
                   _SectionCard(
@@ -632,94 +452,6 @@ class _DonationsPageState extends State<DonationsPage> {
             ],
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildAuditLog() {
-    if (_isLoading) return const _LoadingBlock();
-
-    if (_fundDistributions.isEmpty) {
-      return const _EmptyState(
-        icon: Icons.manage_search_rounded,
-        title: 'No audit entries',
-        message: 'Fund distribution logs will appear here.',
-      );
-    }
-
-    return SizedBox(
-      width: double.infinity,
-      child: Table(
-        columnWidths: const {
-          0: FlexColumnWidth(1.1),
-          1: FlexColumnWidth(2.2),
-          2: FlexColumnWidth(1.2),
-          3: FlexColumnWidth(3.0),
-          4: FlexColumnWidth(1.2),
-        },
-        border: const TableBorder(
-          horizontalInside: BorderSide(color: Color(0xFFD8DEE6), width: 1),
-        ),
-        children: [
-          const TableRow(
-            decoration: BoxDecoration(color: Color(0xFFF4F9FC)),
-            children: [
-              _AuditHeaderCell('Date'),
-              _AuditHeaderCell('Center'),
-              _AuditHeaderCell('Amount'),
-              _AuditHeaderCell('Remarks'),
-              _AuditHeaderCell('Status'),
-            ],
-          ),
-          ..._fundDistributions.map((entry) {
-            return TableRow(
-              children: [
-                _AuditBodyCell(
-                  '${entry.createdAt.year}-${entry.createdAt.month.toString().padLeft(2, '0')}-${entry.createdAt.day.toString().padLeft(2, '0')}',
-                ),
-                _AuditBodyCell(entry.centerName, isBold: true),
-                _AuditBodyCell(
-                  '₱${entry.amount.toStringAsFixed(0)}',
-                  isBold: true,
-                  color: _primary,
-                ),
-                _AuditBodyCell(
-                  entry.remarks.isEmpty ? 'No remarks' : entry.remarks,
-                  maxLines: 2,
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 14,
-                  ),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _primary.withAlpha(22),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        entry.status,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: _primary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          }),
-        ],
       ),
     );
   }
@@ -1398,6 +1130,12 @@ class _DonationsPageState extends State<DonationsPage> {
           size: 18,
           color: AppTheme.iconMuted,
         ),
+        // Mirrors the Center Donation History selector's existing key:
+        // DropdownButtonFormField reads `initialValue` once per widget
+        // identity, so without this the field would keep its old internal
+        // selection after the reconciliation above cleared a closed
+        // center's id -- leaving a value its items no longer contain.
+        key: ValueKey(_overallCenterId),
         initialValue: _overallCenterId,
         isExpanded: true,
         decoration: _inputDecoration('Center', Icons.local_hospital_outlined),
@@ -1510,7 +1248,7 @@ class _DonationsPageState extends State<DonationsPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header stays fixed above the scrollable body below it, matching
-        // the Center Donation History and Distribution Audit Log tables.
+        // the Center Donation History table.
         Table(
           columnWidths: columnWidths,
           children: const [
@@ -1888,14 +1626,3 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-class _LoadingBlock extends StatelessWidget {
-  const _LoadingBlock();
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      height: 180,
-      child: Center(child: CircularProgressIndicator()),
-    );
-  }
-}

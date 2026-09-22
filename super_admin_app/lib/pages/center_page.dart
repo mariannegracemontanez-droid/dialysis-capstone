@@ -9,64 +9,9 @@ import '../services/dashboard_service.dart';
 import '../config/supabase_config.dart';
 import '../services/profile_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/operating_hours.dart';
 import 'dart:ui';
 
-bool isCenterOpenByOperatingHours(String? operatingHours) {
-  if (operatingHours == null || operatingHours.trim().isEmpty) return false;
-
-  try {
-    final normalized = operatingHours
-        .replaceAll('–', '-')
-        .replaceAll('—', '-')
-        .replaceAll(RegExp(r'\s+to\s+', caseSensitive: false), '-')
-        .replaceAll(RegExp(r'\s+until\s+', caseSensitive: false), '-');
-
-    final parts = normalized.split('-');
-    if (parts.length < 2) return false;
-
-    final openTime = _parseOperatingTime(parts[0]);
-    final closeTime = _parseOperatingTime(parts[1]);
-    final now = TimeOfDay.now();
-
-    final nowMinutes = (now.hour * 60) + now.minute;
-    final openMinutes = (openTime.hour * 60) + openTime.minute;
-    final closeMinutes = (closeTime.hour * 60) + closeTime.minute;
-
-    if (openMinutes == closeMinutes) return true;
-
-    // Handles overnight schedules like 8:00 PM - 6:00 AM.
-    if (closeMinutes < openMinutes) {
-      return nowMinutes >= openMinutes || nowMinutes <= closeMinutes;
-    }
-
-    return nowMinutes >= openMinutes && nowMinutes <= closeMinutes;
-  } catch (_) {
-    return false;
-  }
-}
-
-TimeOfDay _parseOperatingTime(String value) {
-  final cleaned = value.trim().toUpperCase();
-  final regex = RegExp(r'(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?');
-  final match = regex.firstMatch(cleaned);
-
-  if (match == null) {
-    throw FormatException('Invalid operating hours format: $value');
-  }
-
-  var hour = int.parse(match.group(1)!);
-  final minute = int.tryParse(match.group(2) ?? '0') ?? 0;
-  final period = match.group(3);
-
-  if (period == 'PM' && hour != 12) hour += 12;
-  if (period == 'AM' && hour == 12) hour = 0;
-
-  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-    throw FormatException('Invalid operating hours format: $value');
-  }
-
-  return TimeOfDay(hour: hour, minute: minute);
-}
 
 /// Validates a Machines/Available Slots entry: must be a whole, non-negative
 /// number. Returns null when valid, or a user-facing message otherwise --
@@ -165,6 +110,56 @@ List<String> _parseStoredRequirements(String raw) {
       .map((item) => item.trim())
       .where((item) => item.isNotEmpty)
       .toList();
+}
+
+/// The ONE user-facing status for a center. Both the Status column and the
+/// Status filter read this, so they can never disagree about what a center's
+/// status is (they previously used two unrelated notions: the filter matched
+/// the stored `clinics.status`, while the column showed Open/Closed derived
+/// from the operating-hours string).
+///
+/// [filterValue] is the exact value the Status dropdown already used, so the
+/// filter's own options and semantics are unchanged.
+enum _CenterStatusView {
+  open('Open', 'open'),
+  busy('Busy', 'busy'),
+  full('Full', 'full'),
+  closed('Closed', 'closed');
+
+  const _CenterStatusView(this.label, this.filterValue);
+
+  final String label;
+  final String filterValue;
+}
+
+/// Derives a center's single user-facing status.
+///
+/// LIFECYCLE FIRST: a soft-closed center is always [._CenterStatusView.closed]
+/// and is never reported as an operational state. In practice a closed center
+/// never reaches this list at all (DashboardService.fetchCenters excludes
+/// them), so this is the same defensive precedence the dashboard applies --
+/// it does not reopen anything or change what soft-close means.
+///
+/// OTHERWISE: the center's stored `clinics.status`, which is exactly what
+/// DashboardService.computeStatus(slotsAvailable) wrote ('full' at 0 slots,
+/// 'busy' at <= 2, else 'open'). No new thresholds are introduced here and no
+/// capacity figure is recomputed -- this only reads the value already stored.
+///
+/// An unrecognised value falls back to `open`, matching CenterModel.fromJson's
+/// own existing `?? 'open'` default for a missing status rather than inventing
+/// a new state the filter could not express.
+_CenterStatusView _centerStatusView(CenterModel clinic) {
+  if (clinic.isClosed) return _CenterStatusView.closed;
+
+  switch (clinic.status.toLowerCase().trim()) {
+    case 'full':
+      return _CenterStatusView.full;
+    case 'busy':
+      return _CenterStatusView.busy;
+    case 'open':
+    default:
+      return _CenterStatusView.open;
+  }
 }
 
 /// User-controlled sort options for the centers table. Sorting only reorders
@@ -295,8 +290,11 @@ class _ClinicsPageState extends State<ClinicsPage> {
 
     final statusFilter = _statusFilter;
     if (statusFilter != null) {
+      // Filters on the SAME value the Status column displays (see
+      // _centerStatusView), so selecting "Busy" can only ever return the
+      // rows whose Status pill reads Busy.
       result = result.where(
-        (clinic) => clinic.status.toLowerCase() == statusFilter,
+        (clinic) => _centerStatusView(clinic).filterValue == statusFilter,
       );
     }
 
@@ -395,12 +393,36 @@ class _ClinicsPageState extends State<ClinicsPage> {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 
+  /// Trimmed, lower-cased names of the currently loaded ACTIVE centres,
+  /// excluding [excluding] -- the centre being edited, so re-saving it under
+  /// its own unchanged name is never blocked.
+  ///
+  /// Closed centres are deliberately absent: _clinics comes from
+  /// fetchCenters(), which already excludes them, so a new centre may still
+  /// reuse a closed historical centre's name. Only a duplicate ACTIVE name
+  /// is prevented.
+  ///
+  /// This is a client-side check against the list this page has already
+  /// loaded. It cannot see a centre created concurrently in another session
+  /// or browser tab -- that would need a database constraint or a
+  /// server-side create, neither of which is in scope here.
+  Set<String> _activeCenterNamesExcluding(CenterModel? excluding) {
+    return _clinics
+        .where((clinic) => clinic.id != excluding?.id)
+        .map((clinic) => clinic.name.trim().toLowerCase())
+        .where((name) => name.isNotEmpty)
+        .toSet();
+  }
+
   Future<void> _showClinicDialog([CenterModel? clinic]) async {
     final saved = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       barrierColor: Colors.black.withOpacity(0.35),
-      builder: (context) => _ClinicFormDialog(clinic: clinic),
+      builder: (context) => _ClinicFormDialog(
+        clinic: clinic,
+        existingCenterNames: _activeCenterNamesExcluding(clinic),
+      ),
     );
 
     if (saved != true) return;
@@ -465,10 +487,26 @@ class _ClinicsPageState extends State<ClinicsPage> {
           .eq('role', 'admin')
           .select();
 
-      await SupabaseConfig.client
+      // .select() so the close reports whether it actually changed the row.
+      // A PostgREST update that matches nothing is NOT an error -- it
+      // quietly affects zero rows -- so a center already removed by someone
+      // else would still have reported "Center deleted".
+      //
+      // Note the profiles update above deliberately does NOT get this
+      // treatment: zero rows there is a legitimate outcome (a center may
+      // simply have no admin assigned), so it must not be a failure.
+      final closed = await SupabaseConfig.client
           .from('clinics')
           .update({'status': 'closed'})
-          .eq('id', clinic.id);
+          .eq('id', clinic.id)
+          .select();
+
+      if (closed.isEmpty) {
+        throw Exception(
+          'This center could not be closed. It may have been removed or '
+          'changed by someone else. Refresh and try again.',
+        );
+      }
 
       await ProfileService().logAction(
         action: 'delete_clinic',
@@ -499,7 +537,7 @@ class _ClinicsPageState extends State<ClinicsPage> {
   Widget build(BuildContext context) {
     final clinics = _filteredClinics;
     final openCount = _clinics
-        .where((clinic) => isCenterOpenByOperatingHours(clinic.operatingHours))
+        .where((clinic) => isWithinOperatingHours(clinic.operatingHours))
         .length;
     final totalSlots = _clinics.fold<int>(
       0,
@@ -558,10 +596,16 @@ class _ClinicsPageState extends State<ClinicsPage> {
                   ),
 
                   _DashboardStatCard(
-                    icon: Icons.check_circle_rounded,
-                    label: 'Open Centers',
+                    icon: Icons.schedule_rounded,
+                    // Counts centers inside their operating hours RIGHT NOW
+                    // (unchanged calculation -- see openCount). Named for
+                    // that, so it is not read as a count of centers whose
+                    // Status is "Open": Status is a separate, capacity-based
+                    // value (see _centerStatusView) and the two legitimately
+                    // differ.
+                    label: 'Open Now',
                     value: openCount.toString(),
-                    description: 'Currently marked as open',
+                    description: 'Currently within operating hours',
                     accent: AppTheme.accentGreen,
                     accentSoft: AppTheme.accentGreenSoft,
                   ),
@@ -729,7 +773,16 @@ class _MaxDigitsTextInputFormatter extends TextInputFormatter {
 class _ClinicFormDialog extends StatefulWidget {
   final CenterModel? clinic;
 
-  const _ClinicFormDialog({required this.clinic});
+  /// Trimmed, lower-cased names of the other ACTIVE centres, used only to
+  /// reject an accidental duplicate active name (see the Center Name
+  /// field's validator). Closed centres are not in this set, so a name may
+  /// still be reused after its centre has been soft-closed.
+  final Set<String> existingCenterNames;
+
+  const _ClinicFormDialog({
+    required this.clinic,
+    required this.existingCenterNames,
+  });
 
   @override
   State<_ClinicFormDialog> createState() => _ClinicFormDialogState();
@@ -1278,6 +1331,24 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
                                       controller: nameController,
                                       label: 'Center Name',
                                       icon: Icons.business_rounded,
+                                      // Blocks an accidental duplicate
+                                      // ACTIVE centre name. Case-insensitive
+                                      // on the already-trimmed value
+                                      // _buildTextField passes in. Runs via
+                                      // the form's existing validate() call
+                                      // in the Save handler, so it stops the
+                                      // insert before it happens and shows
+                                      // the reason under the field.
+                                      extraValidator: (trimmedValue) {
+                                        if (widget.existingCenterNames
+                                            .contains(
+                                              trimmedValue.toLowerCase(),
+                                            )) {
+                                          return 'An active center with this name already exists';
+                                        }
+
+                                        return null;
+                                      },
                                     ),
 
                                     const SizedBox(height: 14),
@@ -1709,6 +1780,12 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
                                             } else {
                                               await _service.updateCenter(
                                                 centerId: clinic.id,
+                                                // The centre's stored
+                                                // lifecycle state, so a
+                                                // soft-closed centre is not
+                                                // silently reopened by an
+                                                // ordinary edit.
+                                                currentStatus: clinic.status,
                                                 name: nameController.text
                                                     .trim(),
                                                 address: addressController.text
@@ -2536,11 +2613,9 @@ class _CentersTable extends StatelessWidget {
                               ),
                       ),
                       DataCell(
-                        _StatusPill(
-                          isOpen: isCenterOpenByOperatingHours(
-                            clinic.operatingHours,
-                          ),
-                        ),
+                        // Same derivation the Status filter uses, so the
+                        // pill and the filter can never disagree.
+                        _StatusPill(status: _centerStatusView(clinic)),
                       ),
                       DataCell(
                         Text(
@@ -2619,36 +2694,61 @@ class _ActionIconButton extends StatelessWidget {
   }
 }
 
+/// Renders the single user-facing status from [_centerStatusView]. Same pill
+/// shape, sizing, icon treatment and palette tokens as before -- it just
+/// carries all four states instead of only Open/Closed, so it can show the
+/// same value the Status filter matches on.
 class _StatusPill extends StatelessWidget {
-  final bool isOpen;
+  final _CenterStatusView status;
 
-  const _StatusPill({required this.isOpen});
+  const _StatusPill({required this.status});
 
   @override
   Widget build(BuildContext context) {
+    // Open keeps its existing green and Closed its existing red-toned
+    // treatment; Busy reuses the orange pair already used elsewhere on this
+    // page, and a soft-closed center uses the same muted grey the table's
+    // "unknown" pills use.
+    final (Color foreground, Color background, IconData icon) =
+        switch (status) {
+          _CenterStatusView.open => (
+            AppTheme.accentGreen,
+            AppTheme.accentGreenSoft,
+            Icons.check_circle_rounded,
+          ),
+          _CenterStatusView.busy => (
+            AppTheme.accentOrange,
+            AppTheme.accentOrangeSoft,
+            Icons.hourglass_bottom_rounded,
+          ),
+          _CenterStatusView.full => (
+            AppTheme.danger,
+            AppTheme.dangerSoft,
+            Icons.do_not_disturb_on_rounded,
+          ),
+          _CenterStatusView.closed => (
+            AppTheme.textMuted,
+            const Color(0xFFF1F3F5),
+            Icons.cancel_rounded,
+          ),
+        };
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: isOpen ? AppTheme.accentGreenSoft : AppTheme.dangerSoft,
+        color: background,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: (isOpen ? AppTheme.accentGreen : AppTheme.danger)
-              .withValues(alpha: 0.20),
-        ),
+        border: Border.all(color: foreground.withValues(alpha: 0.20)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            isOpen ? Icons.check_circle_rounded : Icons.cancel_rounded,
-            size: 13,
-            color: isOpen ? AppTheme.accentGreen : AppTheme.danger,
-          ),
+          Icon(icon, size: 13, color: foreground),
           const SizedBox(width: 5),
           Text(
-            isOpen ? 'Open' : 'Closed',
+            status.label,
             style: TextStyle(
-              color: isOpen ? AppTheme.accentGreen : AppTheme.danger,
+              color: foreground,
               fontWeight: FontWeight.w600,
               height: 1.2,
               fontSize: 11,

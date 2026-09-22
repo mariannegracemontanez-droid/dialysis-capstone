@@ -4,10 +4,10 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../models/center_model.dart';
 import '../models/donation_summary.dart';
-import '../models/notification_item.dart';
 import '../models/user_model.dart';
 import '../services/dashboard_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/operating_hours.dart';
 import 'admin_accounts_page.dart';
 import 'center_page.dart';
 import 'donations_page.dart';
@@ -31,18 +31,32 @@ class _DashboardPageState extends State<DashboardPage>
 
   bool _isLoading = false;
 
-  Map<String, int> _stats = {
+  /// Re-entrancy guard for _loadDashboard (R15). Separate from [_isLoading],
+  /// which exists to drive the loading indicator: this one is only about
+  /// whether a load is already in flight, and it is set synchronously before
+  /// the first await so a second Refresh tap in the same frame is stopped.
+  bool _isDashboardLoading = false;
+
+  // final since R6: the map is no longer swapped out wholesale (that was the
+  // fetchOverviewStats() result being assigned over it) -- its 'donations'
+  // entry is written in place by _loadDashboard and the realtime stream.
+  // num, not int, so the donation total keeps its centavos end to end (R8).
+  // The remaining keys are unchanged and still initialise to 0.
+  final Map<String, num> _stats = {
     'patients': 0,
     'appointments': 0,
     'centers': 0,
     'donations': 0,
   };
 
-  String _formatPeso(int amount) {
+  // decimalDigits: 2 so the corrected total is actually shown -- at 0 the
+  // formatter rounds 351.50 back to a whole peso, which would have hidden the
+  // fix behind the display.
+  String _formatPeso(num amount) {
     final formatter = NumberFormat.currency(
       locale: 'en_PH',
       symbol: '₱',
-      decimalDigits: 0,
+      decimalDigits: 2,
     );
 
     return formatter.format(amount);
@@ -53,13 +67,21 @@ class _DashboardPageState extends State<DashboardPage>
 
   Timer? _clockTimer;
 
+  // Retained so both realtime subscriptions can be cancelled in dispose()
+  // (R11). Previously the two stream().listen() calls below were fire-and-
+  // forget: their `mounted` guards stopped a disposed-widget setState, but
+  // the subscriptions themselves stayed open for the life of the process, so
+  // every new DashboardPage (each login, for instance) added another pair
+  // that kept receiving the full donations and clinics tables forever.
+  StreamSubscription<List<Map<String, dynamic>>>? _donationsSubscription;
+  StreamSubscription<List<Map<String, dynamic>>>? _clinicsSubscription;
+
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
 
   // Presentation tokens, sourced from the shared palette.
   static const Color primaryColor = AppTheme.blue1;
   static const Color bgColor = AppTheme.canvas;
-  static const Color mutedText = AppTheme.textMuted;
 
   @override
   void initState() {
@@ -79,12 +101,17 @@ class _DashboardPageState extends State<DashboardPage>
 
     _loadDashboard();
 
-    SupabaseConfig.client.from('donations').stream(primaryKey: ['id']).listen((
-      data,
-    ) {
+    _donationsSubscription = SupabaseConfig.client
+        .from('donations')
+        .stream(primaryKey: ['id'])
+        .listen((data) {
       if (!mounted) return;
 
-      int totalDonations = 0;
+      // Accumulated as a double: each amount used to be truncated with
+      // .toInt() BEFORE being added, so every donation silently lost its
+      // centavos and the error grew with the number of donations (R8).
+      // The verified-only filter below is unchanged.
+      double totalDonations = 0;
 
       for (final item in data) {
         final status = item['status']?.toString().toLowerCase().trim() ?? '';
@@ -94,37 +121,76 @@ class _DashboardPageState extends State<DashboardPage>
         final amount =
             double.tryParse(item['amount']?.toString() ?? '0') ?? 0.0;
 
-        totalDonations += amount.toInt();
+        totalDonations += amount;
       }
 
       setState(() {
         _stats['donations'] = totalDonations;
       });
-    });
+    }, onError: _onRealtimeError);
 
-    SupabaseConfig.client.from('clinics').stream(primaryKey: ['id']).listen((
-      data,
-    ) {
+    _clinicsSubscription = SupabaseConfig.client
+        .from('clinics')
+        .stream(primaryKey: ['id'])
+        .listen((data) {
       if (!mounted) return;
 
       setState(() {
-        _centers = data.map((e) => CenterModel.fromJson(e)).toList();
+        // Soft-closed centres are filtered out here so this stream applies
+        // the same lifecycle rule as DashboardService.fetchCenters() (which
+        // queries `status.is.null,status.neq.closed`). Without this the
+        // stream overwrote _centers with EVERY clinic, so a closed centre
+        // reappeared in the dashboard's operational figures and grid --
+        // and which of the two definitions won depended on whether the
+        // stream or the initial load resolved last. Filtered after mapping
+        // rather than in the query so the realtime subscription itself is
+        // unchanged.
+        _centers = data
+            .map((e) => CenterModel.fromJson(e))
+            .where((center) => !center.isClosed)
+            .toList();
       });
-    });
+    }, onError: _onRealtimeError);
 
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
     });
   }
 
+  /// Both realtime streams previously had no error handler, so a dropped
+  /// socket or a rejected read (for example after sign-out, when the channel
+  /// is no longer authenticated) surfaced as an unhandled async error rather
+  /// than being contained here.
+  ///
+  /// Nothing is shown to the operator on purpose: these streams only refresh
+  /// figures that are already on screen, and the initial load in
+  /// _loadDashboard still reports real failures through its own SnackBar.
+  /// Raising a toast here would mean repeated noise for a background refresh
+  /// the operator did not ask for. The last good values simply stay until the
+  /// stream recovers or the page is reloaded.
+  void _onRealtimeError(Object error, StackTrace stackTrace) {
+    debugPrint('Dashboard realtime update failed: $error');
+  }
+
   @override
   void dispose() {
+    // Cancelled so the subscriptions do not outlive this page (R11).
+    _donationsSubscription?.cancel();
+    _clinicsSubscription?.cancel();
     _clockTimer?.cancel();
     _fadeController.dispose();
     super.dispose();
   }
 
   Future<void> _loadDashboard() async {
+    // Refresh is a plain onPressed with no disabled state, so it could be
+    // tapped repeatedly while an earlier load was still awaiting Supabase.
+    // That issued overlapping queries and let an older response land after a
+    // newer one, overwriting fresh data with stale. Set before the first
+    // await, so the second tap returns here rather than starting a load.
+    if (_isDashboardLoading) return;
+    _isDashboardLoading = true;
+
     if (mounted) {
       setState(() {
         _isLoading = true;
@@ -132,16 +198,18 @@ class _DashboardPageState extends State<DashboardPage>
     }
 
     try {
-      final stats = await _dashboardService.fetchOverviewStats();
       final centers = await _dashboardService.fetchCenters();
       final verifiedDonationTotal = await _fetchVerifiedDonationTotal();
-
-      stats['donations'] = verifiedDonationTotal;
 
       if (!mounted) return;
 
       setState(() {
-        _stats = stats;
+        // Written straight into the existing _stats (initialised above), which
+        // is what the Donation Fund card reads. This previously arrived via a
+        // map from fetchOverviewStats(), but that map's donation value was
+        // overwritten here anyway and its other three values were never read
+        // -- so the call and its four full-table scans were removed (R6).
+        _stats['donations'] = verifiedDonationTotal;
         _centers = centers;
         _donationTotals = [];
       });
@@ -152,6 +220,11 @@ class _DashboardPageState extends State<DashboardPage>
         ).showSnackBar(SnackBar(content: Text('Dashboard error: $error')));
       }
     } finally {
+      // Released unconditionally -- deliberately NOT inside the mounted check
+      // below, so the guard can never be left stuck on and block every later
+      // refresh. Runs on the success and error paths alike.
+      _isDashboardLoading = false;
+
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -160,21 +233,53 @@ class _DashboardPageState extends State<DashboardPage>
     }
   }
 
-  void _logout() {
+  /// Ends the Supabase session itself, not just the route stack. Navigating
+  /// away alone left the access/refresh tokens live, so the session stayed
+  /// valid -- and kept auto-refreshing -- after the operator had logged out.
+  ///
+  /// signOut() clears the local session before it attempts the server call,
+  /// so by the time a network failure can be raised this client is already
+  /// signed out locally; only the server-side token revocation is in doubt.
+  /// That is why the failure path still navigates: it must never trap the
+  /// operator in a session they asked to end. The message says what actually
+  /// happened rather than exposing the raw exception.
+  Future<void> _logout() async {
+    try {
+      await SupabaseConfig.client.auth.signOut();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Signed out on this device, but the server could not be '
+              'reached to fully end the session.',
+            ),
+          ),
+        );
+      }
+    }
+
+    if (!mounted) return;
+
     Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
   }
 
-  Future<int> _fetchVerifiedDonationTotal() async {
+  /// Total of VERIFIED donations. The query and its verified-only filter are
+  /// unchanged; only the arithmetic is. Each amount used to be truncated with
+  /// .toInt() before being added, so 100.50 + 200.75 + 50.25 summed to 350
+  /// instead of 351.50 -- the loss compounded per donation (R8). Amounts are
+  /// parsed from the numeric column's string form and accumulated as doubles.
+  Future<double> _fetchVerifiedDonationTotal() async {
     final response = await SupabaseConfig.client
         .from('donations')
         .select('amount')
         .eq('status', 'verified');
 
-    int totalDonations = 0;
+    double totalDonations = 0;
 
     for (final item in response) {
       final amount = double.tryParse(item['amount']?.toString() ?? '0') ?? 0.0;
-      totalDonations += amount.toInt();
+      totalDonations += amount;
     }
 
     return totalDonations;
@@ -449,8 +554,16 @@ class _DashboardPageState extends State<DashboardPage>
       (sum, center) => sum + center.availableSlots,
     );
 
+    // A soft-closed centre is never an active operational centre, whatever
+    // its operating hours say. The stream and fetchCenters() both already
+    // exclude closed centres from _centers; this keeps the invariant true
+    // at the point of use rather than relying only on how _centers was
+    // populated.
     final activeCenters = _centers
-        .where((center) => _isOpenNow(center.operatingHours))
+        .where(
+          (center) =>
+              !center.isClosed && isWithinOperatingHours(center.operatingHours),
+        )
         .length;
 
     return SingleChildScrollView(
@@ -851,13 +964,17 @@ class _DashboardPageState extends State<DashboardPage>
           final machine = center.machines;
           final shifts = center.shifts;
           final slots = center.availableSlots;
+          // totalCapacity is kept only for the "No Data" status branch below.
+          // The occupancy percentage that used to be derived here was removed
+          // (R9): it was (totalCapacity - slots_available) / totalCapacity,
+          // and the center form stores slots_available AS machines x 2 -- the
+          // same figure as totalCapacity -- so it evaluated to 0% for every
+          // center saved through the current UI, and clamped to 0% for older
+          // rows. It also contradicted the approved live-capacity estimate on
+          // the Centers page, which measures real reserved patients.
           final totalCapacity = machine * shifts;
-          final usedSlots = (totalCapacity - slots).clamp(0, totalCapacity);
-          final occupancy = totalCapacity > 0
-              ? (usedSlots / totalCapacity) * 100
-              : 0.0;
 
-          final isOpen = _isOpenNow(center.operatingHours);
+          final isOpen = isWithinOperatingHours(center.operatingHours);
           final dbStatus = center.status.toLowerCase();
 
           final statusColor = !isOpen
@@ -866,7 +983,14 @@ class _DashboardPageState extends State<DashboardPage>
 
           String statusLabel;
 
-          if (totalCapacity == 0) {
+          if (center.isClosed) {
+            // Lifecycle beats availability and beats operating hours: a
+            // soft-closed centre is never labelled Open. Checked before the
+            // switch below, which only knows the OPERATIONAL vocabulary and
+            // would otherwise fall through its `default` and label 'closed'
+            // as 'Open'.
+            statusLabel = 'Closed';
+          } else if (totalCapacity == 0) {
             statusLabel = 'No Data';
           } else if (!isOpen) {
             statusLabel = 'Closed';
@@ -944,36 +1068,17 @@ class _DashboardPageState extends State<DashboardPage>
 
                     const SizedBox(height: 14),
 
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: LinearProgressIndicator(
-                        value: (occupancy / 100).clamp(0.0, 1.0),
-                        color: statusColor,
-                        backgroundColor: statusColor.withValues(alpha: 0.12),
-                        minHeight: 6,
-                      ),
-                    ),
-
-                    const SizedBox(height: 10),
-
+                    // The occupancy progress bar and the "N% Occupied" label
+                    // that stood here were removed (R9) -- both rendered the
+                    // always-0% figure described above. Nothing replaces them:
+                    // the dashboard holds no per-center reserved-patient data,
+                    // and inventing one here would duplicate the approved
+                    // live-capacity estimate rather than reuse it.
                     Row(
                       children: [
                         ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 110),
                           child: _statusChip(statusLabel, statusColor),
-                        ),
-                        const SizedBox(width: 9),
-                        Expanded(
-                          child: Text(
-                            '${occupancy.toStringAsFixed(0)}% Occupied',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: statusColor,
-                            ),
-                          ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -1066,21 +1171,23 @@ class _DashboardPageState extends State<DashboardPage>
   Future<void> _showCenterDetailsModal(CenterModel center) async {
     final machine = center.machines;
     final shifts = center.shifts;
-    final slots = center.availableSlots;
+    // Same removal as the center grid (R9): the occupancy percentage derived
+    // from slots_available was structurally 0% and conflicted with the
+    // approved live-capacity estimate. totalCapacity stays for the "No Data"
+    // status branch below.
     final totalCapacity = machine * shifts;
-    final usedSlots = (totalCapacity - slots).clamp(0, totalCapacity);
-    final occupancy = totalCapacity > 0
-        ? (usedSlots / totalCapacity) * 100
-        : 0.0;
 
-    final isOpen = _isOpenNow(center.operatingHours);
+    final isOpen = isWithinOperatingHours(center.operatingHours);
     final dbStatus = center.status.toLowerCase();
     final statusColor = !isOpen
         ? const Color(0xFF6B7280)
         : _statusColor(dbStatus);
 
     String statusLabel;
-    if (totalCapacity == 0) {
+    if (center.isClosed) {
+      // Same lifecycle-beats-availability rule as the centre grid above.
+      statusLabel = 'Closed';
+    } else if (totalCapacity == 0) {
       statusLabel = 'No Data';
     } else if (!isOpen) {
       statusLabel = 'Closed';
@@ -1185,54 +1292,12 @@ class _DashboardPageState extends State<DashboardPage>
                           ],
                         ),
 
-                        const SizedBox(height: 24),
-
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppTheme.surfaceTint,
-                            borderRadius: BorderRadius.circular(AppTheme.rLg),
-                            border: Border.all(color: AppTheme.border),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Text(
-                                    '${occupancy.toStringAsFixed(0)}% Occupied',
-                                    style: TextStyle(
-                                      color: statusColor,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  Text(
-                                    'Slots left: $slots',
-                                    style: const TextStyle(
-                                      color: AppTheme.textMuted,
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(999),
-                                child: LinearProgressIndicator(
-                                  value: (occupancy / 100).clamp(0.0, 1.0),
-                                  color: statusColor,
-                                  backgroundColor: statusColor.withValues(
-                                    alpha: 0.12,
-                                  ),
-                                  minHeight: 8,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                        // The occupancy panel that stood here was removed
+                        // (R9): it showed the always-0% figure plus a
+                        // "Slots left" reading of the same stored
+                        // slots_available value. The modal already lists
+                        // Available Slots on its own tile below, so nothing
+                        // unique was lost and nothing replaces it.
 
                         const SizedBox(height: 18),
 
@@ -1262,11 +1327,15 @@ class _DashboardPageState extends State<DashboardPage>
                               'Shifts',
                               center.shifts.toString(),
                             ),
-                            _modalInfoTile(
-                              Icons.people_alt_rounded,
-                              'Total Patients',
-                              center.totalPatients.toString(),
-                            ),
+                            // No "Total Patients" tile: it read
+                            // clinics.total_patients, a column nothing in any
+                            // app or migration has ever written, so it showed
+                            // 0 for every center regardless of reality. It is
+                            // removed rather than recalculated because this
+                            // app defines no per-center patient total -- the
+                            // only per-center patient query is the capacity
+                            // RESERVED count, which is a different figure and
+                            // is deliberately left alone.
                             _modalInfoTile(
                               Icons.access_time_rounded,
                               'Operating Hours',
@@ -1539,34 +1608,6 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
-  Widget _smallInfo(IconData icon, String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF6FAFD),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: mutedText, size: 13),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              text,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: mutedText,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _miniStat(String label, String value) {
     return Expanded(
       child: Container(
@@ -1609,77 +1650,6 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
-  bool _isOpenNow(String? hours) {
-    if (hours == null || !hours.contains('-')) return false;
-
-    try {
-      final parts = hours.split('-');
-      final open = _parseSimpleTime(parts[0]);
-      final close = _parseSimpleTime(parts[1]);
-
-      final now = TimeOfDay.now();
-
-      final nowMin = now.hour * 60 + now.minute;
-      final openMin = open.hour * 60 + open.minute;
-      final closeMin = close.hour * 60 + close.minute;
-
-      return nowMin >= openMin && nowMin <= closeMin;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  TimeOfDay _parseSimpleTime(String timeStr) {
-    final cleaned = timeStr.trim().toUpperCase();
-
-    final regex = RegExp(r'(\d{1,2}):?(\d{2})?\s*(AM|PM)');
-    final match = regex.firstMatch(cleaned);
-
-    if (match == null) throw Exception("Invalid time format");
-
-    int hour = int.parse(match.group(1)!);
-    int minute = int.parse(match.group(2) ?? '0');
-    String period = match.group(3)!;
-
-    if (period == 'PM' && hour != 12) hour += 12;
-    if (period == 'AM' && hour == 12) hour = 0;
-
-    return TimeOfDay(hour: hour, minute: minute);
-  }
-
-  String _openCloseText(String? hours) {
-    if (hours == null || !hours.contains('-')) return 'No hours set';
-
-    try {
-      final parts = hours.split('-');
-
-      final now = TimeOfDay.now();
-      final open = _parseSimpleTime(parts[0]);
-      final close = _parseSimpleTime(parts[1]);
-
-      final nowMin = now.hour * 60 + now.minute;
-      final openMin = open.hour * 60 + open.minute;
-      final closeMin = close.hour * 60 + close.minute;
-
-      if (nowMin >= openMin && nowMin <= closeMin) {
-        return 'Closes at ${parts[1].trim()}';
-      } else {
-        return 'Opens at ${parts[0].trim()}';
-      }
-    } catch (_) {
-      return hours;
-    }
-  }
-
-  String _formatTimeAgo(DateTime timestamp) {
-    final difference = DateTime.now().difference(timestamp);
-
-    if (difference.inSeconds < 60) return 'just now';
-    if (difference.inMinutes < 60) return '${difference.inMinutes} min ago';
-    if (difference.inHours < 24) return '${difference.inHours} hr ago';
-    return '${difference.inDays} day(s) ago';
-  }
-
   Color _statusColor(String? status) {
     switch (status?.toLowerCase()) {
       case 'open':
@@ -1689,6 +1659,9 @@ class _DashboardPageState extends State<DashboardPage>
       case 'full':
         return const Color(0xFFB91C1C);
       case 'maintenance':
+      // Soft-closed: the same muted grey the !isOpen path already uses, so
+      // a closed centre is never tinted like an active operational one.
+      case CenterModel.closedStatus:
         return const Color(0xFF6B7280);
       default:
         return const Color(0xFF2563EB);
@@ -1715,204 +1688,6 @@ class _DashboardPageState extends State<DashboardPage>
     return '${months[now.month - 1]} ${now.day}, ${now.year}';
   }
 
-  Future<void> _showAddCenterDialog() async {
-    final formKey = GlobalKey<FormState>();
-    final nameController = TextEditingController();
-    final addressController = TextEditingController();
-    final machinesController = TextEditingController();
-    final slotsController = TextEditingController();
-    final hoursController = TextEditingController(text: '7:00 AM - 5:00 PM');
-    final contactController = TextEditingController();
-    var isSaving = false;
-
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        final messenger = ScaffoldMessenger.of(context);
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Add Center'),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
-              ),
-              content: Form(
-                key: formKey,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildTextField(
-                        controller: nameController,
-                        label: 'Center Name',
-                      ),
-                      const SizedBox(height: 12),
-                      _buildTextField(
-                        controller: addressController,
-                        label: 'Address',
-                      ),
-                      const SizedBox(height: 12),
-                      _buildTextField(
-                        controller: machinesController,
-                        label: 'Number of Machines',
-                        keyboardType: TextInputType.number,
-                      ),
-                      const SizedBox(height: 12),
-                      _buildTextField(
-                        controller: slotsController,
-                        label: 'Available Slots',
-                        keyboardType: TextInputType.number,
-                      ),
-                      const SizedBox(height: 12),
-                      _buildTextField(
-                        controller: hoursController,
-                        label: 'Operating Hours',
-                      ),
-                      const SizedBox(height: 12),
-                      _buildTextField(
-                        controller: contactController,
-                        label: 'Contact Number',
-                        keyboardType: TextInputType.phone,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: isSaving ? null : () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: isSaving
-                      ? null
-                      : () async {
-                          if (!formKey.currentState!.validate()) return;
-
-                          setDialogState(() {
-                            isSaving = true;
-                          });
-
-                          try {
-                            await _dashboardService.createCenter(
-                              name: nameController.text.trim(),
-                              address: addressController.text.trim(),
-                              city: 'Unknown',
-                              requirements: 'N/A',
-                              latitude: 0.0,
-                              longitude: 0.0,
-                              slotAvailable:
-                                  int.tryParse(slotsController.text.trim()) ??
-                                  0,
-                              machines:
-                                  int.tryParse(
-                                    machinesController.text.trim(),
-                                  ) ??
-                                  0,
-                              shifts: 2,
-                              operatingHours: hoursController.text.trim(),
-                              contactNumber: contactController.text.trim(),
-                            );
-
-                            Navigator.pop(context);
-
-                            messenger.showSnackBar(
-                              const SnackBar(
-                                content: Text('Center added successfully.'),
-                              ),
-                            );
-                          } catch (error) {
-                            messenger.showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Unable to add center: ${error.toString()}',
-                                ),
-                              ),
-                            );
-                          } finally {
-                            setDialogState(() {
-                              isSaving = false;
-                            });
-                          }
-                        },
-                  style: ElevatedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: isSaving
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Save'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _showExportDialog() async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Export Reports'),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-          content: const Text(
-            'Choose the data type you want to export and select PDF or CSV format.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Reports export started.')),
-                );
-              },
-              child: const Text('Export CSV'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      validator: (value) =>
-          (value == null || value.isEmpty) ? 'This field is required' : null,
-      decoration: InputDecoration(
-        labelText: label,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-        filled: true,
-        fillColor: Colors.grey.shade50,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 18,
-        ),
-      ),
-    );
-  }
 }
 
 /// Header emblem for the dashboard banner.

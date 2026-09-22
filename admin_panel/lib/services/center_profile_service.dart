@@ -152,6 +152,39 @@ class CenterProfileService {
       isActive: isActive,
     );
   }
+
+  /// Creates the AM or PM shift for a center that does not have one yet.
+  ///
+  /// The clinic is resolved from the signed-in admin's own profile, the
+  /// same way [saveCenterInfo] does it, so this cannot be pointed at
+  /// another center's shifts. Delegates to
+  /// [CenterScheduleService.createClinicShift], which upserts on the
+  /// existing `unique (clinic_id, shift_code)` constraint and so stays
+  /// idempotent across repeated saves.
+  Future<void> createShift({
+    required String shiftCode,
+    required String label,
+    required String startTime,
+    required String endTime,
+    required int capacity,
+    required bool isActive,
+  }) async {
+    final clinicId = await getCurrentClinicId();
+
+    if (clinicId == null) {
+      throw Exception('No center is assigned to this admin account.');
+    }
+
+    await _scheduleService.createClinicShift(
+      clinicId: clinicId,
+      shiftCode: shiftCode,
+      shiftLabel: label,
+      startTime: startTime,
+      endTime: endTime,
+      capacity: capacity,
+      isActive: isActive,
+    );
+  }
 }
 
 /// The center plus its configured shifts and operating days.

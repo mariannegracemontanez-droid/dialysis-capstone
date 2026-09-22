@@ -111,6 +111,44 @@ class CenterScheduleService {
     return shifts.where((s) => s.isActive).toList();
   }
 
+  /// Creates (or re-writes) the AM or PM row for a clinic that has none.
+  ///
+  /// center_scheduling_foundation.sql seeds AM/PM only for the clinics
+  /// that existed when it ran, and nothing replaces that seed for a
+  /// center the Super Admin creates afterwards -- so those centers reach
+  /// the admin panel with zero `clinic_shifts` rows and the scheduling
+  /// UI has no shifts to offer. This is the write path that lets the
+  /// Center Admin fill that gap from the Center Profile page.
+  ///
+  /// Idempotent by the table's own `unique (clinic_id, shift_code)`
+  /// constraint: saving the profile again upserts the SAME two rows
+  /// rather than inserting duplicates. shift_code stays 'AM'/'PM', so
+  /// daily_schedules.shift, the capacity snapshot and the mobile app all
+  /// keep working against the same two values.
+  ///
+  /// [updateClinicShift] remains the path for a row that already exists
+  /// and is addressed by id; this one is keyed by clinic + code because
+  /// there is no id yet.
+  Future<void> createClinicShift({
+    required String clinicId,
+    required String shiftCode,
+    required String shiftLabel,
+    required String startTime,
+    required String endTime,
+    required int capacity,
+    required bool isActive,
+  }) async {
+    await supabase.from('clinic_shifts').upsert({
+      'clinic_id': clinicId,
+      'shift_code': shiftCode,
+      'shift_label': shiftLabel,
+      'start_time': startTime,
+      'end_time': endTime,
+      'capacity': capacity,
+      'is_active': isActive,
+    }, onConflict: 'clinic_id,shift_code');
+  }
+
   Future<void> updateClinicShift({
     required String shiftId,
     required String shiftLabel,

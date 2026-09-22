@@ -212,8 +212,19 @@ class _CenterProfilePageState extends State<CenterProfilePage> {
       }
     }
 
-    for (final shift in _shifts) {
-      _shiftDrafts.add(_ShiftDraft.from(shift));
+    // One draft per shift code, NOT one per stored row. A center the
+    // Super Admin created after center_scheduling_foundation.sql ran has
+    // no `clinic_shifts` rows at all, so editing off `_shifts` alone gave
+    // the admin nothing to fill in and no way out of the empty state. A
+    // code with no stored row gets a blank draft instead, which is only
+    // written once the admin actually configures it.
+    for (final code in ClinicShift.codes) {
+      final existing = ClinicShift.byCode(_shifts, code);
+      _shiftDrafts.add(
+        existing != null
+            ? _ShiftDraft.from(existing)
+            : _ShiftDraft.blank(shiftCode: code, machines: center.machines),
+      );
     }
 
     setState(() => _editing = true);
@@ -326,7 +337,15 @@ class _CenterProfilePageState extends State<CenterProfilePage> {
     // Shifts. Each one is checked on its own first, so the message names
     // the shift that is wrong; the cross-shift checks come after.
     for (final draft in _shiftDrafts) {
-      final label = '${draft.shift.shiftCode} shift';
+      // A shift this center has never configured and the admin has not
+      // started filling in is left alone: empty AM + empty PM is the
+      // legitimate starting state of a newly created center, not a form
+      // error. The moment either time is picked or a name is typed, the
+      // draft stops being unconfigured and every rule below applies to
+      // it in full -- so a half-entered range is still refused.
+      if (draft.isUnconfigured) continue;
+
+      final label = '${draft.shiftCode} shift';
 
       final labelError = AdminValidators.optionalText(
         draft.labelController.text,
@@ -374,9 +393,16 @@ class _CenterProfilePageState extends State<CenterProfilePage> {
       if (withinError != null) return withinError;
     }
 
-    final active = _shiftDrafts.where((d) => d.isActive).toList();
+    final configured = _shiftDrafts.where((d) => !d.isUnconfigured).toList();
+    final active = configured.where((d) => d.isActive).toList();
 
-    if (active.isEmpty) {
+    // Only once this center has at least one shift in play. A center
+    // that has configured none yet is saving the REST of its profile,
+    // and blocking that on a shift it has not reached would make the
+    // page unsavable for every newly created center. For a center whose
+    // shifts already exist every draft is configured, so this rule still
+    // fires exactly as it did before.
+    if (configured.isNotEmpty && active.isEmpty) {
       return 'At least one shift must stay active, otherwise no patient '
           'can be scheduled at this center.';
     }
@@ -386,10 +412,10 @@ class _CenterProfilePageState extends State<CenterProfilePage> {
         final overlap = AdminValidators.nonOverlappingRanges(
           firstStart: active[i].start!,
           firstEnd: active[i].end!,
-          firstLabel: '${active[i].shift.shiftCode} shift',
+          firstLabel: '${active[i].shiftCode} shift',
           secondStart: active[j].start!,
           secondEnd: active[j].end!,
-          secondLabel: '${active[j].shift.shiftCode} shift',
+          secondLabel: '${active[j].shiftCode} shift',
         );
         if (overlap != null) return overlap;
       }
@@ -429,17 +455,25 @@ class _CenterProfilePageState extends State<CenterProfilePage> {
     // Over-booking warnings, gathered before anything is written.
     final overbooked = <String>[];
     for (final draft in _shiftDrafts) {
+      final shift = draft.shift;
+
+      // Nothing can be over-booked in a shift that does not exist yet:
+      // it has no id to look occupancy up by and no patients recurring
+      // in it. Skipping covers both the untouched and the newly
+      // configured case.
+      if (shift == null) continue;
+
       final capacity = int.parse(draft.capacityController.text.trim());
-      final peak = _peakScheduled(draft.shift.id);
+      final peak = _peakScheduled(shift.id);
 
       if (!draft.isActive && peak > 0) {
         overbooked.add(
-          'Turning off the ${draft.shift.shiftCode} shift leaves $peak '
+          'Turning off the ${draft.shiftCode} shift leaves $peak '
           'patient${peak == 1 ? '' : 's'} recurring in it.',
         );
       } else if (draft.isActive && capacity < peak) {
         overbooked.add(
-          'The ${draft.shift.shiftCode} shift already has $peak '
+          'The ${draft.shiftCode} shift already has $peak '
           'patient${peak == 1 ? '' : 's'} on its busiest day, more than the '
           'new capacity of $capacity.',
         );
@@ -473,10 +507,32 @@ class _CenterProfilePageState extends State<CenterProfilePage> {
       // Only the shifts that actually changed are written, so an
       // untouched shift's row keeps its existing values and timestamps.
       for (final draft in _shiftDrafts) {
+        // Never configured and not being configured now: no row is
+        // created, so a center that saves the rest of its profile does
+        // not get half-empty AM/PM rows it never asked for.
+        if (draft.isUnconfigured) continue;
+
+        final shift = draft.shift;
+
+        if (shift == null) {
+          // First time this center's AM or PM shift is configured.
+          // Upserts on `unique (clinic_id, shift_code)`, so saving again
+          // updates this same row instead of adding a second one.
+          await _service.createShift(
+            shiftCode: draft.shiftCode,
+            label: draft.labelController.text.trim(),
+            startTime: AdminValidators.toSqlTime(draft.start!),
+            endTime: AdminValidators.toSqlTime(draft.end!),
+            capacity: int.parse(draft.capacityController.text.trim()),
+            isActive: draft.isActive,
+          );
+          continue;
+        }
+
         if (!draft.isDirty) continue;
 
         await _service.saveShift(
-          shift: draft.shift,
+          shift: shift,
           label: draft.labelController.text.trim(),
           startTime: AdminValidators.toSqlTime(draft.start!),
           endTime: AdminValidators.toSqlTime(draft.end!),
@@ -1040,29 +1096,41 @@ class _CenterProfilePageState extends State<CenterProfilePage> {
     return AdminSection(
       title: 'Shift Schedule',
       subtitle:
-          'The center\'s existing AM and PM dialysis shifts. Times and '
-          'capacity are editable; the AM/PM codes the daily schedule runs '
-          'on are not.',
+          'The center\'s AM and PM dialysis shifts. Set each one\'s start '
+          'and end time here; the AM/PM codes the daily schedule runs on '
+          'are not editable.',
       icon: Icons.swap_horiz_rounded,
       accent: AppTheme.blue1,
       accentSoft: AppTheme.accentBlueSoft,
-      child: _shifts.isEmpty
-          ? _hint(
-              'No shifts are configured for this center yet. Run '
-              'supabase/center_scheduling_foundation.sql to seed the AM and '
-              'PM shifts.',
-              icon: Icons.warning_amber_rounded,
-            )
-          : Column(
+      // In edit mode the drafts drive the list, not the stored rows, so
+      // a center with no `clinic_shifts` rows still gets an empty AM and
+      // PM editor to fill in. Read-only still shows only what is
+      // actually stored.
+      child: _editing
+          ? Column(
               children: [
-                for (var i = 0; i < _shifts.length; i++) ...[
+                for (var i = 0; i < _shiftDrafts.length; i++) ...[
                   if (i > 0) const SizedBox(height: 12),
-                  _editing
-                      ? _shiftEditor(_shiftDrafts[i])
-                      : _shiftReadOnly(_shifts[i]),
+                  _shiftEditor(_shiftDrafts[i]),
                 ],
               ],
-            ),
+            )
+          : (_shifts.isEmpty
+                ? _hint(
+                    'No shifts are configured for this center yet. Choose '
+                    '"Edit profile" and set the AM and PM shift times — '
+                    'patients cannot be given a recurring schedule until '
+                    'at least one shift exists.',
+                    icon: Icons.warning_amber_rounded,
+                  )
+                : Column(
+                    children: [
+                      for (var i = 0; i < _shifts.length; i++) ...[
+                        if (i > 0) const SizedBox(height: 12),
+                        _shiftReadOnly(_shifts[i]),
+                      ],
+                    ],
+                  )),
     );
   }
 
@@ -1140,10 +1208,18 @@ class _CenterProfilePageState extends State<CenterProfilePage> {
           Row(
             children: [
               AdminPill(
-                label: '${draft.shift.shiftCode} Shift',
+                label: '${draft.shiftCode} Shift',
                 color: AppTheme.blue1,
                 background: AppTheme.accentBlueSoft,
               ),
+              if (draft.shift == null) ...[
+                const SizedBox(width: 8),
+                const AdminPill(
+                  label: 'Not set up yet',
+                  color: AppTheme.textMuted,
+                  background: AppTheme.surface,
+                ),
+              ],
               const Spacer(),
               Text(
                 draft.isActive ? 'Active' : 'Inactive',
@@ -1175,7 +1251,7 @@ class _CenterProfilePageState extends State<CenterProfilePage> {
                     maxLength: 40,
                     style: AppTheme.fieldTextStyle,
                     decoration: AppTheme.field(
-                      hintText: draft.shift.shiftCode == 'AM'
+                      hintText: draft.shiftCode == 'AM'
                           ? 'Morning'
                           : 'Afternoon',
                       dense: true,
@@ -1226,6 +1302,22 @@ class _CenterProfilePageState extends State<CenterProfilePage> {
               ),
             ],
           ),
+          // Says plainly that leaving this one blank is allowed, so the
+          // required-field asterisks above do not read as "you must fill
+          // this in before you can save anything".
+          if (draft.shift == null) ...[
+            const SizedBox(height: 10),
+            Text(
+              'This shift has not been set up for the center yet. Pick a '
+              'start and end time to create it, or leave both blank to '
+              'set it up later.',
+              style: const TextStyle(
+                color: AppTheme.textMuted,
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1730,8 +1822,22 @@ class _CenterProfilePageState extends State<CenterProfilePage> {
 /// Held separately from the loaded [ClinicShift] so Cancel restores the
 /// stored row exactly, and so [isDirty] can skip writing a shift nobody
 /// touched.
+///
+/// [shift] is null for a center whose AM or PM row does not exist in
+/// `clinic_shifts` yet (see [_ShiftDraft.blank]). Such a draft starts
+/// with no times at all and, while it stays that way, is neither
+/// validated nor written -- an unconfigured shift is a valid state for a
+/// newly created center, not an error to nag the admin about.
 class _ShiftDraft {
-  final ClinicShift shift;
+  /// The stored row this draft edits, or null when the shift has never
+  /// been created for this center.
+  final ClinicShift? shift;
+
+  /// 'AM' or 'PM'. Read from [shift] when there is one, and otherwise
+  /// the code the row will be created with -- so the rest of the page
+  /// can name the shift without caring whether it exists yet.
+  final String shiftCode;
+
   final TextEditingController labelController;
   final TextEditingController capacityController;
   TimeOfDay? start;
@@ -1746,6 +1852,7 @@ class _ShiftDraft {
 
   _ShiftDraft._({
     required this.shift,
+    required this.shiftCode,
     required this.labelController,
     required this.capacityController,
     required this.start,
@@ -1770,6 +1877,7 @@ class _ShiftDraft {
 
     return _ShiftDraft._(
       shift: shift,
+      shiftCode: shift.shiftCode,
       labelController: TextEditingController(text: label),
       capacityController: TextEditingController(text: capacity),
       start: start,
@@ -1781,6 +1889,51 @@ class _ShiftDraft {
       originalEnd: end,
       originalActive: shift.isActive,
     );
+  }
+
+  /// A shift this center has never configured.
+  ///
+  /// Both times start null, which is what renders the AM/PM fields empty
+  /// and what [isUnconfigured] reads to leave the shift alone. Capacity
+  /// is pre-filled with the center's machine count -- the exact starting
+  /// value center_scheduling_foundation.sql seeds an existing clinic's
+  /// shifts with -- so the admin only has to pick the two times.
+  factory _ShiftDraft.blank({
+    required String shiftCode,
+    required int machines,
+  }) {
+    final capacity = machines.toString();
+
+    return _ShiftDraft._(
+      shift: null,
+      shiftCode: shiftCode,
+      labelController: TextEditingController(),
+      capacityController: TextEditingController(text: capacity),
+      start: null,
+      end: null,
+      isActive: true,
+      originalLabel: '',
+      originalCapacity: capacity,
+      originalStart: null,
+      originalEnd: null,
+      originalActive: true,
+    );
+  }
+
+  /// True while this is a shift that does not exist in the database and
+  /// the admin has not begun configuring it -- no times picked and no
+  /// name typed. Capacity is deliberately not part of the test: a blank
+  /// draft pre-fills it, so counting it would make an untouched shift
+  /// look configured.
+  ///
+  /// An unconfigured shift is skipped by validation and never written,
+  /// which is what keeps "empty AM + empty PM" a valid state for a newly
+  /// created center instead of a form error.
+  bool get isUnconfigured {
+    return shift == null &&
+        start == null &&
+        end == null &&
+        labelController.text.trim().isEmpty;
   }
 
   bool get isDirty {
