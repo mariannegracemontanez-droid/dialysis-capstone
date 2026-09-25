@@ -1,0 +1,22 @@
+name: curenurture_notice
+description: >-
+  The one notice (message) system shared by the CureNurture Admin panel and
+  the Super Admin portal, so both halves of the product report the outcome of
+  an action with the same layering, behaviour and visual style.
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ^3.10.8
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

@@ -12,6 +12,11 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
   supabase_flutter: ^2.0.0
+  # The notice (message) system, shared with the Admin panel so both halves
+  # of the product report an outcome the same way. See
+  # packages/curenurture_notice/README.md.
+  curenurture_notice:
+    path: ../packages/curenurture_notice
   flutter_dotenv: ^6.0.1
   fl_chart: ^1.2.0
   intl: ^0.19.0

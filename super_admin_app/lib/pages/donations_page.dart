@@ -3,6 +3,7 @@ import '../models/center_donation_history_entry.dart';
 import '../models/donation_record.dart';
 import 'package:super_admin_app/services/donation_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/super_admin_notice.dart';
 
 /// Preset date windows for the Center Donation History filter. Applied
 /// client-side against the existing donation date -- no new fields or queries.
@@ -226,9 +227,7 @@ class _DonationsPageState extends State<DonationsPage> {
       }
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load donations: $error')),
-      );
+      SuperAdminNotice.error(context, 'Failed to load donations: $error');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -247,8 +246,9 @@ class _DonationsPageState extends State<DonationsPage> {
       setState(() => _historyEntries = entries);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load center history: $error')),
+      SuperAdminNotice.error(
+        context,
+        'Failed to load center history: $error',
       );
     } finally {
       if (mounted) {
@@ -272,8 +272,9 @@ class _DonationsPageState extends State<DonationsPage> {
       setState(() => _overallCenterEntries = entries);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load overall donation history: $error')),
+      SuperAdminNotice.error(
+        context,
+        'Failed to load overall donation history: $error',
       );
     } finally {
       if (mounted) {

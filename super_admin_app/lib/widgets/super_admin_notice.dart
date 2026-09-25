@@ -5,17 +5,27 @@ import '../theme/app_theme.dart';
 
 export 'package:curenurture_notice/curenurture_notice.dart' show NoticeType;
 
-/// The Admin panel's name for the shared notice system.
+/// The Super Admin portal's name for the shared notice system.
 ///
-/// Every message the panel raises still goes through `AdminNotice.success`,
-/// `.info`, `.error` and `.confirm` exactly as before -- this file no longer
-/// implements any of it. The barrier, the root-overlay insertion that puts a
-/// notice above an open modal, the auto-dismiss windows, the animation and
-/// the buttons all live in `package:curenurture_notice`, which the Super
-/// Admin portal uses too. Keeping one implementation is the point: the two
-/// portals cannot drift apart on how a failed save is reported.
+/// ## Why this replaced the portal's snack bars
 ///
-/// All this file decides is what the panel looks like, in [_theme] below.
+/// A `SnackBar` is hosted by the `ScaffoldMessenger` *inside* the page, so a
+/// dialog -- which is a route in the Navigator's overlay, painted above the
+/// whole page -- covers it. Messages raised while a Super Admin modal was
+/// open (a failed center save, a failed admin delete) were landing at the
+/// bottom of the screen underneath that modal, unread.
+///
+/// A notice is inserted straight into the **root overlay** instead: the same
+/// overlay the Navigator paints its dialog routes into, so it goes on top of
+/// whatever is already there. That is ordinary Flutter layering, not a
+/// hand-picked z-index, and it keeps working however many modals are
+/// stacked. The layer under the card is a real barrier, so the modal behind
+/// it cannot be clicked while a notice is up, and removing the notice
+/// restores that modal exactly as it was.
+///
+///   Super Admin page -> Super Admin modal -> notice barrier -> notice card
+///
+/// ## The four types
 ///
 /// | type      | auto-closes | outside click | buttons        |
 /// |-----------|-------------|---------------|----------------|
@@ -23,10 +33,16 @@ export 'package:curenurture_notice/curenurture_notice.dart' show NoticeType;
 /// | info      | 5s          | dismisses     | X              |
 /// | error     | never       | ignored       | X + OK         |
 /// | warning   | never       | ignored       | Cancel/Continue|
-class AdminNotice {
-  const AdminNotice._();
+///
+/// None of that is implemented here. It all lives in
+/// `package:curenurture_notice`, which the Admin panel uses through its own
+/// `AdminNotice` facade -- one implementation, so the two portals cannot
+/// drift apart on how an outcome is reported. All this file decides is what
+/// the portal looks like, in [_theme] below.
+class SuperAdminNotice {
+  const SuperAdminNotice._();
 
-  /// The panel's palette, handed to the shared notice. Only colours and
+  /// The portal's palette, handed to the shared notice. Only colours and
   /// radii -- nothing here changes behaviour.
   static final NoticeTheme _theme = NoticeTheme(
     surface: AppTheme.surface,
@@ -52,7 +68,7 @@ class AdminNotice {
     cardRadius: AppTheme.rXl,
     buttonRadius: AppTheme.rMd,
     shadow: AppTheme.shadowMd,
-    enterCurve: AppTheme.ease,
+    enterCurve: Curves.easeOutCubic,
   );
 
   /// How long a self-closing notice stays up.
@@ -81,8 +97,8 @@ class AdminNotice {
     return AppNotice.info(context, message, theme: _theme, title: title);
   }
 
-  /// An operation failed. Stays up until the admin acknowledges it, so a
-  /// failed save can never scroll past unseen.
+  /// An operation failed. Stays up until the super admin acknowledges it,
+  /// so a failed save can never be mistaken for a successful one.
   static Future<void> error(
     BuildContext context,
     String message, {
@@ -98,11 +114,11 @@ class AdminNotice {
     );
   }
 
-  /// A decision the admin has to make before something consequential
+  /// A decision the super admin has to make before something consequential
   /// happens. Never closes on its own and never on an outside click.
   ///
   /// Completes true when confirmed, false when cancelled or dismissed --
-  /// so `if (await AdminNotice.confirm(...))` reads naturally and a
+  /// so `if (await SuperAdminNotice.confirm(...))` reads naturally and a
   /// dismissal is always the safe answer.
   static Future<bool> confirm(
     BuildContext context, {

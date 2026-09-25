@@ -7,7 +7,11 @@ import '../models/donation_summary.dart';
 import '../models/user_model.dart';
 import '../services/dashboard_service.dart';
 import '../theme/app_theme.dart';
+<<<<<<< HEAD
 import '../utils/operating_hours.dart';
+=======
+import '../widgets/super_admin_notice.dart';
+>>>>>>> 738e78ca740ede777ef81769cbba977906a50ee2
 import 'admin_accounts_page.dart';
 import 'center_page.dart';
 import 'donations_page.dart';
@@ -215,9 +219,7 @@ class _DashboardPageState extends State<DashboardPage>
       });
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Dashboard error: $error')));
+        SuperAdminNotice.error(context, 'Dashboard error: $error');
       }
     } finally {
       // Released unconditionally -- deliberately NOT inside the mounted check
@@ -1688,6 +1690,206 @@ class _DashboardPageState extends State<DashboardPage>
     return '${months[now.month - 1]} ${now.day}, ${now.year}';
   }
 
+<<<<<<< HEAD
+=======
+  Future<void> _showAddCenterDialog() async {
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController();
+    final addressController = TextEditingController();
+    final machinesController = TextEditingController();
+    final slotsController = TextEditingController();
+    final hoursController = TextEditingController(text: '7:00 AM - 5:00 PM');
+    final contactController = TextEditingController();
+    var isSaving = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              title: const Text('Add Center'),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              content: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildTextField(
+                        controller: nameController,
+                        label: 'Center Name',
+                      ),
+                      const SizedBox(height: 12),
+                      _buildTextField(
+                        controller: addressController,
+                        label: 'Address',
+                      ),
+                      const SizedBox(height: 12),
+                      _buildTextField(
+                        controller: machinesController,
+                        label: 'Number of Machines',
+                        keyboardType: TextInputType.number,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildTextField(
+                        controller: slotsController,
+                        label: 'Available Slots',
+                        keyboardType: TextInputType.number,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildTextField(
+                        controller: hoursController,
+                        label: 'Operating Hours',
+                      ),
+                      const SizedBox(height: 12),
+                      _buildTextField(
+                        controller: contactController,
+                        label: 'Contact Number',
+                        keyboardType: TextInputType.phone,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSaving
+                      ? null
+                      : () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          if (!formKey.currentState!.validate()) return;
+
+                          setDialogState(() {
+                            isSaving = true;
+                          });
+
+                          try {
+                            await _dashboardService.createCenter(
+                              name: nameController.text.trim(),
+                              address: addressController.text.trim(),
+                              city: 'Unknown',
+                              requirements: 'N/A',
+                              latitude: 0.0,
+                              longitude: 0.0,
+                              slotAvailable:
+                                  int.tryParse(slotsController.text.trim()) ??
+                                  0,
+                              machines:
+                                  int.tryParse(
+                                    machinesController.text.trim(),
+                                  ) ??
+                                  0,
+                              shifts: 2,
+                              operatingHours: hoursController.text.trim(),
+                              contactNumber: contactController.text.trim(),
+                            );
+
+                            if (!mounted) return;
+
+                            Navigator.pop(dialogContext);
+
+                            SuperAdminNotice.success(
+                              context,
+                              'Center added successfully.',
+                            );
+                          } catch (error) {
+                            if (!mounted) return;
+
+                            SuperAdminNotice.error(
+                              context,
+                              'Unable to add center: $error',
+                            );
+                          } finally {
+                            setDialogState(() {
+                              isSaving = false;
+                            });
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: isSaving
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showExportDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Export Reports'),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          content: const Text(
+            'Choose the data type you want to export and select PDF or CSV format.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                SuperAdminNotice.info(context, 'Reports export started.');
+              },
+              child: const Text('Export CSV'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    TextInputType keyboardType = TextInputType.text,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      validator: (value) =>
+          (value == null || value.isEmpty) ? 'This field is required' : null,
+      decoration: InputDecoration(
+        labelText: label,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+        filled: true,
+        fillColor: Colors.grey.shade50,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 18,
+        ),
+      ),
+    );
+  }
+>>>>>>> 738e78ca740ede777ef81769cbba977906a50ee2
 }
 
 /// Header emblem for the dashboard banner.
