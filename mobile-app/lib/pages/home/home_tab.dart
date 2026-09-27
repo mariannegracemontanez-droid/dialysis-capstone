@@ -6,9 +6,11 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/user_model.dart';
 import '../../services/appointment_service.dart';
+import '../../services/clinic_info_service.dart';
 import '../../services/health_monitoring_service.dart';
+import '../../widgets/notification_button.dart';
 import '../appointments/appointment_history_page.dart';
-import '../notifications/notification_page.dart';
+import 'clinic_info_sections.dart';
 
 class HomeTab extends StatefulWidget {
   final UserModel? user;
@@ -29,6 +31,7 @@ class _HomeTabState extends State<HomeTab> {
   final TextEditingController _searchController = TextEditingController();
   final AppointmentService _appointmentService = AppointmentService();
   final HealthMonitoringService _healthService = HealthMonitoringService();
+  final ClinicInfoService _clinicInfoService = ClinicInfoService();
   final PageController _tipsController = PageController();
 
   final int _dailyGoalMl = 1000;
@@ -36,6 +39,10 @@ class _HomeTabState extends State<HomeTab> {
   String _searchText = '';
   bool _isScheduleLoading = true;
   bool _isHealthSummaryLoading = true;
+  bool _isClinicInfoLoading = true;
+  bool _clinicInfoFailed = false;
+
+  ClinicInfo? _clinicInfo;
 
   List<String> _scheduledDays = [];
   DateTime? _nextScheduleDate;
@@ -196,6 +203,7 @@ class _HomeTabState extends State<HomeTab> {
     super.initState();
     _loadUpcomingSchedule();
     _loadHealthSummary();
+    _loadClinicInfo();
     _setupHealthSummaryRealtime();
     _startHealthTipsAutoScroll();
   }
@@ -247,6 +255,35 @@ class _HomeTabState extends State<HomeTab> {
 
       setState(() {
         _isHealthSummaryLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadClinicInfo() async {
+    if (mounted && !_isClinicInfoLoading) {
+      setState(() {
+        _isClinicInfoLoading = true;
+        _clinicInfoFailed = false;
+      });
+    }
+
+    try {
+      final info = await _clinicInfoService.getMyClinicInfo();
+
+      if (!mounted) return;
+
+      setState(() {
+        _clinicInfo = info;
+        _clinicInfoFailed = false;
+        _isClinicInfoLoading = false;
+      });
+    } catch (e) {
+      debugPrint('Load clinic info error: $e');
+      if (!mounted) return;
+
+      setState(() {
+        _clinicInfoFailed = true;
+        _isClinicInfoLoading = false;
       });
     }
   }
@@ -474,6 +511,19 @@ class _HomeTabState extends State<HomeTab> {
       results.add(_buildHealthMonitoringCard());
     }
 
+    if (query.contains('announce') ||
+        query.contains('clinic') ||
+        query.contains('news') ||
+        query.contains('update')) {
+      results.add(_buildClinicAnnouncementsSection());
+    }
+
+    if (query.contains('rule') ||
+        query.contains('policy') ||
+        query.contains('clinic')) {
+      results.add(_buildClinicHouseRulesSection());
+    }
+
     if (results.isEmpty) {
       results.add(
         Container(
@@ -547,6 +597,10 @@ class _HomeTabState extends State<HomeTab> {
                         _buildHealthTipsCarousel(),
                         const SizedBox(height: 22),
                         _buildHealthMonitoringCard(),
+                        const SizedBox(height: 22),
+                        _buildClinicAnnouncementsSection(),
+                        const SizedBox(height: 22),
+                        _buildClinicHouseRulesSection(),
                       ],
               ),
             ),
@@ -691,25 +745,7 @@ class _HomeTabState extends State<HomeTab> {
                   ),
                 ),
               ),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: IconButton(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const NotificationPage(),
-                      ),
-                    );
-                  },
-                  icon: const Icon(
-                    Icons.notifications_none_rounded,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
+              const NotificationButton(),
             ],
           ),
           const SizedBox(height: 8),
@@ -1453,6 +1489,26 @@ class _HomeTabState extends State<HomeTab> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildClinicAnnouncementsSection() {
+    return ClinicAnnouncementsSection(
+      isLoading: _isClinicInfoLoading,
+      hasError: _clinicInfoFailed,
+      clinicName: _clinicInfo?.clinicName,
+      announcements: _clinicInfo?.announcements ?? const [],
+      onRetry: _loadClinicInfo,
+    );
+  }
+
+  Widget _buildClinicHouseRulesSection() {
+    return ClinicHouseRulesSection(
+      isLoading: _isClinicInfoLoading,
+      hasError: _clinicInfoFailed,
+      clinicName: _clinicInfo?.clinicName,
+      houseRules: _clinicInfo?.houseRules ?? '',
+      onRetry: _loadClinicInfo,
     );
   }
 }

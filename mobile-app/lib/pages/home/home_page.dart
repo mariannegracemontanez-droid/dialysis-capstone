@@ -8,6 +8,7 @@ import '../../services/appointment_service.dart';
 import '../../services/fcm_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/patient_service.dart';
+import '../../widgets/notification_button.dart';
 import 'health_monitoring_page.dart';
 import 'home_tab.dart';
 import 'schedule_tab.dart';
@@ -507,6 +508,8 @@ class _HomePageState extends State<HomePage> {
                             ],
                           ),
                         ),
+                        const SizedBox(width: 12),
+                        const NotificationButton(),
                       ],
                     ),
                     const SizedBox(height: 18),
@@ -525,16 +528,13 @@ class _HomePageState extends State<HomePage> {
                         vertical: 10,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.12),
+                        color: Colors.white.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.12),
-                        ),
                       ),
                       child: const Row(
                         children: [
                           Icon(
-                            Icons.notifications_active_outlined,
+                            Icons.info_outline_rounded,
                             color: Colors.white,
                             size: 20,
                           ),
@@ -675,13 +675,6 @@ class _HomePageState extends State<HomePage> {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: const Color(0xFFE1EAF0)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.035),
-                        blurRadius: 14,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
                   ),
                   child: Column(
                     children: [
@@ -744,13 +737,6 @@ class _HomePageState extends State<HomePage> {
                             ? const Color(0xFFFECACA)
                             : const Color(0xFFE1EAF0),
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.04),
-                          blurRadius: 14,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -923,33 +909,20 @@ class _HomePageState extends State<HomePage> {
     required String title,
     required String subtitle,
   }) {
+    // Informational only: no elevation, no filled icon tile and a tinted
+    // surface instead of a raised white card, so it doesn't read as a button.
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFF8FBFC),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFE1EAF0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.035),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            height: 42,
-            width: 42,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEAF4F7),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(icon, color: const Color(0xFF225E72), size: 22),
-          ),
-          const SizedBox(height: 14),
+          Icon(icon, color: const Color(0xFF225E72), size: 24),
+          const SizedBox(height: 12),
           Text(
             title,
             maxLines: 2,
