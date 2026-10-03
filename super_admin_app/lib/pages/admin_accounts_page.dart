@@ -1147,21 +1147,6 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
 
     if (!_formKey.currentState!.validate()) return;
 
-<<<<<<< HEAD
-=======
-    final password = _passwordController.text.trim();
-    final confirm = _confirmPasswordController.text.trim();
-
-    if (_changePassword && password != confirm) {
-      SuperAdminNotice.error(
-        context,
-        'Passwords do not match.',
-        title: 'Check this before saving',
-      );
-      return;
-    }
-
->>>>>>> 738e78ca740ede777ef81769cbba977906a50ee2
     setState(() {
       _isSaving = true;
     });
@@ -2019,11 +2004,12 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
     final superAdminAccessToken = superAdminSession?.accessToken;
 
     if (superAdminId == null || superAdminRefreshToken == null) {
-      setState(() {
-        _errorMessage =
-            'Your session could not be verified. Please log in again before '
-            'creating an account.';
-      });
+      SuperAdminNotice.error(
+        context,
+        'Your session could not be verified. Please log in again before '
+        'creating an account.',
+        title: 'Session expired',
+      );
       return;
     }
 

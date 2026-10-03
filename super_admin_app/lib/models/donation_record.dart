@@ -54,17 +54,26 @@ class DonationRecord {
     }
   }
 
+  /// A donation is anonymous when it carries no donor account and no
+  /// contact details -- matches how donation_page.dart writes anonymous
+  /// donations (donor_id/name/email all left null).
+  static bool isAnonymousDonor({
+    required Object? donorId,
+    required String? name,
+    required String? email,
+  }) {
+    return donorId == null &&
+        (name == null || name.trim().isEmpty) &&
+        (email == null || email.trim().isEmpty);
+  }
+
   factory DonationRecord.fromJson(Map<String, dynamic> json) {
     final donorId = json['donor_id'];
     final name = json['name'] as String?;
     final email = json['email'] as String?;
 
-    // A donation is anonymous when it carries no donor account and no
-    // contact details -- matches how donation_page.dart writes anonymous
-    // donations (donor_id/name/email all left null).
-    final anonymous = donorId == null &&
-        (name == null || name.trim().isEmpty) &&
-        (email == null || email.trim().isEmpty);
+    final anonymous =
+        isAnonymousDonor(donorId: donorId, name: name, email: email);
 
     final clinic = json['clinics'];
     final clinicName = clinic is Map ? clinic['name']?.toString() : null;

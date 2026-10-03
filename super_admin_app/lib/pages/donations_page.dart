@@ -3,7 +3,12 @@ import '../models/center_donation_history_entry.dart';
 import '../models/donation_record.dart';
 import 'package:super_admin_app/services/donation_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/donation_history_export.dart';
+import '../utils/file_download.dart';
 import '../widgets/super_admin_notice.dart';
+
+/// Which history section an export was started from.
+enum _ExportSection { centerHistory, overallHistory }
 
 /// Preset date windows for the Center Donation History filter. Applied
 /// client-side against the existing donation date -- no new fields or queries.
@@ -119,6 +124,10 @@ class _DonationsPageState extends State<DonationsPage> {
   final TextEditingController _overallSearchController = TextEditingController();
   String _overallSearch = '';
   _HistoryDateRange _overallRange = _HistoryDateRange.allTime;
+
+  // Donation history export (PDF / Excel). One export at a time across both
+  // sections, so a double click cannot start a second download.
+  _ExportSection? _exportingSection;
 
   static const Color _primary = Color(0xFF0F719F);
   static const Color _dark = Color(0xFF0F3A55);
@@ -242,7 +251,9 @@ class _DonationsPageState extends State<DonationsPage> {
 
     try {
       final entries = await _service.fetchCenterDonationHistory(clinicId);
-      if (!mounted) return;
+      // A response for a center that is no longer selected (the Super Admin
+      // switched again while it was in flight) must not overwrite the rows.
+      if (!mounted || clinicId != _historyCenterId) return;
       setState(() => _historyEntries = entries);
     } catch (error) {
       if (!mounted) return;
@@ -268,7 +279,8 @@ class _DonationsPageState extends State<DonationsPage> {
 
     try {
       final entries = await _service.fetchCenterDonationHistory(clinicId);
-      if (!mounted) return;
+      // Same stale-response guard as _loadCenterHistory.
+      if (!mounted || clinicId != _overallCenterId) return;
       setState(() => _overallCenterEntries = entries);
     } catch (error) {
       if (!mounted) return;
@@ -463,34 +475,42 @@ class _DonationsPageState extends State<DonationsPage> {
     return _warning;
   }
 
+  /// Earliest date a [range] keeps, or null for All Time. Shared by both
+  /// history tables and the export so they filter identically.
+  static DateTime? _rangeCutoff(_HistoryDateRange range) {
+    if (range == _HistoryDateRange.thisYear) {
+      return DateTime(DateTime.now().year);
+    }
+    if (range.days != null) {
+      return DateTime.now().subtract(Duration(days: range.days!));
+    }
+    return null;
+  }
+
+  /// Case-insensitive substring search across [fields]; an empty [query]
+  /// matches everything.
+  static bool _matchesSearch(String query, List<String?> fields) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return fields.map((f) => f ?? '').join(' ').toLowerCase().contains(q);
+  }
+
   /// The loaded history rows narrowed by the search box and the date-range
   /// dropdown. Order is left untouched, so the service's newest-first sort is
   /// preserved. Search is a case-insensitive substring match across donor
   /// name, donor email, donation ID, and the selected center's name.
   List<CenterDonationHistoryEntry> _filteredHistoryEntries() {
-    final query = _historySearch.trim().toLowerCase();
-    final centerName =
-        _selectedHistoryCenter?['name']?.toString().toLowerCase() ?? '';
-
-    DateTime? cutoff;
-    if (_historyRange == _HistoryDateRange.thisYear) {
-      cutoff = DateTime(DateTime.now().year);
-    } else if (_historyRange.days != null) {
-      cutoff = DateTime.now().subtract(Duration(days: _historyRange.days!));
-    }
+    final centerName = _selectedHistoryCenter?['name']?.toString() ?? '';
+    final cutoff = _rangeCutoff(_historyRange);
 
     return _historyEntries.where((entry) {
       if (cutoff != null && entry.date.isBefore(cutoff)) return false;
-      if (query.isEmpty) return true;
-
-      final haystack = [
-        entry.donorName ?? '',
-        entry.donorEmail ?? '',
+      return _matchesSearch(_historySearch, [
+        entry.donorName,
+        entry.donorEmail,
         entry.donationId,
         centerName,
-      ].join(' ').toLowerCase();
-
-      return haystack.contains(query);
+      ]);
     }).toList();
   }
 
@@ -555,27 +575,16 @@ class _DonationsPageState extends State<DonationsPage> {
             _selectedOverallCenter?['name']?.toString() ?? 'Selected Center',
           );
 
-    final query = _overallSearch.trim().toLowerCase();
-
-    DateTime? cutoff;
-    if (_overallRange == _HistoryDateRange.thisYear) {
-      cutoff = DateTime(DateTime.now().year);
-    } else if (_overallRange.days != null) {
-      cutoff = DateTime.now().subtract(Duration(days: _overallRange.days!));
-    }
+    final cutoff = _rangeCutoff(_overallRange);
 
     return rows.where((row) {
       if (cutoff != null && row.date.isBefore(cutoff)) return false;
-      if (query.isEmpty) return true;
-
-      final haystack = [
-        row.donorName ?? '',
-        row.donorEmail ?? '',
+      return _matchesSearch(_overallSearch, [
+        row.donorName,
+        row.donorEmail,
         row.donationId,
         row.centerLabel,
-      ].join(' ').toLowerCase();
-
-      return haystack.contains(query);
+      ]);
     }).toList();
   }
 
@@ -585,6 +594,249 @@ class _DonationsPageState extends State<DonationsPage> {
       _overallSearch = '';
       _overallRange = _HistoryDateRange.allTime;
     });
+  }
+
+  // ---- Donation history export (PDF / Excel) ----------------------------
+  //
+  // The export matches the Admin Dashboard, not the on-screen table: it
+  // contains only donations a center has actually RECEIVED -- the records
+  // behind each center's "Donation Funds" total -- fetched through
+  // DonationService.fetchReceivedDonations. The section's current center
+  // scope, search and date range are then applied with the same filter
+  // helpers the tables use.
+
+  List<String> _exportFilterNotes(_HistoryDateRange range, String search) {
+    final query = search.trim();
+    return [
+      if (range != _HistoryDateRange.allTime) 'Date range: ${range.label}',
+      if (query.isNotEmpty) 'Search: "$query"',
+    ];
+  }
+
+  void _notifyNothingToExport({
+    required bool hasSourceData,
+    bool forCenter = false,
+  }) {
+    SuperAdminNotice.info(
+      context,
+      !hasSourceData
+          ? (forCenter
+              ? 'No donation history available for this center.'
+              : 'No donation history available.')
+          : 'No received donations match the current search and date '
+              'filters, so there is nothing to export. Clear the filters to '
+              'export the full history.',
+      title: 'Nothing to export',
+    );
+  }
+
+  /// What the section is currently scoped to. A null clinicId means All
+  /// Centers.
+  ({
+    String? clinicId,
+    String? centerName,
+    _HistoryDateRange range,
+    String search,
+  })? _exportScope(_ExportSection section) {
+    final String? clinicId;
+    final String? centerName;
+    final _HistoryDateRange range;
+    final String search;
+
+    if (section == _ExportSection.overallHistory) {
+      clinicId = _overallCenterId;
+      centerName = _selectedOverallCenter?['name']?.toString();
+      range = _overallRange;
+      search = _overallSearch;
+    } else {
+      clinicId = _historyCenterId;
+      centerName = _selectedHistoryCenter?['name']?.toString();
+      range = _historyRange;
+      search = _historySearch;
+      if (clinicId == null) return null;
+    }
+
+    // A selected center must resolve to its name: the Admin Dashboard
+    // matches manual distributions by center name, so without it the export
+    // could not match the dashboard.
+    if (clinicId != null && centerName == null) return null;
+
+    return (
+      clinicId: clinicId,
+      centerName: clinicId == null ? null : centerName,
+      range: range,
+      search: search,
+    );
+  }
+
+  Future<void> _exportHistory(
+    _ExportSection section,
+    DonationExportFormat format,
+  ) async {
+    // Explicit guard on top of the disabled button: the button only greys
+    // out once the page rebuilds, so a fast second pick could still land.
+    if (_exportingSection != null) return;
+
+    final scope = _exportScope(section);
+    if (scope == null) return;
+    final forCenter = scope.clinicId != null;
+
+    setState(() => _exportingSection = section);
+
+    try {
+      final received = await _service.fetchReceivedDonations(
+        clinicId: scope.clinicId,
+        centerName: scope.centerName,
+      );
+      if (!mounted) return;
+
+      if (received.isEmpty) {
+        _notifyNothingToExport(hasSourceData: false, forCenter: forCenter);
+        return;
+      }
+
+      final cutoff = _rangeCutoff(scope.range);
+      final visible = received.where((record) {
+        if (cutoff != null && record.date.isBefore(cutoff)) return false;
+        return _matchesSearch(scope.search, [
+          record.donorLabel,
+          record.isAnonymous ? null : record.donorEmail,
+          record.sourceId,
+          record.centerName,
+        ]);
+      }).toList();
+
+      if (visible.isEmpty) {
+        _notifyNothingToExport(hasSourceData: true);
+        return;
+      }
+
+      final report = DonationHistoryReport(
+        scopeLabel: forCenter ? scope.centerName! : 'All Centers',
+        isAllCenters: !forCenter,
+        filters: _exportFilterNotes(scope.range, scope.search),
+        rows: visible.map(DonationExportRow.fromReceived).toList(),
+      );
+
+      // One frame so the button's spinner is painted before the (CPU-bound)
+      // file generation starts.
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+
+      final bytes = switch (format) {
+        DonationExportFormat.pdf =>
+          await DonationHistoryExporter.buildPdf(report),
+        DonationExportFormat.excel => DonationHistoryExporter.buildXlsx(report),
+      };
+
+      downloadBytes(
+        fileName: report.fileName(format),
+        bytes: bytes,
+        mimeType: format.mimeType,
+      );
+
+      if (!mounted) return;
+      SuperAdminNotice.success(
+        context,
+        'Donation history exported successfully.',
+        title: 'Download started',
+      );
+    } catch (error) {
+      debugPrint('Donation history export failed: $error');
+      if (!mounted) return;
+      SuperAdminNotice.error(
+        context,
+        error is UnsupportedError
+            ? (error.message ?? 'Downloading is not available here.')
+            : 'Unable to export donation history. Please try again.',
+        title: 'Export failed',
+      );
+    } finally {
+      if (mounted) setState(() => _exportingSection = null);
+    }
+  }
+
+  /// Compact "Export" menu offering PDF or Excel. Disabled while the
+  /// section's data is loading or any export is being generated.
+  Widget _buildExportButton(
+    _ExportSection section, {
+    required bool dataLoading,
+  }) {
+    final isBusy = _exportingSection == section;
+    final enabled = _exportingSection == null && !dataLoading;
+
+    return AppMenuTheme(
+      child: PopupMenuButton<DonationExportFormat>(
+        enabled: enabled,
+        tooltip: 'Download this donation history',
+        position: PopupMenuPosition.under,
+        onSelected: (format) => _exportHistory(section, format),
+        itemBuilder: (context) => [
+          for (final format in DonationExportFormat.values)
+            PopupMenuItem<DonationExportFormat>(
+              value: format,
+              child: Row(
+                children: [
+                  Icon(
+                    format == DonationExportFormat.pdf
+                        ? Icons.picture_as_pdf_outlined
+                        : Icons.table_chart_outlined,
+                    size: 18,
+                    color: AppTheme.blue1,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    format.label,
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.blue3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+        // The menu button owns the tap; the OutlinedButton is only its look.
+        child: AbsorbPointer(
+          child: SizedBox(
+            height: 44,
+            child: OutlinedButton.icon(
+              onPressed: enabled ? () {} : null,
+              icon: isBusy
+                  ? const SizedBox(
+                      width: 15,
+                      height: 15,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.download_rounded, size: 17),
+              label: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(isBusy ? 'Exporting…' : 'Export'),
+                  if (!isBusy) ...[
+                    const SizedBox(width: 2),
+                    const Icon(Icons.expand_more_rounded, size: 18),
+                  ],
+                ],
+              ),
+              style: OutlinedButton.styleFrom(
+                backgroundColor: AppTheme.surface,
+                foregroundColor: AppTheme.blue3,
+                side: const BorderSide(color: AppTheme.borderStrong),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                textStyle: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppTheme.rMd),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   // Sidebar (desktop/tablet) + history panel layout. Data fetching is
@@ -827,6 +1079,11 @@ class _DonationsPageState extends State<DonationsPage> {
                   ],
                 ),
               ),
+            const SizedBox(width: 10),
+            _buildExportButton(
+              _ExportSection.centerHistory,
+              dataLoading: _isLoadingHistory,
+            ),
           ],
         ),
         const SizedBox(height: 14),
@@ -1211,6 +1468,11 @@ class _DonationsPageState extends State<DonationsPage> {
       ),
     );
 
+    final exportButton = _buildExportButton(
+      _ExportSection.overallHistory,
+      dataLoading: _overallCenterId == null ? _isLoading : _isLoadingOverall,
+    );
+
     if (isMobile) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1220,6 +1482,8 @@ class _DonationsPageState extends State<DonationsPage> {
           searchField,
           const SizedBox(height: 10),
           rangeDropdown,
+          const SizedBox(height: 10),
+          exportButton,
         ],
       );
     }
@@ -1231,6 +1495,8 @@ class _DonationsPageState extends State<DonationsPage> {
         Expanded(child: searchField),
         const SizedBox(width: 12),
         rangeDropdown,
+        const SizedBox(width: 12),
+        exportButton,
       ],
     );
   }

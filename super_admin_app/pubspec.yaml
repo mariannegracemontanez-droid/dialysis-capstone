@@ -26,6 +26,14 @@ dependencies:
   latlong2: ^0.9.1
   http: ^1.2.1
 
+  # Donation history export (Donations page). pdf is the same library the
+  # mobile app's data export already uses; archive is what pdf itself
+  # depends on, used here to zip the .xlsx; web is the browser download,
+  # matching admin_panel's file_download.dart.
+  pdf: ^3.11.1
+  archive: any
+  web: ^1.1.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -38,4 +46,9 @@ flutter:
     - assets/images/
     - assets/images/curenurture_background.jpeg
     - assets/images/CureNurture_CircleLogo.png
+    # Montserrat (SIL OFL, copied from the Donation app) -- embedded in the
+    # donation history PDF because the PDF's built-in fonts cannot draw "₱"
+    # or accented donor names.
+    - assets/fonts/Montserrat-Regular.ttf
+    - assets/fonts/Montserrat-Bold.ttf
     - .env

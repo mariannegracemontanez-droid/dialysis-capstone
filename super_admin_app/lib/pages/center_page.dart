@@ -9,11 +9,8 @@ import '../services/dashboard_service.dart';
 import '../config/supabase_config.dart';
 import '../services/profile_service.dart';
 import '../theme/app_theme.dart';
-<<<<<<< HEAD
 import '../utils/operating_hours.dart';
-=======
 import '../widgets/super_admin_notice.dart';
->>>>>>> 738e78ca740ede777ef81769cbba977906a50ee2
 import 'dart:ui';
 
 

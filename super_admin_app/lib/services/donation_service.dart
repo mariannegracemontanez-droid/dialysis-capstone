@@ -4,6 +4,7 @@ import '../models/center_donation_history_entry.dart';
 import '../models/donation_record.dart';
 import '../models/donation_summary.dart';
 import '../models/fund_distribution.dart';
+import '../models/received_donation_record.dart';
 
 class DonationService {
   final SupabaseClient _supabase = SupabaseConfig.client;
@@ -89,6 +90,128 @@ class DonationService {
 
     entries.sort((a, b) => b.date.compareTo(a.date));
     return entries;
+  }
+
+  /// Every amount a center has actually RECEIVED, i.e. exactly the records
+  /// behind the Admin Dashboard's "Donation Funds" total
+  /// (admin_panel DashboardService.getTotalDonations +
+  /// getAllocatedDonationTotal), using the same three sources and the same
+  /// matching:
+  ///
+  ///   1. fund_distributions  -- matched by center_name
+  ///   2. donations           -- status 'verified', matched by clinic_id
+  ///   3. donation_allocations -- parent donation status 'verified',
+  ///                              matched by clinic_id
+  ///
+  /// Pending and rejected donations are excluded, as they are on the
+  /// dashboard: the center has not received them. Donations with no center
+  /// (legacy rows before allocation tracking) are not part of any center's
+  /// total, so they are not returned either.
+  ///
+  /// Pass [clinicId] and [centerName] for one center; omit both for every
+  /// center, in which case each center's records are returned side by side
+  /// (an equal-distribution donation appears once per center, at that
+  /// center's share), so the grand total is the sum of the center totals.
+  Future<List<ReceivedDonationRecord>> fetchReceivedDonations({
+    String? clinicId,
+    String? centerName,
+  }) async {
+    assert(
+      (clinicId == null) == (centerName == null),
+      'Pass both clinicId and centerName for one center, or neither.',
+    );
+
+    var directQuery = _supabase
+        .from('donations')
+        .select('*, clinics(name)')
+        .eq('status', 'verified')
+        .not('clinic_id', 'is', null);
+    if (clinicId != null) directQuery = directQuery.eq('clinic_id', clinicId);
+
+    var sharesQuery = _supabase.from('donation_allocations').select(
+          'donation_id, clinic_id, amount, created_at, clinics(name), '
+          'donations(status, donor_id, name, email)',
+        );
+    if (clinicId != null) sharesQuery = sharesQuery.eq('clinic_id', clinicId);
+
+    var manualQuery = _supabase.from('fund_distributions').select();
+    if (centerName != null) {
+      manualQuery = manualQuery.eq('center_name', centerName);
+    }
+
+    final results = await Future.wait([directQuery, sharesQuery, manualQuery]);
+
+    final records = <ReceivedDonationRecord>[];
+
+    // 1. Direct specific/random donations. DonationRecord.fromJson applies
+    //    the existing anonymous-donor rule.
+    for (final item in results[0]) {
+      final donation = DonationRecord.fromJson(item);
+      records.add(
+        ReceivedDonationRecord(
+          sourceId: donation.id,
+          source: ReceivedDonationSource.direct,
+          date: donation.createdAt,
+          amount: donation.amount,
+          centerName: donation.clinicName ?? centerName ?? 'Unnamed Center',
+          allocationType: donation.allocationType,
+          donorName: donation.isAnonymous ? null : donation.donorName,
+          donorEmail: donation.email,
+          isAnonymous: donation.isAnonymous,
+        ),
+      );
+    }
+
+    // 2. Equal-distribution shares. The share row has no status of its own,
+    //    so the parent donation's status decides -- the same in-Dart check
+    //    the Admin Dashboard makes.
+    for (final item in results[1]) {
+      final parent = item['donations'];
+      if (parent is! Map || parent['status'] != 'verified') continue;
+
+      final name = parent['name']?.toString();
+      final email = parent['email']?.toString();
+      final anonymous = DonationRecord.isAnonymousDonor(
+        donorId: parent['donor_id'],
+        name: name,
+        email: email,
+      );
+      final clinic = item['clinics'];
+
+      records.add(
+        ReceivedDonationRecord(
+          sourceId: item['donation_id']?.toString() ?? '',
+          source: ReceivedDonationSource.equalShare,
+          date: DateTime.tryParse(item['created_at']?.toString() ?? '') ??
+              DateTime.now(),
+          amount: double.tryParse(item['amount'].toString()) ?? 0.0,
+          centerName: (clinic is Map ? clinic['name']?.toString() : null) ??
+              centerName ??
+              'Unnamed Center',
+          allocationType: 'equal_distribution',
+          donorName: anonymous ? null : name,
+          donorEmail: anonymous ? null : email,
+          isAnonymous: anonymous,
+        ),
+      );
+    }
+
+    // 3. Super Admin manual distributions.
+    for (final item in results[2]) {
+      final distribution = FundDistribution.fromJson(item);
+      records.add(
+        ReceivedDonationRecord(
+          sourceId: distribution.id,
+          source: ReceivedDonationSource.manualDistribution,
+          date: distribution.receivedAt,
+          amount: distribution.amount,
+          centerName: distribution.centerName,
+        ),
+      );
+    }
+
+    records.sort((a, b) => b.date.compareTo(a.date));
+    return records;
   }
 
   Future<double> fetchTotalDonations() async {
