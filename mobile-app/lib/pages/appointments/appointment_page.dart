@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../services/appointment_service.dart';
 import '../../services/notification_service.dart';
+import '../../utils/error_message.dart';
 
 class AppointmentPage extends StatefulWidget {
   const AppointmentPage({super.key});
@@ -65,7 +66,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
       if (!mounted) return;
 
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = friendlyError(e);
         _isLoading = false;
       });
     }

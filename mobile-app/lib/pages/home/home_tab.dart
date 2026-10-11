@@ -28,7 +28,6 @@ class HomeTab extends StatefulWidget {
 }
 
 class _HomeTabState extends State<HomeTab> {
-  final TextEditingController _searchController = TextEditingController();
   final AppointmentService _appointmentService = AppointmentService();
   final HealthMonitoringService _healthService = HealthMonitoringService();
   final ClinicInfoService _clinicInfoService = ClinicInfoService();
@@ -36,7 +35,6 @@ class _HomeTabState extends State<HomeTab> {
 
   final int _dailyGoalMl = 1000;
   Timer? _tipsAutoScrollTimer;
-  String _searchText = '';
   bool _isScheduleLoading = true;
   bool _isHealthSummaryLoading = true;
   bool _isClinicInfoLoading = true;
@@ -479,71 +477,6 @@ class _HomeTabState extends State<HomeTab> {
     return '${before.toStringAsFixed(1)}kg → ${after.toStringAsFixed(1)}kg';
   }
 
-  List<Widget> _buildSearchResults() {
-    final query = _searchText.toLowerCase().trim();
-
-    final results = <Widget>[];
-
-    if (query.contains('schedule') ||
-        query.contains('dialysis') ||
-        query.contains('appointment')) {
-      results.add(_buildUpcomingScheduleSection());
-    }
-
-    if (query.contains('water') ||
-        query.contains('bp') ||
-        query.contains('blood') ||
-        query.contains('weight') ||
-        query.contains('health')) {
-      results.add(_buildTodayStatusCard());
-    }
-
-    if (query.contains('tip') ||
-        query.contains('food') ||
-        query.contains('salt') ||
-        query.contains('intake')) {
-      results.add(_buildHealthTipsCarousel());
-    }
-
-    if (query.contains('monitor') ||
-        query.contains('tracking') ||
-        query.contains('logs')) {
-      results.add(_buildHealthMonitoringCard());
-    }
-
-    if (query.contains('announce') ||
-        query.contains('clinic') ||
-        query.contains('news') ||
-        query.contains('update')) {
-      results.add(_buildClinicAnnouncementsSection());
-    }
-
-    if (query.contains('rule') ||
-        query.contains('policy') ||
-        query.contains('clinic')) {
-      results.add(_buildClinicHouseRulesSection());
-    }
-
-    if (results.isEmpty) {
-      results.add(
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFE1EAF0)),
-          ),
-          child: Text(
-            'No results found for "$_searchText".',
-            style: const TextStyle(color: Color(0xFF5B6D7D), fontSize: 14),
-          ),
-        ),
-      );
-    }
-
-    return results;
-  }
-
   void _startHealthTipsAutoScroll() {
     _tipsAutoScrollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       if (!mounted || !_tipsController.hasClients || _healthTips.isEmpty) {
@@ -564,7 +497,6 @@ class _HomeTabState extends State<HomeTab> {
 
   @override
   void dispose() {
-    _searchController.dispose();
     _tipsController.dispose();
     _tipsAutoScrollTimer?.cancel();
     _healthSummaryChannel?.unsubscribe();
@@ -585,23 +517,21 @@ class _HomeTabState extends State<HomeTab> {
               child: ListView(
                 physics: const BouncingScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
-                children: _searchText.isNotEmpty
-                    ? [const SizedBox(height: 8), ..._buildSearchResults()]
-                    : [
-                        _buildMotivationalCard(),
-                        const SizedBox(height: 22),
-                        _buildUpcomingScheduleSection(),
-                        const SizedBox(height: 22),
-                        _buildTodayStatusCard(),
-                        const SizedBox(height: 22),
-                        _buildHealthTipsCarousel(),
-                        const SizedBox(height: 22),
-                        _buildHealthMonitoringCard(),
-                        const SizedBox(height: 22),
-                        _buildClinicAnnouncementsSection(),
-                        const SizedBox(height: 22),
-                        _buildClinicHouseRulesSection(),
-                      ],
+                children: [
+                  _buildMotivationalCard(),
+                  const SizedBox(height: 22),
+                  _buildUpcomingScheduleSection(),
+                  const SizedBox(height: 22),
+                  _buildTodayStatusCard(),
+                  const SizedBox(height: 22),
+                  _buildHealthTipsCarousel(),
+                  const SizedBox(height: 22),
+                  _buildHealthMonitoringCard(),
+                  const SizedBox(height: 22),
+                  _buildClinicAnnouncementsSection(),
+                  const SizedBox(height: 22),
+                  _buildClinicHouseRulesSection(),
+                ],
               ),
             ),
           ],
@@ -759,31 +689,6 @@ class _HomeTabState extends State<HomeTab> {
           ),
           const SizedBox(height: 12),
           _buildMoodPicker(),
-          const SizedBox(height: 20),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (value) {
-                setState(() {
-                  _searchText = value;
-                });
-              },
-              decoration: const InputDecoration(
-                hintText: 'Search appointments, health logs...',
-                hintStyle: TextStyle(color: Color(0xFF8B9AA6), fontSize: 14),
-                prefixIcon: Icon(
-                  Icons.search_rounded,
-                  color: Color(0xFF225E72),
-                ),
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(vertical: 15),
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -1253,7 +1158,8 @@ class _HomeTabState extends State<HomeTab> {
         ),
         const SizedBox(height: 14),
         SizedBox(
-          height: 176,
+          // Grows with the system text size so the tip text isn't clipped.
+          height: MediaQuery.textScalerOf(context).scale(176),
           child: PageView.builder(
             controller: _tipsController,
             itemCount: _healthTips.length,

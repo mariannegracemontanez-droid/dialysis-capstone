@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../models/signup_data.dart';
 import '../../services/auth/auth_service.dart';
-import '../../utils/form_options.dart';
-import '../../utils/validators.dart';
+import '../../services/file_upload_service.dart';
+import '../../services/medical_document_service.dart';
+import '../../widgets/document_preview.dart';
+import '../../utils/error_message.dart';
 
 class ClinicInfoArguments {
   final SignupData signupData;
@@ -12,6 +14,8 @@ class ClinicInfoArguments {
   ClinicInfoArguments({required this.signupData, required this.clinic});
 }
 
+/// Step 3 of 3: review the selected clinic and upload the medical documents
+/// it requires.
 class ClinicInfoPage extends StatefulWidget {
   final ClinicInfoArguments arguments;
 
@@ -22,27 +26,11 @@ class ClinicInfoPage extends StatefulWidget {
 }
 
 class _ClinicInfoPageState extends State<ClinicInfoPage> {
-  late TextEditingController _dateOfBirthController;
-  late TextEditingController _homeAddressController;
-  late TextEditingController _bloodTypeController;
-  late TextEditingController _emergencyContactNameController;
-  late TextEditingController _emergencyContactNumberController;
-  String _selectedStage = 'Stage 1';
-  final List<String> _conditions = [
-    'Diabetes',
-    'Hypertension',
-    'Heart Disease',
-    'None',
-  ];
-  final List<String> _selectedConditions = [];
-  String? _selectedBarangay;
-  String? _selectedRelationship;
+  final FileUploadService _fileUploadService = FileUploadService();
+  late SignupData _signupData;
+  final Map<String, String> _documentUrls = {};
+  final Map<String, bool> _isUploading = {};
   String? _errorMessage;
-  String? _addressError;
-  String? _bloodTypeError;
-  String? _contactNameError;
-  String? _contactNumberError;
-  bool _isSubmitting = false;
 
   List<String> get _clinicRequirements {
     final requirements = widget.arguments.clinic['requirements'];
@@ -67,345 +55,302 @@ class _ClinicInfoPageState extends State<ClinicInfoPage> {
     return ['Bring valid ID and referral documents'];
   }
 
+  /// Upload slots for the clinic's requirements, as {key, label}.
+  List<Map<String, String>> get _requirementSlots {
+    return _signupData.clinicRequirements.map((label) {
+      return {
+        'key': MedicalDocumentService.columnForRequirement(label),
+        'label': label,
+      };
+    }).toList();
+  }
+
   @override
   void initState() {
     super.initState();
-    _dateOfBirthController = TextEditingController(
-      text: widget.arguments.signupData.dateOfBirth,
-    );
-    _homeAddressController = TextEditingController(
-      text: widget.arguments.signupData.homeAddress,
-    );
-    _bloodTypeController = TextEditingController(
-      text: widget.arguments.signupData.bloodType,
-    );
-    _emergencyContactNameController = TextEditingController(
-      text: widget.arguments.signupData.emergencyContactName,
-    );
-    _emergencyContactNumberController = TextEditingController(
-      text: widget.arguments.signupData.emergencyContactNumber,
-    );
-    if (widget.arguments.signupData.conditions.isNotEmpty) {
-      _selectedConditions.addAll(widget.arguments.signupData.conditions);
-    }
-    _selectedStage = widget.arguments.signupData.ckdLevel.isNotEmpty
-        ? widget.arguments.signupData.ckdLevel
-        : 'Stage 3';
-    _selectedBarangay = widget.arguments.signupData.barangay.isNotEmpty
-        ? widget.arguments.signupData.barangay
-        : null;
-    _selectedRelationship =
-        widget.arguments.signupData.emergencyContactRelationship.isNotEmpty
-        ? widget.arguments.signupData.emergencyContactRelationship
-        : null;
-  }
-
-  @override
-  void dispose() {
-    _dateOfBirthController.dispose();
-    _homeAddressController.dispose();
-    _bloodTypeController.dispose();
-    _emergencyContactNameController.dispose();
-    _emergencyContactNumberController.dispose();
-    super.dispose();
-  }
-
-  void _onAddressChanged(String value) {
-    setState(() {
-      _addressError = value.isEmpty
-          ? null
-          : Validators.validateAddress(value, fieldLabel: 'Home address');
-    });
-  }
-
-  void _onBloodTypeChanged(String value) {
-    setState(() {
-      _bloodTypeError = value.isEmpty
-          ? null
-          : Validators.validateRequired(value, 'Blood type');
-    });
-  }
-
-  void _onContactNameChanged(String value) {
-    setState(() {
-      _contactNameError = value.isEmpty
-          ? null
-          : Validators.validateName(
-              value,
-              fieldLabel: 'Emergency contact name',
-            );
-    });
-  }
-
-  void _onContactNumberChanged(String value) {
-    setState(() {
-      _contactNumberError = value.isEmpty
-          ? null
-          : Validators.validatePhone(value);
-    });
-  }
-
-  void _toggleCondition(String condition) {
-    setState(() {
-      if (_selectedConditions.contains(condition)) {
-        _selectedConditions.remove(condition);
-      } else {
-        if (condition == 'None') {
-          _selectedConditions.clear();
-          _selectedConditions.add(condition);
-        } else {
-          _selectedConditions.remove('None');
-          _selectedConditions.add(condition);
-        }
-      }
-    });
-  }
-
-  Future<void> _handleNext() async {
-    final addressError = Validators.validateAddress(
-      _homeAddressController.text,
-      fieldLabel: 'Home address',
-    );
-    final bloodTypeError = Validators.validateRequired(
-      _bloodTypeController.text,
-      'Blood type',
-    );
-    final contactNameError = Validators.validateName(
-      _emergencyContactNameController.text,
-      fieldLabel: 'Emergency contact name',
-    );
-    final contactNumberError = Validators.validatePhone(
-      _emergencyContactNumberController.text,
-    );
-    setState(() {
-      _addressError = addressError;
-      _bloodTypeError = bloodTypeError;
-      _contactNameError = contactNameError;
-      _contactNumberError = contactNumberError;
-    });
-
-    if (_dateOfBirthController.text.trim().isEmpty) {
-      setState(() => _errorMessage = 'Date of birth is required.');
-      return;
-    }
-    if (addressError != null) {
-      setState(() => _errorMessage = addressError);
-      return;
-    }
-    if (_selectedBarangay == null) {
-      setState(() => _errorMessage = 'Please select your barangay.');
-      return;
-    }
-    if (bloodTypeError != null) {
-      setState(() => _errorMessage = bloodTypeError);
-      return;
-    }
-    if (contactNameError != null) {
-      setState(() => _errorMessage = contactNameError);
-      return;
-    }
-    if (_selectedRelationship == null) {
-      setState(
-        () => _errorMessage = 'Please select the emergency contact\'s relationship to the patient.',
-      );
-      return;
-    }
-    if (contactNumberError != null) {
-      setState(() => _errorMessage = contactNumberError);
-      return;
-    }
-
-    final composedAddress =
-        '${_homeAddressController.text.trim()}, Barangay $_selectedBarangay, Valenzuela City';
-    final composedContactName =
-        '${_emergencyContactNameController.text.trim()} ($_selectedRelationship)';
-
-    final updated = widget.arguments.signupData.copyWith(
-      dateOfBirth: _dateOfBirthController.text.trim(),
-      homeAddress: composedAddress,
-      barangay: _selectedBarangay,
-      bloodType: _bloodTypeController.text.trim(),
-      emergencyContactName: composedContactName,
-      emergencyContactNumber: _emergencyContactNumberController.text.trim(),
-      emergencyContactRelationship: _selectedRelationship,
-      ckdLevel: _selectedStage,
-      conditions: _selectedConditions.isEmpty
-          ? ['None']
-          : List.from(_selectedConditions),
+    _signupData = widget.arguments.signupData.copyWith(
       clinicRequirements: _clinicRequirements,
     );
+    _documentUrls.addAll(_signupData.documentUrls);
+  }
 
-    if (updated.profileId.isEmpty) {
-      setState(() {
-        _errorMessage =
-            'Unable to create application without a valid patient account.';
-      });
-      return;
+  /// Going back hands the application (if one was started) to Step 2 so
+  /// choosing this clinic again reuses it.
+  void _popWithProgress() {
+    Navigator.of(
+      context,
+    ).pop(_signupData.copyWith(documentUrls: Map.of(_documentUrls)));
+  }
+
+  /// The `patients` application row is needed before the first upload (the
+  /// storage path is keyed by it). It is created lazily so just viewing
+  /// this step doesn't leave an application behind.
+  Future<String> _ensurePatientApplication() async {
+    if (_signupData.patientId.isNotEmpty) return _signupData.patientId;
+
+    if (_signupData.profileId.isEmpty) {
+      throw Exception(
+        'Unable to create application without a valid patient account.',
+      );
     }
 
+    final patientId = await AuthService().createPatientRecord(
+      profileId: _signupData.profileId,
+      clinicId: _signupData.clinicId,
+      details: _signupData.toPatientApplicationColumns(),
+    );
+    _signupData = _signupData.copyWith(patientId: patientId);
+    return patientId;
+  }
+
+  Future<void> _showSourceChooser(String requirementKey) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 44,
+                  height: 5,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.camera_alt_outlined,
+                    color: Color(0xFF2C5F7D),
+                  ),
+                  title: const Text('Take a photo'),
+                  onTap: () => Navigator.pop(context, ImageSource.camera),
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.photo_library_outlined,
+                    color: Color(0xFF2C5F7D),
+                  ),
+                  title: const Text('Choose from gallery'),
+                  onTap: () => Navigator.pop(context, ImageSource.gallery),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (source == null) return;
+    await _pickDocumentFor(requirementKey, source);
+  }
+
+  Future<void> _pickDocumentFor(
+    String requirementKey,
+    ImageSource source,
+  ) async {
     setState(() {
-      _isSubmitting = true;
+      _isUploading[requirementKey] = true;
       _errorMessage = null;
     });
 
     try {
-      final patientId = await AuthService().createPatientRecord(
-        profileId: updated.profileId,
-        clinicId: updated.clinicId,
-        fullName: updated.fullName,
-        email: updated.email,
-        phone: updated.phone,
-        dateOfBirth: updated.dateOfBirth,
-        homeAddress: updated.homeAddress,
-        bloodType: updated.bloodType,
-        emergencyContactName: updated.emergencyContactName,
-        emergencyContactNumber: updated.emergencyContactNumber,
-        ckdLevel: updated.ckdLevel,
-        conditions: updated.conditions,
-        insuranceOptions: updated.insuranceOptions,
-        budgetRange: updated.budgetRange,
-        preferredClinicType: updated.preferredClinicType,
-        locationSummary: updated.locationSummary,
+      final XFile? file = await _fileUploadService.pickImage(source: source);
+
+      if (file == null) {
+        setState(() {
+          _isUploading[requirementKey] = false;
+          _errorMessage = source == ImageSource.camera
+              ? 'No photo was taken.'
+              : 'No file selected.';
+        });
+        return;
+      }
+
+      final patientId = await _ensurePatientApplication();
+
+      final url = await _fileUploadService.uploadMedicalDocumentImage(
+        imageFile: file,
+        patientId: patientId,
+        clinicId: _signupData.clinicId,
       );
 
-      final patientReady = updated.copyWith(patientId: patientId);
+      setState(() {
+        _documentUrls[requirementKey] = url;
+        _isUploading[requirementKey] = false;
+        _errorMessage = null;
+      });
+    } catch (e, stack) {
+      final message = e.toString().toLowerCase();
+      final isPermissionIssue =
+          message.contains('camera_access_denied') ||
+          message.contains('photo_access_denied') ||
+          message.contains('permission');
 
-      if (mounted) {
-        Navigator.of(
-          context,
-        ).pushNamed('/medical-documents', arguments: patientReady);
-      }
-    } catch (error) {
       setState(() {
-        _errorMessage = error.toString();
+        _isUploading[requirementKey] = false;
+        _errorMessage = isPermissionIssue
+            ? 'Camera access was denied. Please allow camera access in your '
+                  'phone settings to take a photo.'
+            : friendlyError(e);
       });
-    } finally {
-      setState(() {
-        _isSubmitting = false;
-      });
+      debugPrint('Error uploading document: $e');
+      debugPrint(stack.toString());
     }
   }
 
-  Future<void> _pickBirthDate() async {
-    final currentDate = DateTime.now();
-    final initialDate =
-        DateTime.tryParse(_dateOfBirthController.text) ??
-        DateTime(currentDate.year - 40);
-    final pickedDate = await showDatePicker(
-      context: context,
-      initialDate: initialDate,
-      firstDate: DateTime(1900),
-      lastDate: currentDate,
-    );
-
-    if (pickedDate != null) {
-      _dateOfBirthController.text =
-          '${pickedDate.year}-${pickedDate.month.toString().padLeft(2, '0')}-${pickedDate.day.toString().padLeft(2, '0')}';
+  /// Uploaded documents in requirement order, each file listed once (two
+  /// requirements can share a document column).
+  List<DocumentPreviewItem> get _uploadedPreviews {
+    final seenUrls = <String>{};
+    final previews = <DocumentPreviewItem>[];
+    for (final slot in _requirementSlots) {
+      final url = _documentUrls[slot['key']];
+      if (url != null && url.isNotEmpty && seenUrls.add(url)) {
+        previews.add(DocumentPreviewItem(label: slot['label']!, url: url));
+      }
     }
+    return previews;
+  }
+
+  void _viewDocument(String requirementKey) {
+    final previews = _uploadedPreviews;
+    final url = _documentUrls[requirementKey];
+    final index = previews.indexWhere((item) => item.url == url);
+    if (index < 0) return;
+    showDocumentPreview(context, documents: previews, initialIndex: index);
+  }
+
+  void _handleNext() {
+    final requirementSlots = _requirementSlots;
+    final uploadedCount = requirementSlots
+        .where((item) => _documentUrls[item['key']]?.isNotEmpty ?? false)
+        .length;
+    final requiredCount = requirementSlots.length >= 5
+        ? 5
+        : requirementSlots.length;
+
+    if (requirementSlots.isNotEmpty && uploadedCount < requiredCount) {
+      setState(() {
+        final remaining = requiredCount - uploadedCount;
+        _errorMessage = remaining == 1
+            ? 'Please upload the remaining document before continuing.'
+            : 'Please upload $remaining more required documents before continuing.';
+      });
+      return;
+    }
+
+    final updated = _signupData.copyWith(documentUrls: Map.of(_documentUrls));
+    Navigator.of(context).pushNamed('/confirm-info', arguments: updated);
   }
 
   @override
   Widget build(BuildContext context) {
     final clinic = widget.arguments.clinic;
+    final requirementSlots = _requirementSlots;
+    final uploadedCount = requirementSlots
+        .where((item) => _documentUrls[item['key']]?.isNotEmpty ?? false)
+        .length;
+    final isAnyUploading = _isUploading.values.any((uploading) => uploading);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF3F7FA),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(
-                      Icons.arrow_back_ios_new_rounded,
-                      size: 20,
-                      color: Color(0xFF2C5F7D),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _popWithProgress();
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF3F7FA),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: _popWithProgress,
+                      icon: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        size: 20,
+                        color: Color(0xFF2C5F7D),
+                      ),
                     ),
-                  ),
 
-                  const SizedBox(width: 4),
+                    const SizedBox(width: 4),
 
-                  const Text(
-                    'Clinic Information',
-                    style: TextStyle(
-                      color: Color(0xFF173B4F),
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 8),
-
-              const Text(
-                'Review your selected clinic and complete the remaining medical information.',
-                style: TextStyle(
-                  color: Color(0xFF6B7C86),
-                  fontSize: 14,
-                  height: 1.4,
-                ),
-              ),
-
-              const SizedBox(height: 22),
-
-              Row(
-                children: [
-                  const Text(
-                    'Step 3 of 5',
-                    style: TextStyle(
-                      color: Color(0xFF2C5F7D),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '60%',
-                    style: TextStyle(
-                      color: Colors.black.withOpacity(0.45),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 10),
-
-              ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: const LinearProgressIndicator(
-                  value: 0.6,
-                  minHeight: 8,
-                  color: Color(0xFF2C5F7D),
-                  backgroundColor: Color(0xFFDDEAF0),
-                ),
-              ),
-
-              const SizedBox(height: 26),
-
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: const Color(0xFFE1EAF0)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 18,
-                      offset: const Offset(0, 8),
+                    const Expanded(
+                      child: Text(
+                        'Clinic Information',
+                        style: TextStyle(
+                          color: Color(0xFF173B4F),
+                          fontSize: 26,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+
+                const SizedBox(height: 8),
+
+                const Text(
+                  'Review your selected clinic and upload the medical documents it requires.',
+                  style: TextStyle(
+                    color: Color(0xFF6B7C86),
+                    fontSize: 14,
+                    height: 1.4,
+                  ),
+                ),
+
+                const SizedBox(height: 22),
+
+                Row(
+                  children: [
+                    const Text(
+                      'Step 3 of 3',
+                      style: TextStyle(
+                        color: Color(0xFF2C5F7D),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '100%',
+                      style: TextStyle(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 10),
+
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: const LinearProgressIndicator(
+                    value: 1,
+                    minHeight: 8,
+                    color: Color(0xFF2C5F7D),
+                    backgroundColor: Color(0xFFDDEAF0),
+                  ),
+                ),
+
+                const SizedBox(height: 26),
+
+                _buildCard(
+                  padding: const EdgeInsets.all(20),
                   children: [
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -456,34 +401,96 @@ class _ClinicInfoPageState extends State<ClinicInfoPage> {
                       ],
                     ),
 
-                    const SizedBox(height: 22),
+                    if (clinic['operating_hours'] != null ||
+                        clinic['contact_number'] != null) ...[
+                      const SizedBox(height: 22),
 
-                    Row(
-                      children: [
-                        if (clinic['operating_hours'] != null)
-                          Expanded(
-                            child: _buildClinicInfoItem(
-                              'Operating Hours',
-                              clinic['operating_hours'].toString(),
-                              Icons.schedule_outlined,
+                      Row(
+                        children: [
+                          if (clinic['operating_hours'] != null)
+                            Expanded(
+                              child: _buildClinicInfoItem(
+                                'Operating Hours',
+                                clinic['operating_hours'].toString(),
+                                Icons.schedule_outlined,
+                              ),
                             ),
+
+                          if (clinic['operating_hours'] != null &&
+                              clinic['contact_number'] != null)
+                            const SizedBox(width: 14),
+
+                          if (clinic['contact_number'] != null)
+                            Expanded(
+                              child: _buildClinicInfoItem(
+                                'Contact',
+                                clinic['contact_number'].toString(),
+                                Icons.phone_outlined,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+
+                const SizedBox(height: 22),
+
+                _buildCard(
+                  padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
+                  children: [
+                    const Text(
+                      'Medical Documents',
+                      style: TextStyle(
+                        color: Color(0xFF173B4F),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+
+                    const SizedBox(height: 6),
+
+                    const Text(
+                      'Upload the documents required by this clinic. Take a photo or choose one from your gallery — files are uploaded securely.',
+                      style: TextStyle(
+                        color: Color(0xFF7A8A94),
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF4F8FA),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE3EDF2)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.folder_copy_outlined,
+                            color: Color(0xFF2C5F7D),
+                            size: 22,
                           ),
-
-                        if (clinic['contact_number'] != null) ...[
-                          const SizedBox(width: 14),
-
+                          const SizedBox(width: 12),
                           Expanded(
-                            child: _buildClinicInfoItem(
-                              'Contact',
-                              clinic['contact_number'].toString(),
-                              Icons.phone_outlined,
+                            child: Text(
+                              'Uploaded: $uploadedCount / ${requirementSlots.length}',
+                              style: const TextStyle(
+                                color: Color(0xFF173B4F),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ],
-                      ],
+                      ),
                     ),
 
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 22),
 
                     const Row(
                       children: [
@@ -497,7 +504,7 @@ class _ClinicInfoPageState extends State<ClinicInfoPage> {
                           'Required Documents',
                           style: TextStyle(
                             color: Color(0xFF173B4F),
-                            fontSize: 16,
+                            fontSize: 15,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
@@ -506,278 +513,49 @@ class _ClinicInfoPageState extends State<ClinicInfoPage> {
 
                     const SizedBox(height: 14),
 
-                    ..._clinicRequirements.map(
-                      (requirement) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              margin: const EdgeInsets.only(top: 2),
-                              child: const Icon(
-                                Icons.check_circle,
-                                size: 18,
-                                color: Color(0xFF2C5F7D),
-                              ),
-                            ),
-
-                            const SizedBox(width: 10),
-
-                            Expanded(
-                              child: Text(
-                                requirement,
-                                style: const TextStyle(
-                                  color: Color(0xFF5B6D7D),
-                                  fontSize: 13,
-                                  height: 1.4,
-                                ),
-                              ),
-                            ),
-                          ],
+                    if (requirementSlots.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF4F8FA),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFE3EDF2)),
                         ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 22),
-
-              Container(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: const Color(0xFFE1EAF0)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 18,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'Medical Information',
-                      style: TextStyle(
-                        color: Color(0xFF173B4F),
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-
-                    const SizedBox(height: 6),
-
-                    const Text(
-                      'Complete the patient medical profile.',
-                      style: TextStyle(color: Color(0xFF7A8A94), fontSize: 13),
-                    ),
-
-                    const SizedBox(height: 22),
-
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedStage,
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'Stage 1',
-                          child: Text('Stage 1'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Stage 2',
-                          child: Text('Stage 2'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Stage 3',
-                          child: Text('Stage 3'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Stage 4',
-                          child: Text('Stage 4'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Stage 5',
-                          child: Text('Stage 5'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _selectedStage = value);
-                        }
-                      },
-                      decoration: _modernInputDecoration(
-                        'Dialysis Stage',
-                        Icons.monitor_heart_outlined,
-                      ),
-                    ),
-
-                    const SizedBox(height: 22),
-
-                    const Text(
-                      'Existing Conditions',
-                      style: TextStyle(
-                        color: Color(0xFF173B4F),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: _conditions.map((condition) {
-                        final selected = _selectedConditions.contains(
-                          condition,
-                        );
-
-                        return GestureDetector(
-                          onTap: () => _toggleCondition(condition),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              color: selected
-                                  ? const Color(0xFF2C5F7D)
-                                  : const Color(0xFFF4F8FA),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: selected
-                                    ? const Color(0xFF2C5F7D)
-                                    : const Color(0xFFE3EDF2),
-                              ),
-                            ),
-                            child: Text(
-                              condition,
-                              style: TextStyle(
-                                color: selected
-                                    ? Colors.white
-                                    : const Color(0xFF5B6D7D),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                        child: const Text(
+                          'This clinic has not listed any required documents. You may continue.',
+                          style: TextStyle(
+                            color: Color(0xFF5B6D7D),
+                            fontSize: 13,
+                            height: 1.4,
                           ),
+                        ),
+                      )
+                    else
+                      ...requirementSlots.map((item) {
+                        final key = item['key']!;
+                        final label = item['label']!;
+                        final documentUrl = _documentUrls[key];
+                        final uploaded = documentUrl?.isNotEmpty ?? false;
+                        final uploading = _isUploading[key] == true;
+
+                        return _buildRequirementRow(
+                          label: label,
+                          documentUrl: uploaded ? documentUrl : null,
+                          uploading: uploading,
+                          onUpload: () => _showSourceChooser(key),
+                          onView: uploaded ? () => _viewDocument(key) : null,
                         );
-                      }).toList(),
-                    ),
-
-                    const SizedBox(height: 22),
-
-                    _buildModernTextField(
-                      label: 'Date of Birth',
-                      controller: _dateOfBirthController,
-                      icon: Icons.calendar_month_outlined,
-                      readOnly: true,
-                      onTap: _pickBirthDate,
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    _buildModernTextField(
-                      label: 'Street, House No. / Subdivision',
-                      controller: _homeAddressController,
-                      icon: Icons.home_outlined,
-                      errorText: _addressError,
-                      onChanged: _onAddressChanged,
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedBarangay,
-                      decoration: _modernInputDecoration(
-                        'Barangay (Valenzuela City)',
-                        Icons.location_city_outlined,
-                      ),
-                      isExpanded: true,
-                      hint: const Text('Select Barangay'),
-                      items: FormOptions.valenzuelaBarangays.map((brgy) {
-                        return DropdownMenuItem(value: brgy, child: Text(brgy));
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedBarangay = value;
-                        });
-                      },
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    _buildModernTextField(
-                      label: 'Blood Type',
-                      controller: _bloodTypeController,
-                      icon: Icons.bloodtype_outlined,
-                      errorText: _bloodTypeError,
-                      onChanged: _onBloodTypeChanged,
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    _buildModernTextField(
-                      label: 'Emergency Contact Name',
-                      controller: _emergencyContactNameController,
-                      icon: Icons.person_outline,
-                      errorText: _contactNameError,
-                      onChanged: _onContactNameChanged,
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedRelationship,
-                      decoration: _modernInputDecoration(
-                        'Relationship to Patient',
-                        Icons.diversity_3_outlined,
-                      ),
-                      isExpanded: true,
-                      hint: const Text('Select Relationship'),
-                      items: FormOptions.emergencyContactRelationships.map((
-                        relationship,
-                      ) {
-                        return DropdownMenuItem(
-                          value: relationship,
-                          child: Text(relationship),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedRelationship = value;
-                        });
-                      },
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    _buildModernTextField(
-                      label: 'Emergency Contact Number',
-                      controller: _emergencyContactNumberController,
-                      icon: Icons.phone_outlined,
-                      keyboardType: TextInputType.phone,
-                      maxLength: 11,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                      ],
-                      errorText: _contactNumberError,
-                      onChanged: _onContactNumberChanged,
-                    ),
+                      }),
 
                     if (_errorMessage != null) ...[
-                      const SizedBox(height: 18),
-
+                      const SizedBox(height: 14),
                       Container(
                         padding: const EdgeInsets.all(13),
                         decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.08),
+                          color: Colors.red.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: Colors.red.withOpacity(0.20),
+                            color: Colors.red.withValues(alpha: 0.20),
                           ),
                         ),
                         child: Text(
@@ -796,43 +574,59 @@ class _ClinicInfoPageState extends State<ClinicInfoPage> {
                     SizedBox(
                       height: 54,
                       child: ElevatedButton(
-                        onPressed: _isSubmitting ? null : _handleNext,
+                        onPressed: isAnyUploading ? null : _handleNext,
                         style: ElevatedButton.styleFrom(
                           elevation: 0,
                           backgroundColor: const Color(0xFF2C5F7D),
                           disabledBackgroundColor: const Color(
                             0xFF2C5F7D,
-                          ).withOpacity(0.55),
+                          ).withValues(alpha: 0.55),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                           ),
                         ),
-                        child: _isSubmitting
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2.4,
-                                ),
-                              )
-                            : const Text(
-                                'Continue To Documents',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.8,
-                                ),
-                              ),
+                        child: const Text(
+                          'REVIEW APPLICATION',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCard({
+    required EdgeInsets padding,
+    required List<Widget> children,
+  }) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE1EAF0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
       ),
     );
   }
@@ -872,64 +666,133 @@ class _ClinicInfoPageState extends State<ClinicInfoPage> {
     );
   }
 
-  Widget _buildModernTextField({
+  Widget _buildRequirementRow({
     required String label,
-    required TextEditingController controller,
-    required IconData icon,
-    bool readOnly = false,
-    VoidCallback? onTap,
-    TextInputType keyboardType = TextInputType.text,
-    int? maxLength,
-    List<TextInputFormatter>? inputFormatters,
-    String? errorText,
-    ValueChanged<String>? onChanged,
+    required String? documentUrl,
+    required bool uploading,
+    required VoidCallback onUpload,
+    VoidCallback? onView,
   }) {
-    return TextField(
-      controller: controller,
-      readOnly: readOnly,
-      onTap: onTap,
-      keyboardType: keyboardType,
-      maxLength: maxLength,
-      inputFormatters: inputFormatters,
-      onChanged: onChanged,
-      decoration: _modernInputDecoration(
-        label,
-        icon,
-        showCounter: maxLength == null,
-        errorText: errorText,
-      ),
-    );
-  }
+    final uploaded = documentUrl != null;
 
-  InputDecoration _modernInputDecoration(
-    String label,
-    IconData icon, {
-    bool showCounter = true,
-    String? errorText,
-  }) {
-    return InputDecoration(
-      labelText: label,
-      labelStyle: const TextStyle(
-        color: Color(0xFF6F7F89),
-        fontWeight: FontWeight.w500,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: uploaded ? const Color(0xFFF0F8F5) : const Color(0xFFF4F8FA),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: uploaded ? const Color(0xFFBFE5D2) : const Color(0xFFE3EDF2),
+        ),
       ),
-      prefixIcon: Icon(icon, color: const Color(0xFF5F7280)),
-      errorText: errorText,
-      counterText: showCounter ? null : '',
-      filled: true,
-      fillColor: const Color(0xFFF4F8FA),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFE3EDF2)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFF2C5F7D), width: 1.2),
+      child: Row(
+        children: [
+          if (uploaded)
+            GestureDetector(
+              onTap: onView,
+              child: DocumentThumbnail(url: documentUrl, size: 44),
+            )
+          else
+            const Icon(
+              Icons.upload_file_outlined,
+              color: Color(0xFF2C5F7D),
+              size: 22,
+            ),
+
+          const SizedBox(width: 12),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Color(0xFF173B4F),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
+                  ),
+                ),
+                if (uploaded) ...[
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Uploaded',
+                    style: TextStyle(
+                      color: Color(0xFF2A9D65),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          const SizedBox(width: 8),
+
+          if (onView != null) ...[
+            SizedBox(
+              height: 38,
+              child: OutlinedButton(
+                onPressed: onView,
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFF2A9D65)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'View',
+                  style: TextStyle(
+                    color: Color(0xFF2A9D65),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+
+          SizedBox(
+            height: 38,
+            child: ElevatedButton(
+              onPressed: uploading ? null : onUpload,
+              style: ElevatedButton.styleFrom(
+                elevation: 0,
+                backgroundColor: uploaded
+                    ? const Color(0xFF2A9D65)
+                    : const Color(0xFF2C5F7D),
+                disabledBackgroundColor: const Color(
+                  0xFF2C5F7D,
+                ).withValues(alpha: 0.5),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: uploading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(
+                      uploaded ? 'Replace' : 'Upload',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }

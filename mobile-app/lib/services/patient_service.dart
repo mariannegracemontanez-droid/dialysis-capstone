@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
+import '../utils/patient_name.dart';
 
 class PatientService {
   final SupabaseClient _supabase = SupabaseConfig.client;
@@ -57,12 +58,19 @@ class PatientService {
     return patient?['id']?.toString();
   }
 
+  /// The patient's pending/declined applications for the Pending Account
+  /// page. Each row is the full `patients` application row (the snapshot
+  /// of what was submitted to that clinic) plus:
+  /// - `clinic_name` and `clinic` (the clinic's details, incl. requirements)
+  /// - `documents` (that application's `medical_documents` row, or null)
+  ///
+  /// Three queries in total regardless of how many applications exist.
   Future<List<Map<String, dynamic>>> getPendingApplications(
     String profileId,
   ) async {
     final response = await _supabase
         .from('patients')
-        .select('id, clinic_id, status, decline_reason, created_at')
+        .select()
         .eq('profile_id', profileId)
         .not('clinic_id', 'is', null)
         .inFilter('status', ['pending', 'declined'])
@@ -78,29 +86,75 @@ class PatientService {
         .whereType<String>()
         .toSet()
         .toList();
+    final patientIds = rows
+        .map((row) => row['id']?.toString())
+        .whereType<String>()
+        .toList();
 
-    final clinicMap = <String, String>{};
+    final clinicMap = <String, Map<String, dynamic>>{};
     if (clinicIds.isNotEmpty) {
       final clinicResponse = await _supabase
           .from('clinics')
-          .select('id, name')
+          .select()
           .inFilter('id', clinicIds);
 
       for (final clinic in List<Map<String, dynamic>>.from(
         clinicResponse as List<dynamic>,
       )) {
         final id = clinic['id']?.toString();
-        final name = clinic['name']?.toString() ?? 'Clinic';
         if (id != null) {
-          clinicMap[id] = name;
+          clinicMap[id] = clinic;
         }
       }
     }
 
+    // Documents are keyed by application (patient_id), which is already
+    // specific to one clinic. A failure here shouldn't hide the
+    // applications themselves.
+    final documentMap = <String, Map<String, dynamic>>{};
+    if (patientIds.isNotEmpty) {
+      try {
+        final documentResponse = await _supabase
+            .from('medical_documents')
+            .select()
+            .inFilter('patient_id', patientIds);
+
+        for (final document in List<Map<String, dynamic>>.from(
+          documentResponse as List<dynamic>,
+        )) {
+          final patientId = document['patient_id']?.toString();
+          if (patientId != null) {
+            documentMap[patientId] = document;
+          }
+        }
+      } catch (_) {
+        // Leave documentMap empty; the page shows an unavailable state.
+      }
+    }
+
     return rows.map((row) {
-      final clinicId = row['clinic_id']?.toString();
-      return {...row, 'clinic_name': clinicMap[clinicId] ?? 'Clinic'};
+      final clinic = clinicMap[row['clinic_id']?.toString()];
+      return {
+        ...row,
+        'clinic_name': clinic?['name']?.toString() ?? 'Clinic',
+        'clinic': clinic,
+        'documents': documentMap[row['id']?.toString()],
+      };
     }).toList();
+  }
+
+  /// Saves the patient's separated name on their account profile (the
+  /// application rows carry their own per-clinic snapshot).
+  Future<void> updateProfileName({
+    required String profileId,
+    required PatientName name,
+  }) async {
+    if (!name.hasComponents) return;
+
+    await _supabase
+        .from('profiles')
+        .update(name.toColumns())
+        .eq('id', profileId);
   }
 
   Future<Map<String, dynamic>?> getPatientApplicationByClinic(
@@ -125,20 +179,7 @@ class PatientService {
   Future<String> createPatientApplication({
     required String profileId,
     required Object clinicId,
-    required String fullName,
-    required String email,
-    required String phone,
-    required String dateOfBirth,
-    required String homeAddress,
-    required String bloodType,
-    required String emergencyContactName,
-    required String emergencyContactNumber,
-    required String ckdLevel,
-    required List<String> conditions,
-    required List<String> insuranceOptions,
-    required String budgetRange,
-    required String preferredClinicType,
-    required String locationSummary,
+    required Map<String, Object?> details,
   }) async {
     final existing = await getPatientApplicationByClinic(profileId, clinicId);
     if (existing != null) {
@@ -157,50 +198,13 @@ class PatientService {
       throw Exception('You already have an application for this clinic.');
     }
 
-    final trimmedDob = dateOfBirth.trim();
-    String? formattedDob;
-    if (trimmedDob.isNotEmpty) {
-      final parsedDob = DateTime.tryParse(trimmedDob);
-      if (parsedDob != null) {
-        formattedDob = parsedDob.toIso8601String().split('T').first;
-      }
-    }
-
-    final selectedCondition = conditions.contains('None') || conditions.isEmpty
-        ? 'None'
-        : conditions.firstWhere(
-            (condition) => condition != 'None',
-            orElse: () => 'None',
-          );
-
-    final insuranceText = insuranceOptions.isNotEmpty
-        ? insuranceOptions.join(', ')
-        : 'None';
-
     final patientData = <String, Object?>{
+      ...details,
       'profile_id': profileId,
       'clinic_id': clinicId,
       'status': 'pending',
-      'full_name': fullName,
-      'email': email,
-      'phone': phone,
-      'home_address': homeAddress,
-      'blood_type': bloodType,
-      'emergency_contact_name': emergencyContactName,
-      'emergency_contact_number': emergencyContactNumber,
-      'dialysis_stage': ckdLevel,
-      'existing_condition': selectedCondition,
-      'budget': budgetRange,
-      'insurance': insuranceText,
-      'financial_support': insuranceText,
-      'preferred_clinic': preferredClinicType,
-      'user_location': locationSummary,
       'created_at': DateTime.now().toIso8601String(),
     };
-
-    if (formattedDob != null) {
-      patientData['date_of_birth'] = formattedDob;
-    }
 
     final response = await _supabase
         .from('patients')

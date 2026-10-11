@@ -1,7 +1,22 @@
 import '../utils/form_options.dart';
+import '../utils/patient_name.dart';
+
+/// A clinic application created during the current setup session (the
+/// `patients` row exists so documents can be uploaded against it). Kept so
+/// going back and choosing the same clinic again reuses the row instead of
+/// failing with "already applied".
+class ApplicationDraft {
+  final String patientId;
+  final Map<String, String> documentUrls;
+
+  const ApplicationDraft({
+    required this.patientId,
+    this.documentUrls = const {},
+  });
+}
 
 class SignupData {
-  final String fullName;
+  final PatientName name;
   final String email;
   final String phone;
   final String password;
@@ -28,11 +43,11 @@ class SignupData {
   final List<String> medicalDocumentPaths;
   final String referralDoctor;
   final List<String> insuranceOptions;
-  final String budgetRange;
   final String preferredClinicType;
+  final Map<String, ApplicationDraft> applicationDrafts;
 
   SignupData({
-    required this.fullName,
+    required this.name,
     required this.email,
     required this.phone,
     required this.password,
@@ -59,9 +74,59 @@ class SignupData {
     this.medicalDocumentPaths = const [],
     this.referralDoctor = '',
     this.insuranceOptions = const [],
-    this.budgetRange = 'Low-cost / Government-supported',
     this.preferredClinicType = 'Public Hospital',
+    this.applicationDrafts = const {},
   });
+
+  String get fullName => name.displayName;
+
+  /// Street address plus barangay, in the format stored in
+  /// `patients.home_address` (and parsed back by [fromPatientRow]).
+  String get composedHomeAddress => barangay.isEmpty
+      ? homeAddress
+      : '$homeAddress, Barangay $barangay, Valenzuela City';
+
+  /// Contact name plus relationship, in the format stored in
+  /// `patients.emergency_contact_name`.
+  String get composedEmergencyContactName =>
+      emergencyContactRelationship.isEmpty
+      ? emergencyContactName
+      : '$emergencyContactName ($emergencyContactRelationship)';
+
+  /// The patient-submitted columns of a `patients` application row. Each
+  /// row is the snapshot sent to one clinic, so the same map is used when
+  /// the row is created and when it is updated on final submit.
+  Map<String, Object?> toPatientApplicationColumns() {
+    final parsedDob = DateTime.tryParse(dateOfBirth.trim());
+
+    final selectedCondition = conditions.contains('None') || conditions.isEmpty
+        ? 'None'
+        : conditions.firstWhere(
+            (condition) => condition != 'None',
+            orElse: () => 'None',
+          );
+
+    final insuranceText = insuranceOptions.isNotEmpty
+        ? insuranceOptions.join(', ')
+        : 'None';
+
+    return {
+      ...name.toColumns(),
+      'email': email,
+      'phone': phone,
+      'date_of_birth': ?parsedDob?.toIso8601String().split('T').first,
+      'home_address': composedHomeAddress,
+      'blood_type': bloodType,
+      'emergency_contact_name': composedEmergencyContactName,
+      'emergency_contact_number': emergencyContactNumber,
+      'dialysis_stage': ckdLevel,
+      'existing_condition': selectedCondition,
+      'insurance': insuranceText,
+      'financial_support': insuranceText,
+      'preferred_clinic': preferredClinicType,
+      'user_location': locationSummary,
+    };
+  }
 
   /// Builds a [SignupData] pre-filled from a previously-submitted patient
   /// application row (e.g. when an existing patient applies to another
@@ -74,7 +139,7 @@ class SignupData {
   factory SignupData.fromPatientRow(
     Map<String, dynamic> row, {
     required String profileId,
-    String fallbackFullName = '',
+    PatientName fallbackName = const PatientName(),
     String fallbackEmail = '',
     String fallbackPhone = '',
   }) {
@@ -116,12 +181,22 @@ class SignupData {
         ? <String>[]
         : [existingCondition];
 
-    final fullName = stringOf('full_name');
+    // Prefer separated components from the application row, then from the
+    // account profile; a legacy full name is carried along for display only.
+    final rowName = PatientName.fromRow(row);
+    final PatientName name;
+    if (rowName.hasComponents) {
+      name = rowName;
+    } else if (fallbackName.hasComponents) {
+      name = fallbackName;
+    } else {
+      name = rowName.legacyFullName.isNotEmpty ? rowName : fallbackName;
+    }
     final email = stringOf('email');
     final phone = stringOf('phone');
 
     return SignupData(
-      fullName: fullName.isNotEmpty ? fullName : fallbackFullName,
+      name: name,
       email: email.isNotEmpty ? email : fallbackEmail,
       phone: phone.isNotEmpty ? phone : fallbackPhone,
       password: '',
@@ -138,9 +213,6 @@ class SignupData {
           : 'Stage 1',
       conditions: conditions,
       insuranceOptions: insuranceOptions,
-      budgetRange: stringOf('budget').isNotEmpty
-          ? stringOf('budget')
-          : 'Low-cost / Government-supported',
       preferredClinicType: stringOf('preferred_clinic').isNotEmpty
           ? stringOf('preferred_clinic')
           : 'Public Hospital',
@@ -150,7 +222,7 @@ class SignupData {
 
   SignupData copyWith({
     String? profileId,
-    String? fullName,
+    PatientName? name,
     String? email,
     String? phone,
     String? status,
@@ -176,11 +248,11 @@ class SignupData {
     Map<String, String>? documentUrls,
     String? referralDoctor,
     List<String>? insuranceOptions,
-    String? budgetRange,
     String? preferredClinicType,
+    Map<String, ApplicationDraft>? applicationDrafts,
   }) {
     return SignupData(
-      fullName: fullName ?? this.fullName,
+      name: name ?? this.name,
       email: email ?? this.email,
       phone: phone ?? this.phone,
       password: password ?? this.password,
@@ -209,8 +281,8 @@ class SignupData {
       medicalDocumentPaths: medicalDocumentPaths ?? this.medicalDocumentPaths,
       referralDoctor: referralDoctor ?? this.referralDoctor,
       insuranceOptions: insuranceOptions ?? this.insuranceOptions,
-      budgetRange: budgetRange ?? this.budgetRange,
       preferredClinicType: preferredClinicType ?? this.preferredClinicType,
+      applicationDrafts: applicationDrafts ?? this.applicationDrafts,
     );
   }
 }

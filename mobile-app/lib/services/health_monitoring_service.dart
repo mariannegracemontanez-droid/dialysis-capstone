@@ -48,14 +48,18 @@ class HealthMonitoringService {
     return List<Map<String, dynamic>>.from(data as List<dynamic>);
   }
 
+  /// Water intake for the last 60 days (the longest range the History tab
+  /// offers), fetched once; the 7/30/60-day filters narrow it locally.
   Future<List<Map<String, dynamic>>> getWaterHistory() async {
     final patientId = await getCurrentPatientId();
     if (patientId == null) {
       return [];
     }
 
-    final monthAgo = DateTime.now().subtract(const Duration(days: 30));
-    final startDate = monthAgo.toUtc().toIso8601String().split('T').first;
+    // One extra day of margin: log_date is a UTC date while the filters
+    // use the device's local date.
+    final rangeStart = DateTime.now().subtract(const Duration(days: 61));
+    final startDate = rangeStart.toUtc().toIso8601String().split('T').first;
     final data = await _supabase
         .from('water_intake_logs')
         .select('id, amount_ml, logged_at, log_date, notes')

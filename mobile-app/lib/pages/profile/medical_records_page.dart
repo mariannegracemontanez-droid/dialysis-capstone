@@ -5,6 +5,7 @@ import '../../services/health_monitoring_service.dart';
 import '../../services/medical_document_service.dart';
 import '../../services/patient_service.dart';
 import '../../utils/dialysis_readiness_analyzer.dart';
+import '../../utils/error_message.dart';
 
 class MedicalRecordsPage extends StatefulWidget {
   final UserModel? user;
@@ -156,7 +157,7 @@ class _MedicalRecordsPageState extends State<MedicalRecordsPage> {
     } catch (e) {
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Unable to load medical records: $e';
+        _errorMessage = 'Unable to load medical records: ${friendlyError(e)}';
       });
     }
   }

@@ -68,10 +68,7 @@ class _LoginHistoryPageState extends State<LoginHistoryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF2C5F7D),
-        title: const Text('Login History'),
-      ),
+      appBar: AppBar(title: const Text('Login History')),
       body: SafeArea(
         child: FutureBuilder<List<LoginHistory>>(
           future: _loginHistoryFuture,

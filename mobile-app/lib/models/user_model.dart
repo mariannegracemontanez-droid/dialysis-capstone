@@ -1,7 +1,9 @@
+import '../utils/patient_name.dart';
+
 class UserModel {
   final String id;
   final String email;
-  final String fullName;
+  final PatientName name;
   final String? phone;
   final String? location;
   final String? medicalId;
@@ -16,7 +18,7 @@ class UserModel {
   UserModel({
     required this.id,
     required this.email,
-    required this.fullName,
+    required this.name,
     this.phone,
     this.location,
     this.medicalId,
@@ -29,11 +31,15 @@ class UserModel {
     required this.createdAt,
   });
 
+  /// Formatted display name (`First Middle Last`), falling back to the
+  /// legacy `full_name` for records whose name hasn't been separated yet.
+  String get fullName => name.displayName;
+
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
       id: json['id'],
       email: json['email'],
-      fullName: json['full_name'],
+      name: PatientName.fromRow(json),
       phone: json['phone'],
       location: json['user_location'] ?? json['location'],
       medicalId: json['medical_id'],
@@ -55,7 +61,7 @@ class UserModel {
 
   Map<String, dynamic> toJson() => {
     'email': email,
-    'full_name': fullName,
+    ...name.toColumns(),
     'phone': phone,
     'user_location': location,
     'medical_id': medicalId,

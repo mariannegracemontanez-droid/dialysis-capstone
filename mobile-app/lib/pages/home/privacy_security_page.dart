@@ -5,6 +5,7 @@ import '../../services/auth/auth_service.dart';
 import '../../services/data_export_service.dart';
 import '../../services/notification_preferences_service.dart';
 import '../profile/privacy_policy_page.dart';
+import '../../utils/error_message.dart';
 
 class PrivacySecurityPage extends StatefulWidget {
   const PrivacySecurityPage({super.key});
@@ -50,12 +51,15 @@ class _PrivacySecurityPageState extends State<PrivacySecurityPage> {
 
       await Printing.sharePdf(
         bytes: bytes,
-        filename: 'CureNurture_MyData_${DateTime.now().millisecondsSinceEpoch}.pdf',
+        filename:
+            'CureNurture_MyData_${DateTime.now().millisecondsSinceEpoch}.pdf',
       );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Unable to generate your data: $e')),
+          SnackBar(
+            content: Text('Unable to generate your data: ${friendlyError(e)}'),
+          ),
         );
       }
     } finally {

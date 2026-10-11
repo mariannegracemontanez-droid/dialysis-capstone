@@ -8,9 +8,11 @@ import '../../services/appointment_service.dart';
 import '../../services/fcm_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/patient_service.dart';
+import '../../utils/patient_name.dart';
 import '../../widgets/notification_button.dart';
 import 'health_monitoring_page.dart';
 import 'home_tab.dart';
+import 'pending_application_card.dart';
 import 'schedule_tab.dart';
 import 'profile_tab.dart';
 
@@ -402,7 +404,7 @@ class _HomePageState extends State<HomePage> {
 
     if (mostRecentRow == null) {
       return SignupData(
-        fullName: user?.fullName ?? '',
+        name: user?.name ?? const PatientName(),
         email: user?.email ?? '',
         phone: user?.phone ?? '',
         password: '',
@@ -414,17 +416,15 @@ class _HomePageState extends State<HomePage> {
     return SignupData.fromPatientRow(
       mostRecentRow,
       profileId: profileId,
-      fallbackFullName: user?.fullName ?? '',
+      fallbackName: user?.name ?? const PatientName(),
       fallbackEmail: user?.email ?? '',
       fallbackPhone: user?.phone ?? '',
     );
   }
 
   Widget _buildWaitingForApprovalTab() {
-    final firstName = (_currentUser?.fullName ?? 'Patient')
-        .trim()
-        .split(' ')
-        .first;
+    final givenName = _currentUser?.name.givenName ?? '';
+    final firstName = givenName.isEmpty ? 'Patient' : givenName;
 
     final pendingCount = _pendingApplications
         .where(
@@ -715,138 +715,12 @@ class _HomePageState extends State<HomePage> {
                   ),
                 )
               else
-                ..._pendingApplications.map((application) {
-                  final clinicName =
-                      application['clinic_name']?.toString() ?? 'Clinic';
-                  final rawStatus =
-                      application['status']?.toString().toLowerCase().trim() ??
-                      'pending';
-                  final status = rawStatus.toUpperCase();
-                  final isDeclined = rawStatus == 'declined';
-                  final declineReason =
-                      application['decline_reason']?.toString().trim() ?? '';
-
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 14),
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: isDeclined
-                            ? const Color(0xFFFECACA)
-                            : const Color(0xFFE1EAF0),
-                      ),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          height: 48,
-                          width: 48,
-                          decoration: BoxDecoration(
-                            color: isDeclined
-                                ? const Color(0xFFFFE4E6)
-                                : const Color(0xFFEAF4F7),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Icon(
-                            isDeclined
-                                ? Icons.cancel_outlined
-                                : Icons.local_hospital_outlined,
-                            color: isDeclined
-                                ? const Color(0xFFB91C1C)
-                                : const Color(0xFF225E72),
-                            size: 24,
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                clinicName,
-                                style: const TextStyle(
-                                  color: Color(0xFF173B4F),
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 5,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: isDeclined
-                                          ? const Color(0xFFFFE4E6)
-                                          : const Color(0xFFFFF4D8),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Text(
-                                      status,
-                                      style: TextStyle(
-                                        color: isDeclined
-                                            ? const Color(0xFFB91C1C)
-                                            : const Color(0xFF8A6200),
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: 0.4,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                isDeclined
-                                    ? 'Your application was declined by this center.'
-                                    : 'Please wait for the clinic to review your request. You will gain access once approved.',
-                                style: TextStyle(
-                                  color: isDeclined
-                                      ? const Color(0xFF991B1B)
-                                      : const Color(0xFF5B6D7D),
-                                  fontSize: 12.5,
-                                  height: 1.4,
-                                  fontWeight: isDeclined
-                                      ? FontWeight.w700
-                                      : FontWeight.normal,
-                                ),
-                              ),
-                              if (isDeclined && declineReason.isNotEmpty) ...[
-                                const SizedBox(height: 10),
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFEF2F2),
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(
-                                      color: const Color(0xFFFECACA),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    'Reason: $declineReason',
-                                    style: const TextStyle(
-                                      color: Color(0xFF991B1B),
-                                      fontSize: 12,
-                                      height: 1.4,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
+                ..._pendingApplications.map(
+                  (application) => PendingApplicationCard(
+                    key: ValueKey(application['id']),
+                    application: application,
+                  ),
+                ),
               const SizedBox(height: 8),
               _buildNextStepsCard(),
               const SizedBox(height: 20),
@@ -861,10 +735,9 @@ class _HomePageState extends State<HomePage> {
                           final signupData = await _buildReapplySignupData();
                           if (!mounted) return;
                           setState(() => _isPreparingReapply = false);
-                          navigator.pushNamed(
-                            '/location',
-                            arguments: signupData,
-                          );
+                          // Starts at Step 1 so the pre-filled name and
+                          // medical details can be reviewed for this clinic.
+                          navigator.pushNamed('/setup', arguments: signupData);
                         },
                   icon: _isPreparingReapply
                       ? const SizedBox(
@@ -1106,10 +979,7 @@ class _HomePageState extends State<HomePage> {
         unselectedItemColor: Colors.grey,
         items: _hasPatientAccess
             ? const [
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.home),
-                  label: 'Home',
-                ),
+                BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
                 BottomNavigationBarItem(
                   icon: Icon(Icons.calendar_today),
                   label: 'Schedule',

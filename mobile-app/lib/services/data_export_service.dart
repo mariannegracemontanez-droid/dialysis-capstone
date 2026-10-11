@@ -161,6 +161,11 @@ class DataExportService {
   pw.Widget _patientInfoTable(UserModel user, Map<String, dynamic>? patient) {
     final rows = <List<String>>[
       ['Full Name', user.fullName],
+      if (user.name.hasComponents) ...[
+        ['First Name', user.name.firstName],
+        ['Middle Name', user.name.middleName ?? '—'],
+        ['Last Name', user.name.lastName],
+      ],
       ['Email', user.email],
       ['Phone', user.phone ?? '—'],
       ['Home Address', patient?['home_address']?.toString() ?? '—'],

@@ -1,9 +1,11 @@
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/health_monitoring_service.dart';
+import '../../utils/date_range.dart';
 import 'package:fl_chart/fl_chart.dart';
+import '../../utils/error_message.dart';
 
 class HealthMonitoringPage extends StatefulWidget {
   const HealthMonitoringPage({super.key});
@@ -24,6 +26,11 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
   List<Map<String, dynamic>> _weightHistory = [];
   Map<String, dynamic>? _latestBloodPressure;
   Map<String, dynamic>? _latestWeightLog;
+
+  // History tab date-range filters (days), independent per section.
+  static const List<int> _historyRangeOptions = [7, 30, 60];
+  int _bpRangeDays = 30;
+  int _waterRangeDays = 30;
 
   RealtimeChannel? _monitoringChannel;
 
@@ -100,7 +107,11 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Unable to load health data: $error')),
+          SnackBar(
+            content: Text(
+              'Unable to load health data: ${friendlyError(error)}',
+            ),
+          ),
         );
       }
     } finally {
@@ -149,175 +160,158 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
     int? selectedAmount;
     final customController = TextEditingController();
     bool isSaving = false;
+    String? inputError;
 
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
+      builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 20,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 50,
-                    height: 6,
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                  ),
-                  const Text(
-                    'Add Water Intake',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text('Choose a preset or enter a custom amount in mL.'),
-                  const SizedBox(height: 18),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
+            Future<void> save() async {
+              final customText = customController.text.trim();
+              final amount = customText.isNotEmpty
+                  ? int.tryParse(customText)
+                  : selectedAmount;
+
+              // Shown inside the sheet: a SnackBar would sit behind it.
+              if (amount == null || amount <= 0) {
+                setModalState(
+                  () => inputError = 'Please select or enter a valid amount.',
+                );
+                return;
+              }
+              if (amount > 10000) {
+                setModalState(
+                  () => inputError = 'Amount must be at most 10000 mL.',
+                );
+                return;
+              }
+
+              final navigator = Navigator.of(sheetContext);
+              setModalState(() {
+                isSaving = true;
+                inputError = null;
+              });
+
+              try {
+                await _service.addWaterIntake(amount);
+                await _loadHealthData();
+                navigator.pop();
+              } catch (error) {
+                // The sheet is still open on failure, so its state is safe
+                // to update; after a successful pop it no longer exists.
+                if (sheetContext.mounted) {
+                  setModalState(() {
+                    isSaving = false;
+                    inputError =
+                        'Unable to save intake: ${friendlyError(error)}';
+                  });
+                }
+              }
+            }
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 20,
+                  right: 20,
+                  top: 20,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildAmountButton(
-                        amount: 100,
-                        selectedAmount: selectedAmount,
-                        onTap: () {
+                      Center(
+                        child: Container(
+                          width: 50,
+                          height: 6,
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                      ),
+                      const Text(
+                        'Add Water Intake',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Choose a preset or enter a custom amount in mL.',
+                      ),
+                      const SizedBox(height: 18),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          for (final amount in const [100, 250, 500])
+                            _buildAmountButton(
+                              amount: amount,
+                              selectedAmount: selectedAmount,
+                              onTap: () {
+                                setModalState(() {
+                                  selectedAmount = amount;
+                                  inputError = null;
+                                  customController.clear();
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: customController,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) {
+                          if (!isSaving) save();
+                        },
+                        decoration: InputDecoration(
+                          labelText: 'Custom amount',
+                          suffixText: 'mL',
+                          errorText: inputError,
+                        ),
+                        onChanged: (_) {
                           setModalState(() {
-                            selectedAmount = 100;
-                            customController.clear();
+                            selectedAmount = null;
+                            inputError = null;
                           });
                         },
                       ),
-                      _buildAmountButton(
-                        amount: 250,
-                        selectedAmount: selectedAmount,
-                        onTap: () {
-                          setModalState(() {
-                            selectedAmount = 250;
-                            customController.clear();
-                          });
-                        },
-                      ),
-                      _buildAmountButton(
-                        amount: 500,
-                        selectedAmount: selectedAmount,
-                        onTap: () {
-                          setModalState(() {
-                            selectedAmount = 500;
-                            customController.clear();
-                          });
-                        },
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: isSaving ? null : save,
+                          child: isSaving
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2.4,
+                                  ),
+                                )
+                              : const Text(
+                                  'Save Intake',
+                                  style: TextStyle(fontSize: 16),
+                                ),
+                        ),
                       ),
                     ],
                   ),
-
-                  const SizedBox(height: 20),
-                  TextField(
-                    controller: customController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Custom amount (mL)',
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (_) {
-                      setModalState(() {
-                        selectedAmount = null;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF008B8B),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      onPressed: isSaving
-                          ? null
-                          : () async {
-                              final customText = customController.text.trim();
-                              final amount = customText.isNotEmpty
-                                  ? int.tryParse(customText)
-                                  : selectedAmount;
-
-                              if (amount == null || amount <= 0) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Please select or enter a valid amount.',
-                                    ),
-                                  ),
-                                );
-                                return;
-                              }
-                              if (amount > 10000) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Amount must be at most 10000 mL.',
-                                    ),
-                                  ),
-                                );
-                                return;
-                              }
-
-                              final scaffold = ScaffoldMessenger.of(context);
-                              final navigator = Navigator.of(context);
-
-                              setModalState(() {
-                                isSaving = true;
-                              });
-
-                              try {
-                                await _service.addWaterIntake(amount);
-                                await _loadHealthData();
-                                if (mounted) {
-                                  navigator.pop();
-                                }
-                              } catch (error) {
-                                if (mounted) {
-                                  scaffold.showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Unable to save intake: $error',
-                                      ),
-                                    ),
-                                  );
-                                }
-                              } finally {
-                                if (mounted) {
-                                  setModalState(() {
-                                    isSaving = false;
-                                  });
-                                }
-                              }
-                            },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        child: Text(
-                          isSaving ? 'Saving...' : 'Save Intake',
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             );
           },
@@ -1277,7 +1271,7 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
             iconColor: Colors.red,
             title: 'Blood Pressure History',
             emptyLabel: 'No blood pressure records yet.',
-            child: _bpHistory.isEmpty ? null : _buildBpHistoryList(),
+            child: _bpHistory.isEmpty ? null : _buildBpHistoryContent(),
           ),
           const SizedBox(height: 26),
           _buildHistorySection(
@@ -1293,7 +1287,7 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
             iconColor: _waterIconColor,
             title: 'Water Intake History',
             emptyLabel: 'No water intake history yet.',
-            child: _historyLogs.isEmpty ? null : _buildWaterHistoryList(),
+            child: _historyLogs.isEmpty ? null : _buildWaterHistoryContent(),
           ),
         ],
       ),
@@ -1353,9 +1347,289 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
     );
   }
 
-  Widget _buildBpHistoryList() {
+  Widget _buildRangeFilter({
+    required int selectedDays,
+    required ValueChanged<int> onSelected,
+  }) {
+    return Wrap(
+      spacing: 8,
+      children: _historyRangeOptions.map((days) {
+        final selected = days == selectedDays;
+        return ChoiceChip(
+          label: Text('$days Days'),
+          selected: selected,
+          showCheckmark: false,
+          onSelected: (_) => onSelected(days),
+          selectedColor: const Color(0xFF225E72),
+          backgroundColor: Colors.white,
+          side: BorderSide(
+            color: selected ? const Color(0xFF225E72) : const Color(0xFFE3EDF2),
+          ),
+          labelStyle: TextStyle(
+            color: selected ? Colors.white : const Color(0xFF225E72),
+            fontWeight: FontWeight.w700,
+            fontSize: 12.5,
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildRangeEmpty(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F8FA),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE3EDF2)),
+      ),
+      child: Text(
+        message,
+        style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+      ),
+    );
+  }
+
+  Widget _buildBpHistoryContent() {
+    final records = _bpHistory
+        .where(
+          (bp) =>
+              isWithinLastDays(bp['session_date']?.toString(), _bpRangeDays),
+        )
+        .toList();
+
     return Column(
-      children: _bpHistory.map((bp) {
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildRangeFilter(
+          selectedDays: _bpRangeDays,
+          onSelected: (days) => setState(() => _bpRangeDays = days),
+        ),
+        const SizedBox(height: 12),
+        if (records.isEmpty)
+          _buildRangeEmpty(
+            'No blood pressure records in the last $_bpRangeDays days.',
+          )
+        else ...[
+          _buildBloodPressureChart(records),
+          const SizedBox(height: 14),
+          _buildBpHistoryList(records),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildWaterHistoryContent() {
+    final logs = _historyLogs
+        .where(
+          (log) =>
+              isWithinLastDays(log['log_date']?.toString(), _waterRangeDays),
+        )
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildRangeFilter(
+          selectedDays: _waterRangeDays,
+          onSelected: (days) => setState(() => _waterRangeDays = days),
+        ),
+        const SizedBox(height: 12),
+        if (logs.isEmpty)
+          _buildRangeEmpty(
+            'No water intake records in the last $_waterRangeDays days.',
+          )
+        else ...[
+          _buildWaterIntakeChart(logs, _waterRangeDays),
+          const SizedBox(height: 14),
+          _buildWaterHistoryList(logs),
+        ],
+      ],
+    );
+  }
+
+  /// Daily water intake totals for every day in the selected range (days
+  /// with no logs show as zero), against the daily goal.
+  Widget _buildWaterIntakeChart(List<Map<String, dynamic>> logs, int days) {
+    final dateKey = DateFormat('yyyy-MM-dd');
+    final totals = <String, int>{};
+    for (final log in logs) {
+      final date = DateTime.tryParse(log['log_date']?.toString() ?? '');
+      if (date == null) continue;
+      final amount = int.tryParse(log['amount_ml']?.toString() ?? '') ?? 0;
+      totals.update(
+        dateKey.format(date),
+        (sum) => sum + amount,
+        ifAbsent: () => amount,
+      );
+    }
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final dayList = List.generate(
+      days,
+      (index) => today.subtract(Duration(days: days - 1 - index)),
+    );
+    final dailyTotals = dayList
+        .map((day) => totals[dateKey.format(day)] ?? 0)
+        .toList();
+    final highest = dailyTotals.fold<int>(0, (a, b) => a > b ? a : b);
+    final maxY = (highest > _dailyGoalMl ? highest : _dailyGoalMl) * 1.2;
+    final barWidth = days <= 7 ? 16.0 : (days <= 30 ? 6.0 : 3.0);
+    final labelFormat = DateFormat('MMM d');
+
+    return Container(
+      height: 260,
+      padding: const EdgeInsets.fromLTRB(12, 16, 16, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(left: 4),
+            child: Text(
+              'Daily Water Intake (mL)',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Expanded(
+            child: BarChart(
+              BarChartData(
+                maxY: maxY,
+                minY: 0,
+                alignment: BarChartAlignment.spaceBetween,
+                borderData: FlBorderData(show: false),
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  getDrawingHorizontalLine: (_) =>
+                      FlLine(color: Colors.grey.shade200, strokeWidth: 1),
+                ),
+                extraLinesData: ExtraLinesData(
+                  horizontalLines: [
+                    HorizontalLine(
+                      y: _dailyGoalMl.toDouble(),
+                      color: Colors.grey.shade600,
+                      strokeWidth: 1.5,
+                      dashArray: [6, 4],
+                      label: HorizontalLineLabel(
+                        show: true,
+                        alignment: Alignment.topRight,
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        labelResolver: (_) =>
+                            'Goal ${(_dailyGoalMl / 1000).toStringAsFixed(1)} L',
+                      ),
+                    ),
+                  ],
+                ),
+                barTouchData: BarTouchData(
+                  touchTooltipData: BarTouchTooltipData(
+                    getTooltipColor: (_) => const Color(0xFF173B4F),
+                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                      return BarTooltipItem(
+                        '${labelFormat.format(dayList[group.x])}\n'
+                        '${rod.toY.toInt()} mL',
+                        const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                titlesData: FlTitlesData(
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 40,
+                      getTitlesWidget: (value, meta) => Text(
+                        value.toInt().toString(),
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 24,
+                      interval: 1,
+                      getTitlesWidget: (value, meta) {
+                        final index = value.toInt();
+                        final showLabel =
+                            days <= 7 ||
+                            index == 0 ||
+                            index == days - 1 ||
+                            index == days ~/ 2;
+                        if (!showLabel || index < 0 || index >= days) {
+                          return const SizedBox.shrink();
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            labelFormat.format(dayList[index]),
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 10,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                barGroups: [
+                  for (var i = 0; i < days; i++)
+                    BarChartGroupData(
+                      x: i,
+                      barRods: [
+                        BarChartRodData(
+                          toY: dailyTotals[i].toDouble(),
+                          color: _waterIconColor,
+                          width: barWidth,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(4),
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBpHistoryList(List<Map<String, dynamic>> records) {
+    return Column(
+      children: records.map((bp) {
         final systolic = bp['systolic']?.toString() ?? '--';
         final diastolic = bp['diastolic']?.toString() ?? '--';
         final date = bp['session_date']?.toString() ?? '';
@@ -1409,8 +1683,7 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
   Widget _buildWeightHistoryList() {
     return Column(
       children: _weightHistory.map((weight) {
-        final before =
-            double.tryParse(weight['before_weight'].toString()) ?? 0;
+        final before = double.tryParse(weight['before_weight'].toString()) ?? 0;
         final after = double.tryParse(weight['after_weight'].toString()) ?? 0;
         final removed = before - after;
         final date = weight['session_date']?.toString() ?? '';
@@ -1458,9 +1731,9 @@ class _HealthMonitoringPageState extends State<HealthMonitoringPage> {
     );
   }
 
-  Widget _buildWaterHistoryList() {
+  Widget _buildWaterHistoryList(List<Map<String, dynamic>> logs) {
     final grouped = <String, List<Map<String, dynamic>>>{};
-    for (final log in _historyLogs) {
+    for (final log in logs) {
       final logDate = log['log_date'] as String? ?? '';
       final formatted = _formatHistoryDate(logDate);
       grouped.putIfAbsent(formatted, () => []).add(log);

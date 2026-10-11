@@ -26,7 +26,27 @@ class Validators {
     return null;
   }
 
-  static String? validateAddress(String value, {String fieldLabel = 'Address'}) {
+  /// For the patient's own name parts. Accepts any Unicode letter so names
+  /// such as "Peña" or "Niño" are not rejected.
+  static String? validatePersonNamePart(
+    String value, {
+    required String fieldLabel,
+  }) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return '$fieldLabel is required.';
+    if (!RegExp(r"^[\p{L}\s.'-]+$", unicode: true).hasMatch(trimmed)) {
+      return '$fieldLabel must only contain letters.';
+    }
+    if (!RegExp(r'\p{L}', unicode: true).hasMatch(trimmed)) {
+      return '$fieldLabel must contain at least one letter.';
+    }
+    return null;
+  }
+
+  static String? validateAddress(
+    String value, {
+    String fieldLabel = 'Address',
+  }) {
     final trimmed = value.trim();
     if (trimmed.isEmpty) return '$fieldLabel is required.';
     return null;

@@ -3,6 +3,8 @@ import '../../models/signup_data.dart';
 import '../../services/auth/auth_service.dart';
 import '../../services/medical_document_service.dart';
 import '../../services/patient_service.dart';
+import '../../widgets/document_preview.dart';
+import '../../utils/error_message.dart';
 
 class ConfirmInfoPage extends StatefulWidget {
   final SignupData signupData;
@@ -16,6 +18,9 @@ class ConfirmInfoPage extends StatefulWidget {
 class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
   bool _isSubmitting = false;
   String? _errorMessage;
+  // Set once this page creates the application, so a retry after a later
+  // failure updates that row instead of trying to create a duplicate.
+  String? _createdPatientId;
 
   Future<void> _handleSubmit() async {
     setState(() {
@@ -31,55 +36,28 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
         );
       }
 
-      var patientId = widget.signupData.patientId;
+      final signupData = widget.signupData;
+      final details = signupData.toPatientApplicationColumns();
+      var patientId = _createdPatientId ?? signupData.patientId;
       if (patientId.isEmpty) {
         patientId = await AuthService().createPatientRecord(
           profileId: profileId,
-          clinicId: widget.signupData.clinicId,
-          fullName: widget.signupData.fullName,
-          email: widget.signupData.email,
-          phone: widget.signupData.phone,
-          dateOfBirth: widget.signupData.dateOfBirth,
-          homeAddress: widget.signupData.homeAddress,
-          bloodType: widget.signupData.bloodType,
-          emergencyContactName: widget.signupData.emergencyContactName,
-          emergencyContactNumber: widget.signupData.emergencyContactNumber,
-          ckdLevel: widget.signupData.ckdLevel,
-          conditions: widget.signupData.conditions,
-          insuranceOptions: widget.signupData.insuranceOptions,
-          budgetRange: widget.signupData.budgetRange,
-          preferredClinicType: widget.signupData.preferredClinicType,
-          locationSummary: widget.signupData.locationSummary,
+          clinicId: signupData.clinicId,
+          details: details,
         );
+        _createdPatientId = patientId;
       } else {
         await PatientService().updatePatientApplication(
           patientId: patientId,
-          updates: {
-            'full_name': widget.signupData.fullName,
-            'email': widget.signupData.email,
-            'phone': widget.signupData.phone,
-            'date_of_birth': widget.signupData.dateOfBirth,
-            'home_address': widget.signupData.homeAddress,
-            'blood_type': widget.signupData.bloodType,
-            'emergency_contact_name': widget.signupData.emergencyContactName,
-            'emergency_contact_number':
-                widget.signupData.emergencyContactNumber,
-            'dialysis_stage': widget.signupData.ckdLevel,
-            'existing_condition': widget.signupData.conditions.isNotEmpty
-                ? widget.signupData.conditions.firstWhere(
-                    (condition) => condition != 'None',
-                    orElse: () => 'None',
-                  )
-                : 'None',
-            'insurance': widget.signupData.insuranceOptions.isNotEmpty
-                ? widget.signupData.insuranceOptions.join(', ')
-                : 'None',
-            'budget': widget.signupData.budgetRange,
-            'preferred_clinic': widget.signupData.preferredClinicType,
-            'user_location': widget.signupData.locationSummary,
-          },
+          updates: details,
         );
       }
+
+      // Keep the account profile's name in step with what was submitted.
+      await PatientService().updateProfileName(
+        profileId: profileId,
+        name: signupData.name,
+      );
 
       if (widget.signupData.documentUrls.isNotEmpty) {
         await MedicalDocumentService().saveDocumentUrls(
@@ -100,7 +78,7 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
       }
     } catch (e) {
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = friendlyError(e);
       });
     } finally {
       setState(() {
@@ -109,8 +87,26 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
     }
   }
 
+  /// Uploaded documents in requirement order. Two requirements can map to
+  /// the same document column, so each file is listed once.
+  List<DocumentPreviewItem> get _uploadedDocuments {
+    final documentUrls = widget.signupData.documentUrls;
+    final seenUrls = <String>{};
+    final documents = <DocumentPreviewItem>[];
+    for (final label in widget.signupData.clinicRequirements) {
+      final url =
+          documentUrls[MedicalDocumentService.columnForRequirement(label)];
+      if (url != null && url.isNotEmpty && seenUrls.add(url)) {
+        documents.add(DocumentPreviewItem(label: label, url: url));
+      }
+    }
+    return documents;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final name = widget.signupData.name;
+    final uploadedDocuments = _uploadedDocuments;
     final insuranceLabel = widget.signupData.insuranceOptions.isEmpty
         ? 'None'
         : widget.signupData.insuranceOptions.join(', ');
@@ -257,7 +253,16 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
                         _buildInfoRow(
                           icon: Icons.person_outline,
                           label: 'Patient Name',
-                          value: widget.signupData.fullName,
+                          value: name.displayName,
+                        ),
+
+                        _buildInfoRow(
+                          icon: Icons.badge_outlined,
+                          label: 'First Name · Middle Name · Last Name',
+                          value:
+                              '${name.firstName} · '
+                              '${name.middleName ?? 'No middle name'} · '
+                              '${name.lastName}',
                         ),
 
                         _buildInfoRow(
@@ -281,7 +286,7 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
                         _buildInfoRow(
                           icon: Icons.home_outlined,
                           label: 'Home Address',
-                          value: widget.signupData.homeAddress,
+                          value: widget.signupData.composedHomeAddress,
                         ),
 
                         _buildInfoRow(
@@ -295,7 +300,7 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
                           label: 'Emergency Contact',
                           value: widget.signupData.emergencyContactName.isEmpty
                               ? 'Not provided'
-                              : '${widget.signupData.emergencyContactName} · ${widget.signupData.emergencyContactNumber}',
+                              : '${widget.signupData.composedEmergencyContactName} · ${widget.signupData.emergencyContactNumber}',
                         ),
 
                         _buildInfoRow(
@@ -327,16 +332,45 @@ class _ConfirmInfoPageState extends State<ConfirmInfoPage> {
                         ),
 
                         _buildInfoRow(
-                          icon: Icons.payments_outlined,
-                          label: 'Budget Range',
-                          value: widget.signupData.budgetRange,
-                        ),
-
-                        _buildInfoRow(
                           icon: Icons.business_outlined,
                           label: 'Preferred Clinic Type',
                           value: widget.signupData.preferredClinicType,
                         ),
+
+                        const SizedBox(height: 8),
+
+                        Text(
+                          'Uploaded Medical Documents '
+                          '(${uploadedDocuments.length})',
+                          style: const TextStyle(
+                            color: Color(0xFF173B4F),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+
+                        const SizedBox(height: 4),
+
+                        const Text(
+                          'Tap a document to check it before submitting.',
+                          style: TextStyle(
+                            color: Color(0xFF7A8A94),
+                            fontSize: 12.5,
+                          ),
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        if (uploadedDocuments.isEmpty)
+                          const Text(
+                            'No documents uploaded.',
+                            style: TextStyle(
+                              color: Color(0xFF5B6D7D),
+                              fontSize: 13,
+                            ),
+                          )
+                        else
+                          DocumentGallery(documents: uploadedDocuments),
 
                         if (_errorMessage != null) ...[
                           const SizedBox(height: 18),

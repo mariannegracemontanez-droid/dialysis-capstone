@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/user_model.dart';
+import '../../utils/patient_name.dart';
 import '../../config/supabase_config.dart';
 import '../login_history_service.dart';
 import '../patient_service.dart';
@@ -11,7 +12,7 @@ class AuthService {
   Future<UserModel> signUp({
     required String email,
     required String password,
-    required String fullName,
+    required PatientName name,
     required String phone,
     String role = 'patient',
   }) async {
@@ -44,7 +45,7 @@ class AuthService {
       final Map<String, Object?> profileData = {
         'id': userId,
         'email': email,
-        'full_name': fullName,
+        ...name.toColumns(),
         'phone': phone,
         'role': role,
         'status': 'pending',
@@ -60,7 +61,7 @@ class AuthService {
       return UserModel(
         id: userId,
         email: email,
-        fullName: fullName,
+        name: name,
         role: role,
         createdAt: parsedCreatedAt,
       );
@@ -69,42 +70,19 @@ class AuthService {
     }
   }
 
+  /// Creates the `patients` application row for one clinic. [details]
+  /// holds the patient-submitted columns (see
+  /// `SignupData.toPatientApplicationColumns`).
   Future<String> createPatientRecord({
     required String profileId,
     required Object clinicId,
-    required String fullName,
-    required String email,
-    required String phone,
-    required String dateOfBirth,
-    required String homeAddress,
-    required String bloodType,
-    required String emergencyContactName,
-    required String emergencyContactNumber,
-    required String ckdLevel,
-    required List<String> conditions,
-    required List<String> insuranceOptions,
-    required String budgetRange,
-    required String preferredClinicType,
-    required String locationSummary,
+    required Map<String, Object?> details,
   }) async {
     try {
       return await PatientService().createPatientApplication(
         profileId: profileId,
         clinicId: clinicId,
-        fullName: fullName,
-        email: email,
-        phone: phone,
-        dateOfBirth: dateOfBirth,
-        homeAddress: homeAddress,
-        bloodType: bloodType,
-        emergencyContactName: emergencyContactName,
-        emergencyContactNumber: emergencyContactNumber,
-        ckdLevel: ckdLevel,
-        conditions: conditions,
-        insuranceOptions: insuranceOptions,
-        budgetRange: budgetRange,
-        preferredClinicType: preferredClinicType,
-        locationSummary: locationSummary,
+        details: details,
       );
     } catch (e) {
       throw Exception('Failed to create patient record: $e');
@@ -190,10 +168,31 @@ class AuthService {
 
     final patientData = await getCurrentPatient();
 
+    // The active application's name wins when it has been separated;
+    // otherwise the profile's separated name; a legacy full_name is the
+    // last resort for display.
+    final patientName = PatientName.fromRow(patientData);
+    final profileName = PatientName.fromRow(profileData);
+    final PatientName name;
+    if (patientName.hasComponents) {
+      name = patientName;
+    } else if (profileName.hasComponents) {
+      name = profileName;
+    } else {
+      name = PatientName(
+        legacyFullName: patientName.legacyFullName.isNotEmpty
+            ? patientName.legacyFullName
+            : profileName.legacyFullName,
+      );
+    }
+
     final mergedData = <String, dynamic>{
       ...profileData,
+      'first_name': name.firstName,
+      'middle_name': name.middleName,
+      'last_name': name.lastName,
+      'full_name': name.displayName,
       if (patientData != null) ...{
-        'full_name': patientData['full_name'] ?? profileData['full_name'],
         'email': patientData['email'] ?? profileData['email'],
         'phone': patientData['phone'] ?? profileData['phone'],
         'user_location':

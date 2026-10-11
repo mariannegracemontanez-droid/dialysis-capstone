@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../services/appointment_service.dart';
 import '../../services/health_monitoring_service.dart';
+import '../../utils/error_message.dart';
 
 class AppointmentHistoryPage extends StatefulWidget {
   const AppointmentHistoryPage({super.key});
@@ -79,7 +80,7 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
       if (!mounted) return;
 
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = friendlyError(e);
         _isLoading = false;
       });
     }

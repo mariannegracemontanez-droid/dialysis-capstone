@@ -4,6 +4,7 @@ import '../../models/user_model.dart';
 import '../../services/profile_update_service.dart';
 import '../../utils/form_options.dart';
 import '../../utils/validators.dart';
+import '../../utils/error_message.dart';
 
 class EditProfilePage extends StatefulWidget {
   final UserModel? user;
@@ -81,7 +82,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
       await _profileService.updateContactInfo(
         patientId: widget.user!.id,
         email: _emailController.text,
-        fullName: _nameController.text,
         phone: _phoneController.text.isEmpty ? null : _phoneController.text,
         location: location.isEmpty ? null : location,
       );
@@ -101,7 +101,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
       if (!mounted) return false;
       setState(() {
         _isSaving = false;
-        _saveMessage = 'Failed to save: $e';
+        _saveMessage = 'Failed to save: ${friendlyError(e)}';
       });
       return false;
     }
@@ -119,10 +119,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF2C5F7D),
-        title: const Text('Edit Contact Information'),
-      ),
+      appBar: AppBar(title: const Text('Edit Contact Information')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -192,7 +189,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 onChanged: _onPhoneChanged,
               ),
               const SizedBox(height: 16),
-              _buildField('Home Address', _locationController),
+              _buildField(
+                'Home Address',
+                _locationController,
+                keyboardType: TextInputType.streetAddress,
+                textCapitalization: TextCapitalization.words,
+              ),
               const SizedBox(height: 16),
               _buildBarangayField(),
               const SizedBox(height: 24),
@@ -203,41 +205,22 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   onPressed: _isSaving
                       ? null
                       : () async {
+                          final navigator = Navigator.of(context);
                           if (await _saveChanges()) {
                             if (!mounted) return;
-                            Navigator.of(context).pop(true);
+                            navigator.pop(true);
                           }
                         },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2C9B9E),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
                   child: _isSaving
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text('Save'),
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: OutlinedButton(
-                  onPressed: () async {
-                    final navigator = Navigator.of(context);
-                    if (await _saveChanges()) {
-                      if (!mounted) return;
-                      navigator.pop(true);
-                    }
-                  },
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFF2C9B9E)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text('Done'),
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.4,
+                          ),
+                        )
+                      : const Text('Save Changes'),
                 ),
               ),
             ],
@@ -285,6 +268,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     List<TextInputFormatter>? inputFormatters,
     String? errorText,
     ValueChanged<String>? onChanged,
+    TextCapitalization textCapitalization = TextCapitalization.none,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -298,21 +282,17 @@ class _EditProfilePageState extends State<EditProfilePage> {
           maxLength: maxLength,
           inputFormatters: inputFormatters,
           onChanged: onChanged,
+          textCapitalization: textCapitalization,
           decoration: InputDecoration(
             hintText: readOnly ? null : 'Enter $label',
+            helperText: readOnly ? "This field can't be changed here." : null,
             errorText: errorText,
             counterText: maxLength == null ? null : '',
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            suffixIcon: _isSaving
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: Padding(
-                      padding: EdgeInsets.all(8.0),
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
+            suffixIcon: readOnly
+                ? const Icon(Icons.lock_outline, size: 18)
                 : null,
+            fillColor: readOnly ? const Color(0xFFEDF2F5) : null,
           ),
         ),
       ],

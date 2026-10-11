@@ -5,6 +5,7 @@ import '../../services/appointment_service.dart';
 import '../../services/health_monitoring_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/reschedule_service.dart';
+import '../../utils/error_message.dart';
 
 class AppointmentPage extends StatefulWidget {
   const AppointmentPage({super.key});
@@ -41,8 +42,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
   List<Map<String, dynamic>> _myRequests = [];
   DateTime? _requestedDate;
   String _requestReason = 'Medical emergency';
-  final TextEditingController _requestNotesController =
-      TextEditingController();
+  final TextEditingController _requestNotesController = TextEditingController();
 
   static const List<String> _rescheduleReasons = [
     'Medical emergency',
@@ -115,7 +115,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
       if (!mounted) return;
 
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = friendlyError(e);
         _isLoading = false;
       });
     }
@@ -196,7 +196,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _requestErrorMessage = e.toString());
+      setState(() => _requestErrorMessage = friendlyError(e));
     } finally {
       if (mounted) {
         setState(() => _isSubmittingRequest = false);
@@ -895,8 +895,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
         else
           ..._myRequests.map((request) {
             final status =
-                request['status']?.toString().toLowerCase().trim() ??
-                'pending';
+                request['status']?.toString().toLowerCase().trim() ?? 'pending';
             // 'changed_date' means the clinic accepted the request but
             // scheduled a different date than the one asked for -- the
             // granted date comes back in resolved_date.

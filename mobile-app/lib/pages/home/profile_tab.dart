@@ -13,6 +13,7 @@ import '../profile/medical_records_page.dart';
 import 'edit_profile_page.dart';
 import 'medical_info_page.dart';
 import 'privacy_security_page.dart';
+import '../../utils/error_message.dart';
 
 class ProfileTab extends StatefulWidget {
   final UserModel? user;
@@ -211,9 +212,9 @@ class _ProfileTabState extends State<ProfileTab> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Image process failed: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Image process failed: ${friendlyError(e)}')),
+      );
     }
   }
 
@@ -308,9 +309,9 @@ class _ProfileTabState extends State<ProfileTab> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Upload failed: ${friendlyError(e)}')),
+      );
     } finally {
       if (mounted) {
         setState(() => _isUploadingImage = false);
@@ -324,8 +325,8 @@ class _ProfileTabState extends State<ProfileTab> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Logout'),
-          content: const Text('Are you sure you want to logout?'),
+          title: const Text('Log Out'),
+          content: const Text('Are you sure you want to log out?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -333,7 +334,10 @@ class _ProfileTabState extends State<ProfileTab> {
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Logout'),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFB3261E),
+              ),
+              child: const Text('Log Out'),
             ),
           ],
         );
@@ -648,7 +652,7 @@ class _ProfileTabState extends State<ProfileTab> {
                     ),
                   ),
                   child: const Text(
-                    'LOGOUT',
+                    'LOG OUT',
                     style: TextStyle(
                       color: Color(0xFFE15252),
                       fontSize: 13,

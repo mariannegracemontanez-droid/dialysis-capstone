@@ -43,7 +43,6 @@ class ProfileUpdateService {
   Future<void> updateContactInfo({
     required String patientId,
     required String email,
-    required String fullName,
     String? phone,
     String? location,
   }) async {
@@ -54,7 +53,6 @@ class ProfileUpdateService {
           .from('patients')
           .update({
             'email': email.trim(),
-            'full_name': fullName.trim(),
             'phone': phone?.trim(),
             'home_address': location?.trim(),
           })

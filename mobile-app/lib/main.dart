@@ -7,8 +7,6 @@ import 'pages/auth/forgot_password_page.dart';
 import 'pages/auth/location_page.dart';
 import 'pages/auth/clinic_info_page.dart';
 import 'pages/auth/login_page.dart';
-import 'pages/auth/medical_documents_page.dart';
-import 'pages/auth/financial_page.dart';
 import 'pages/auth/setup_page.dart';
 import 'pages/auth/signup_page.dart';
 import 'pages/auth/signup_complete_page.dart';
@@ -17,6 +15,7 @@ import 'pages/home/home_page.dart';
 import 'pages/home/privacy_security_page.dart';
 import 'pages/auth/application_complete_page.dart';
 import 'config/supabase_config.dart';
+import 'theme/app_theme.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
@@ -67,7 +66,7 @@ class MyApp extends StatelessWidget {
       return MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'CureNurture App - Error',
-        theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
+        theme: AppTheme.light(),
         home: Scaffold(
           appBar: AppBar(title: const Text('Initialization Error')),
           body: Center(
@@ -87,7 +86,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'CureNurture App',
-      theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
+      theme: AppTheme.light(),
       initialRoute: '/welcome',
       routes: {
         '/welcome': (context) => const WelcomePage(),
@@ -118,16 +117,6 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as ClinicInfoArguments;
             return MaterialPageRoute(
               builder: (_) => ClinicInfoPage(arguments: args),
-            );
-          case '/medical-documents':
-            final args = settings.arguments as SignupData;
-            return MaterialPageRoute(
-              builder: (_) => MedicalDocumentsPage(signupData: args),
-            );
-          case '/financial':
-            final args = settings.arguments as SignupData;
-            return MaterialPageRoute(
-              builder: (_) => FinancialPage(signupData: args),
             );
           case '/confirm-info':
             final args = settings.arguments as SignupData;

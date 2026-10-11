@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/auth/auth_service.dart';
+import '../../utils/error_message.dart';
 
 class ChangePasswordPage extends StatefulWidget {
   const ChangePasswordPage({super.key});
@@ -61,7 +62,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
       });
     } catch (e) {
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = friendlyError(e);
       });
     } finally {
       setState(() {
@@ -76,7 +77,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
         Icon(
           passed ? Icons.check_circle : Icons.radio_button_unchecked,
           size: 18,
-          color: passed ? const Color(0xFF2C9B9E) : Colors.grey,
+          color: passed ? const Color(0xFF2A9D65) : Colors.grey,
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -245,7 +246,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                       child: ElevatedButton(
                         onPressed: _isLoading ? null : _updatePassword,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2C9B9E),
+                          backgroundColor: const Color(0xFF2C5F7D),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                           ),

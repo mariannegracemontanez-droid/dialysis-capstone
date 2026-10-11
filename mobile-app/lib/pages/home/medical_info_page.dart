@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
 import '../../services/profile_update_service.dart';
 import '../../utils/validators.dart';
+import '../../utils/error_message.dart';
 
 class MedicalInfoPage extends StatefulWidget {
   final UserModel? user;
@@ -162,16 +163,28 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
         _saveMessage = 'Medical information saved';
       });
 
-      await Future.delayed(const Duration(seconds: 2));
-      if (!mounted) return;
-      setState(() => _saveMessage = null);
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _saveMessage = null);
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isSaving = false;
-        _saveMessage = 'Failed to save: $e';
+        _saveMessage = 'Failed to save: ${friendlyError(e)}';
       });
     }
+  }
+
+  /// Saves an edit still waiting on the auto-save debounce before leaving,
+  /// so tapping Done right after typing doesn't drop it.
+  Future<void> _finish() async {
+    final navigator = Navigator.of(context);
+    if (_debounceTimer?.isActive ?? false) {
+      _debounceTimer!.cancel();
+      await _saveChanges();
+      if (!mounted || (_saveMessage?.startsWith('Failed') ?? false)) return;
+    }
+    navigator.pop(true);
   }
 
   @override
@@ -187,10 +200,7 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF2C5F7D),
-        title: const Text('Medical Information'),
-      ),
+      appBar: AppBar(title: const Text('Medical Information')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -301,21 +311,30 @@ class _MedicalInfoPageState extends State<MedicalInfoPage> {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(true),
+                  onPressed: _isSaving ? null : _finish,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2C9B9E),
+                    backgroundColor: const Color(0xFF2C5F7D),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text(
-                    'Done',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  child: _isSaving
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.4,
+                          ),
+                        )
+                      : const Text(
+                          'Done',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
               ),
             ],
