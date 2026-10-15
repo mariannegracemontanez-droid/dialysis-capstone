@@ -1,42 +1,15 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../services/profile_service.dart';
 import '../config/supabase_config.dart';
 import '../theme/app_theme.dart';
+import '../utils/audit_log_xlsx.dart';
+import '../utils/center_assignment.dart';
+import '../utils/center_status.dart';
+import '../utils/file_download.dart';
+import '../utils/form_dirty_state.dart';
+import '../utils/ph_contact_number.dart';
 import '../widgets/super_admin_notice.dart';
-
-/// Limits a phone-style field to at most [maxDigits] digits while still
-/// letting the existing supported formatting characters (spaces, +, -,
-/// parentheses) through -- counts by digits, not raw string length, so a
-/// nicely formatted number isn't penalized for its own formatting
-/// characters. Never touches text it isn't given interactively: setting a
-/// controller's initial `text` (e.g. when opening Edit) does not go through
-/// input formatters at all, so an existing stored value is never truncated
-/// by this -- it only blocks typing/pasting a value whose digit count would
-/// exceed the limit. Equivalent to (and kept in sync with the intent of)
-/// _MaxDigitsTextInputFormatter in center_page.dart's Contact Number field;
-/// duplicated here rather than imported since that class is private to
-/// center_page.dart.
-class _MaxDigitsTextInputFormatter extends TextInputFormatter {
-  final int maxDigits;
-
-  const _MaxDigitsTextInputFormatter(this.maxDigits);
-
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final digitCount = newValue.text.replaceAll(RegExp(r'[^0-9]'), '').length;
-
-    if (digitCount > maxDigits) {
-      return oldValue;
-    }
-
-    return newValue;
-  }
-}
 
 /// Strips Dart's "Exception: " prefix so a rejected save reads as the plain
 /// explanation the service wrote rather than as a fragment of a stack trace.
@@ -716,6 +689,10 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                     },
                   ),
                   const Spacer(),
+                  if (_showLogs) ...[
+                    _buildExportLogsButton(visibleItems),
+                    const SizedBox(width: 10),
+                  ],
                   SizedBox(
                     width: 40,
                     height: 40,
@@ -767,6 +744,86 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Downloads exactly the audit-log records the Audit Trail tab is showing
+  /// as an Excel (.xlsx) workbook. No extra query: [logs] is the list
+  /// already loaded by [_loadLogs], so the file always matches the screen.
+  void _exportLogsExcel(List<Map<String, dynamic>> logs) {
+    if (logs.isEmpty) {
+      SuperAdminNotice.info(
+        context,
+        'There are no audit log records to export yet.',
+        title: 'Nothing to export',
+      );
+      return;
+    }
+
+    try {
+      downloadBytes(
+        fileName: AuditLogXlsx.fileName(),
+        bytes: AuditLogXlsx.build(logs),
+        mimeType: AuditLogXlsx.mimeType,
+      );
+
+      SuperAdminNotice.success(
+        context,
+        'Exported ${logs.length} audit log '
+        '${logs.length == 1 ? 'record' : 'records'} to Excel.',
+        title: 'Download started',
+      );
+    } catch (error) {
+      debugPrint('Audit log Excel export failed: $error');
+      SuperAdminNotice.error(
+        context,
+        error is UnsupportedError
+            ? (error.message ?? 'Downloading is not available here.')
+            : 'Unable to export audit logs. Please try again.',
+        title: 'Export failed',
+      );
+    }
+  }
+
+  /// "Export Excel" for the Audit Trail tab, styled like the Donations page's
+  /// Export button. Disabled when there is nothing to export; collapses to
+  /// an icon on narrow screens so the toolbar row cannot overflow.
+  Widget _buildExportLogsButton(List<Map<String, dynamic>> logs) {
+    final enabled = logs.isNotEmpty;
+    final isCompact = MediaQuery.sizeOf(context).width < 600;
+    final onPressed = enabled ? () => _exportLogsExcel(logs) : null;
+
+    final style = OutlinedButton.styleFrom(
+      backgroundColor: AppTheme.surface,
+      foregroundColor: AppTheme.blue3,
+      side: const BorderSide(color: AppTheme.borderStrong),
+      padding: EdgeInsets.symmetric(horizontal: isCompact ? 0 : 14),
+      minimumSize: const Size(40, 40),
+      textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.rMd),
+      ),
+    );
+
+    return Tooltip(
+      message: enabled
+          ? 'Download audit logs as an Excel file'
+          : 'No audit logs to export',
+      child: SizedBox(
+        height: 40,
+        child: isCompact
+            ? OutlinedButton(
+                onPressed: onPressed,
+                style: style,
+                child: const Icon(Icons.download_rounded, size: 17),
+              )
+            : OutlinedButton.icon(
+                onPressed: onPressed,
+                style: style,
+                icon: const Icon(Icons.download_rounded, size: 17),
+                label: const Text('Export Excel'),
+              ),
+      ),
     );
   }
 
@@ -1091,8 +1148,19 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
     super.initState();
 
     _nameController.text = widget.admin['full_name'] ?? '';
-    _phoneController.text = widget.admin['phone'] ?? '';
+    // The field holds only the 10 digits after +63. A stored number that is
+    // not a PH mobile number is shown in the helper text instead.
+    final storedPhone = (widget.admin['phone'] as String? ?? '').trim();
+    final localDigits = phLocalDigitsFromStored(storedPhone);
+    _phoneController.text = localDigits ?? '';
+    if (localDigits == null && storedPhone.isNotEmpty) {
+      _legacyPhone = storedPhone;
+    }
     selectedClinicId = widget.admin['clinic_id'];
+
+    _originalValues = _currentValues();
+    _nameController.addListener(_onFieldChanged);
+    _phoneController.addListener(_onFieldChanged);
 
     _loadClinics();
     _loadAdmins();
@@ -1105,11 +1173,68 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
     super.dispose();
   }
 
+  /// Values as they were when the modal opened, for the dirty-state check.
+  late final Map<String, Object?> _originalValues;
+
+  /// A stored phone number that is not a recognisable PH mobile number.
+  String? _legacyPhone;
+
+  /// Phone is optional here (as before), but anything entered must be a
+  /// valid +63 mobile number.
+  String? _validatePhone(String? value) {
+    final digits = value?.trim() ?? '';
+    return digits.isEmpty ? null : validatePhLocalDigits(digits);
+  }
+
+  /// The `profiles.phone` value to save: unchanged digits keep the stored
+  /// value exactly; new digits are saved as +63 followed by 10 digits.
+  String _phoneToSave() {
+    final digits = _phoneController.text.trim();
+    if (digits == _originalValues['phone']) {
+      return (widget.admin['phone'] as String? ?? '').trim();
+    }
+    return digits.isEmpty ? '' : composePhContactNumber(digits);
+  }
+
+  Map<String, Object?> _currentValues() => {
+    'full_name': _nameController.text,
+    'phone': _phoneController.text,
+    'clinic_id': selectedClinicId,
+  };
+
+  /// Compared by value: editing a field and restoring it is "no changes".
+  bool get _hasChanges => hasFormChanges(_originalValues, _currentValues());
+
+  void _onFieldChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Cancel, the backdrop, or Back: asks before discarding unsaved changes.
+  Future<void> _requestClose() async {
+    if (_isSaving) return;
+
+    if (_hasChanges) {
+      final discard = await SuperAdminNotice.confirm(
+        context,
+        title: 'Discard changes?',
+        message: 'Your changes to this account have not been saved.',
+        confirmLabel: 'Discard',
+        destructive: true,
+        icon: Icons.edit_off_rounded,
+      );
+      if (!discard || !mounted) return;
+    }
+
+    Navigator.of(context).pop(false);
+  }
+
+  // Loads every centre, including inactive ones, so an account whose centre
+  // was deactivated still shows that centre; the dropdown itself only offers
+  // eligible centres (see eligibleCentersForAssignment).
   Future<void> _loadClinics() async {
     final data = await SupabaseConfig.client
         .from('clinics')
         .select()
-        .or('status.is.null,status.neq.closed')
         .order('name', ascending: true);
 
     if (!mounted) return;
@@ -1146,16 +1271,27 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
     if (_isSaving) return;
 
     if (!_formKey.currentState!.validate()) return;
+    if (!_hasChanges) return;
 
     setState(() {
       _isSaving = true;
     });
 
     try {
+      // A newly chosen centre is re-checked against the database right
+      // before saving -- the dropdown's list may be out of date.
+      final clinicId = selectedClinicId;
+      if (clinicId != null && clinicId != _originalValues['clinic_id']) {
+        await _service.ensureClinicAssignable(
+          clinicId,
+          adminId: widget.admin['id']?.toString(),
+        );
+      }
+
       await _service.updateAdmin(
         adminId: widget.admin['id'],
         fullName: _nameController.text.trim(),
-        phone: _phoneController.text.trim(),
+        phone: _phoneToSave(),
         clinicId: selectedClinicId,
       );
 
@@ -1219,7 +1355,20 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
         ? fullName
         : email.toString();
 
-    return Stack(
+    final clinicOptions = eligibleCentersForAssignment(
+      _clinics,
+      clinicsWithAdmin: _clinicsWithAdmin,
+      currentClinicId: widget.admin['clinic_id']?.toString(),
+    );
+    final hasChanges = _hasChanges;
+
+    return PopScope(
+      // With unsaved changes, the backdrop and Back ask before discarding.
+      canPop: !hasChanges && !_isSaving,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _requestClose();
+      },
+      child: Stack(
       children: [
         BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
@@ -1355,22 +1504,25 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                           icon: Icons.local_hospital_outlined,
                         ),
                         initialValue: selectedClinicId,
-                        hint: const Text('Select Clinic'),
-                        items: _clinics.map((clinic) {
-                          final hasAdmin = _clinicsWithAdmin.contains(
-                            clinic['id'],
-                          );
-                          final isCurrent =
-                              clinic['id'] == widget.admin['clinic_id'];
+                        hint: Text(
+                          clinicOptions.isEmpty
+                              ? 'No available centers'
+                              : 'Select Clinic',
+                        ),
+                        // Only eligible centres (Active, no other active
+                        // admin), plus the account's current centre.
+                        items: clinicOptions.map((clinic) {
+                          final isInactive =
+                              centerRecordStatusOf(
+                                clinic['status']?.toString(),
+                              ) ==
+                              CenterRecordStatus.inactive;
 
                           return DropdownMenuItem<String?>(
                             value: clinic['id'],
-                            enabled: !hasAdmin || isCurrent,
                             child: Text(
-                              clinic['name'] +
-                                  (hasAdmin && !isCurrent
-                                      ? ' (Has Admin)'
-                                      : ''),
+                              '${clinic['name'] ?? 'Unnamed clinic'}'
+                              '${isInactive ? ' (Inactive)' : ''}',
                             ),
                           );
                         }).toList(),
@@ -1404,20 +1556,32 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                       const SizedBox(height: 14),
                       TextFormField(
                         controller: _phoneController,
-                        inputFormatters: [_MaxDigitsTextInputFormatter(11)],
-                        decoration: _inputDecoration(
-                          label: 'Phone',
-                          icon: Icons.phone_outlined,
-                        ),
+                        keyboardType: TextInputType.phone,
+                        // Same +63 rules as Create Account and the centre
+                        // contact number.
+                        inputFormatters: const [PhLocalDigitsInputFormatter()],
+                        decoration:
+                            _inputDecoration(
+                              label: 'Phone',
+                              icon: Icons.phone_outlined,
+                            ).copyWith(
+                              prefixText: '$phCountryCode ',
+                              hintText: '9171234567',
+                              helperText: _legacyPhone != null
+                                  ? 'Saved as "$_legacyPhone" -- enter it as '
+                                        'a 10-digit mobile number to change it.'
+                                  : '10-digit mobile number without the '
+                                        'leading 0.',
+                              helperMaxLines: 2,
+                            ),
+                        validator: _validatePhone,
                       ),
                       const SizedBox(height: 24),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           TextButton(
-                            onPressed: _isSaving
-                                ? null
-                                : () => Navigator.of(context).pop(false),
+                            onPressed: _isSaving ? null : _requestClose,
                             style: TextButton.styleFrom(
                               foregroundColor: AppTheme.textSecondary,
                               padding: const EdgeInsets.symmetric(
@@ -1433,7 +1597,10 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                           ),
                           const SizedBox(width: 10),
                           FilledButton.icon(
-                            onPressed: _isSaving ? null : _saveChanges,
+                            // Disabled until a value actually changes.
+                            onPressed: _isSaving || !hasChanges
+                                ? null
+                                : _saveChanges,
                             icon: _isSaving
                                 ? const SizedBox(
                                     width: 18,
@@ -1445,7 +1612,7 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
                                   )
                                 : const Icon(Icons.save_outlined),
                             label: Text(
-                              _isSaving ? 'Updating...' : 'Update Account',
+                              _isSaving ? 'Saving...' : 'Save Changes',
                             ),
                             style: FilledButton.styleFrom(
                               backgroundColor: AppTheme.blue1,
@@ -1475,6 +1642,7 @@ class _BlurredAdminEditModalState extends State<_BlurredAdminEditModal> {
           ),
         ),
       ],
+      ),
     );
   }
 }
@@ -1550,8 +1718,15 @@ class _BlurredAdminReactivateModalState
     });
   }
 
-  bool get _hasAvailableClinics =>
-      _clinics.any((clinic) => !_clinicsWithAdmin.contains(clinic['id']));
+  /// Centres this account can be reactivated into: Active, with no other
+  /// active admin.
+  List<Map<String, dynamic>> get _eligibleClinics =>
+      eligibleCentersForAssignment(
+        _clinics,
+        clinicsWithAdmin: _clinicsWithAdmin,
+      );
+
+  bool get _hasAvailableClinics => _eligibleClinics.isNotEmpty;
 
   Future<void> _reactivate() async {
     // Explicit re-entrancy guard: the onPressed: _isSubmitting ? null : ...
@@ -1576,6 +1751,12 @@ class _BlurredAdminReactivateModalState
     });
 
     try {
+      // Re-checked against the database right before saving.
+      await _service.ensureClinicAssignable(
+        _selectedClinicId!,
+        adminId: widget.admin['id']?.toString(),
+      );
+
       await _service.reactivateAdmin(
         adminId: widget.admin['id'] as String,
         clinicId: _selectedClinicId!,
@@ -1790,18 +1971,12 @@ class _BlurredAdminReactivateModalState
                           ),
                           initialValue: _selectedClinicId,
                           hint: const Text('Choose a clinic'),
-                          items: _clinics.map((clinic) {
-                            final clinicId = clinic['id'].toString();
-                            final hasAdmin = _clinicsWithAdmin.contains(
-                              clinicId,
-                            );
-
+                          // Only eligible centres are offered.
+                          items: _eligibleClinics.map((clinic) {
                             return DropdownMenuItem<String>(
-                              value: clinicId,
-                              enabled: !hasAdmin,
+                              value: clinic['id'].toString(),
                               child: Text(
-                                '${clinic['name'] ?? 'Unnamed clinic'}'
-                                '${hasAdmin ? ' (Has Head Nurse Account)' : ''}',
+                                '${clinic['name'] ?? 'Unnamed clinic'}',
                               ),
                             );
                           }).toList(),
@@ -1907,6 +2082,16 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
   Set<String> _clinicsWithAdmin = {};
   String? selectedClinicId;
 
+  /// False until the centre list has loaded, so the "no centres available"
+  /// message is not flashed while loading.
+  bool _clinicsLoaded = false;
+
+  /// Centres a new admin can be assigned to: Active, with no admin yet.
+  List<Map<String, dynamic>> get _eligibleClinics =>
+      eligibleCentersForAssignment(
+        _clinics,
+        clinicsWithAdmin: _clinicsWithAdmin,
+      );
 
   @override
   void initState() {
@@ -1936,6 +2121,7 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
 
     setState(() {
       _clinics = List<Map<String, dynamic>>.from(data);
+      _clinicsLoaded = true;
     });
   }
 
@@ -2024,6 +2210,11 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
     });
 
     try {
+      // Re-check the chosen centre against the database BEFORE the account
+      // is created, so a stale list can never produce a login account that
+      // then fails to be assigned.
+      await ProfileService().ensureClinicAssignable(selectedClinicId!);
+
       final authResponse = await client.auth.signUp(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
@@ -2064,7 +2255,9 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
         'full_name': _nameController.text.trim(),
         'email': _emailController.text.trim(),
         'role': 'admin',
-        'phone': _phoneController.text.trim(),
+        // Validated by _validatePhone; stored as +63 followed by 10 digits,
+        // the same format as the centre contact number.
+        'phone': composePhContactNumber(_phoneController.text),
         'clinic_id': selectedClinicId!,
         'status': 'active',
       });
@@ -2167,23 +2360,9 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
   /// +, -, parentheses) and validates by digit count rather than one exact
   /// formatting style -- same approach used for center Contact Number
   /// validation elsewhere in this app.
-  String? _validatePhone(String? value) {
-    final phone = value?.trim() ?? '';
-
-    if (phone.isEmpty) return 'Enter phone number';
-
-    final allowedCharacters = RegExp(r'^[0-9+\-() ]+$');
-    if (!allowedCharacters.hasMatch(phone)) {
-      return 'Enter a valid phone number';
-    }
-
-    final digitsOnly = phone.replaceAll(RegExp(r'[^0-9]'), '');
-    if (digitsOnly.length < 7) {
-      return 'Enter a valid phone number';
-    }
-
-    return null;
-  }
+  /// The 10 digits typed after the fixed +63 prefix -- the same rule as the
+  /// centre contact number (see utils/ph_contact_number.dart).
+  String? _validatePhone(String? value) => validatePhLocalDigits(value ?? '');
 
   /// Validates the same (trimmed) value that is actually sent to
   /// Supabase Auth at submission time, so a password that passes here can
@@ -2327,6 +2506,25 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                         ),
                       ),
                       const SizedBox(height: 16),
+                      if (_clinicsLoaded && _eligibleClinics.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          margin: const EdgeInsets.only(bottom: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF8E8),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: const Text(
+                            'No centers are currently available for '
+                            'assignment. Every active center already has an '
+                            'admin, or none are active.',
+                            style: TextStyle(
+                              color: Color(0xFF8A651C),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
                       DropdownButtonFormField<String>(
                         // Long clinic names ellipsize instead of overflowing the field.
                         isExpanded: true,
@@ -2344,16 +2542,12 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                         ),
                         initialValue: selectedClinicId,
                         hint: const Text('Select clinic'),
-                        items: _clinics.map((clinic) {
-                          final clinicId = clinic['id'].toString();
-                          final hasAdmin = _clinicsWithAdmin.contains(clinicId);
-
+                        // Only eligible centres: Active, with no admin yet.
+                        items: _eligibleClinics.map((clinic) {
                           return DropdownMenuItem<String>(
-                            value: clinicId,
-                            enabled: !hasAdmin,
+                            value: clinic['id'].toString(),
                             child: Text(
-                              '${clinic['name'] ?? 'Unnamed clinic'}'
-                              '${hasAdmin ? ' (Has Head Nurse Account)' : ''}',
+                              '${clinic['name'] ?? 'Unnamed clinic'}',
                             ),
                           );
                         }).toList(),
@@ -2394,12 +2588,19 @@ class _BlurredAdminCreateModalState extends State<_BlurredAdminCreateModal> {
                         controller: _phoneController,
                         textInputAction: TextInputAction.next,
                         keyboardType: TextInputType.phone,
-                        inputFormatters: [_MaxDigitsTextInputFormatter(11)],
-                        decoration: _inputDecoration(
-                          label: 'Phone Number',
-                          icon: Icons.phone_outlined,
-                          hint: 'Enter phone number',
-                        ),
+                        // Same +63 rules as the centre contact number.
+                        inputFormatters: const [PhLocalDigitsInputFormatter()],
+                        decoration:
+                            _inputDecoration(
+                              label: 'Phone Number',
+                              icon: Icons.phone_outlined,
+                              hint: '9171234567',
+                            ).copyWith(
+                              prefixText: '$phCountryCode ',
+                              helperText:
+                                  '10-digit mobile number without the '
+                                  'leading 0.',
+                            ),
                         validator: _validatePhone,
                       ),
                       const SizedBox(height: 14),

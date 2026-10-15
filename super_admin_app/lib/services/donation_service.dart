@@ -4,6 +4,7 @@ import '../models/center_donation_history_entry.dart';
 import '../models/donation_record.dart';
 import '../models/donation_summary.dart';
 import '../models/fund_distribution.dart';
+import '../models/purchase_log.dart';
 import '../models/received_donation_record.dart';
 
 class DonationService {
@@ -293,6 +294,18 @@ class DonationService {
     return list
         .map((item) => FundDistribution.fromJson(item as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Every purchase log recorded in the Admin Panel, newest first. Reads the
+  /// same `donation_purchase_logs` table the Admin Panel writes, so there is
+  /// no second copy of any purchase.
+  Future<List<PurchaseLog>> fetchPurchaseLogs() async {
+    final response = await _supabase
+        .from('donation_purchase_logs')
+        .select()
+        .order('created_at', ascending: false);
+
+    return purchaseLogsFromRows(response as List<dynamic>);
   }
 
   Future<void> createFundDistribution({

@@ -6,10 +6,20 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/supabase_config.dart';
 import 'pages/dashboard_page.dart';
 import 'pages/login_page_v2.dart';
+import 'widgets/super_admin_gate.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: "assets/.env");
-  await SupabaseConfig.initialize();
+
+  // A missing assets/.env or Supabase config used to throw before runApp,
+  // leaving a blank page; MyApp's initError screen now reports it instead.
+  try {
+    await dotenv.load(fileName: "assets/.env");
+    await SupabaseConfig.initialize();
+  } catch (error) {
+    runApp(MyApp(initError: error.toString()));
+    return;
+  }
 
   runApp(const MyApp());
 }
@@ -147,8 +157,16 @@ class _MyAppState extends State<MyApp> {
     // (see _hasUsableSession). This guard still only runs when the route is
     // built -- a session lost while the dashboard is already open is handled
     // by the auth listener in initState instead.
-    '/dashboard': (context) =>
-        _hasUsableSession() ? const DashboardPage() : const LoginPage(),
+    //
+    // A usable session is not enough on its own: SuperAdminGate also
+    // re-checks the account's role, which the login form does but a
+    // restored session never passes through.
+    '/dashboard': (context) => _hasUsableSession()
+        ? const SuperAdminGate(
+            fallback: LoginPage(),
+            child: DashboardPage(),
+          )
+        : const LoginPage(),
   },
 );
   }

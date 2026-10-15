@@ -5,6 +5,7 @@ import 'package:super_admin_app/services/donation_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/donation_history_export.dart';
 import '../utils/file_download.dart';
+import '../widgets/purchase_logs_section.dart';
 import '../widgets/super_admin_notice.dart';
 
 /// Which history section an export was started from.
@@ -374,6 +375,16 @@ class _DonationsPageState extends State<DonationsPage> {
                     accent: AppTheme.accentGreen,
                     accentSoft: AppTheme.accentGreenSoft,
                     child: _buildOverallHistory(),
+                  ),
+                  const SizedBox(height: AppTheme.gapLg),
+                  const _SectionCard(
+                    title: 'Center Purchase Logs',
+                    subtitle:
+                        'Purchases recorded by each center in the Admin Panel, updated live.',
+                    icon: Icons.shopping_bag_outlined,
+                    accent: AppTheme.accentOrange,
+                    accentSoft: AppTheme.accentOrangeSoft,
+                    child: PurchaseLogsSection(),
                   ),
                 ],
               );
@@ -1119,8 +1130,7 @@ class _DonationsPageState extends State<DonationsPage> {
                               const _EmptyState(
                                 icon: Icons.search_off_rounded,
                                 title: 'No donations match your filters',
-                                message:
-                                    'Try a different search term or date range.',
+                                message: 'Try a different date range.',
                               ),
                               if (hasFilters)
                                 Padding(
@@ -1148,31 +1158,14 @@ class _DonationsPageState extends State<DonationsPage> {
     });
   }
 
+  // The Center Donation History section has no search field of its own (the
+  // page-wide search lives in Overall Donation History); only its date range
+  // remains here. _historySearch therefore stays empty, which leaves the
+  // shared filter/export code unchanged.
   Widget _buildHistoryFilters() {
     return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        Expanded(
-          child: TextField(
-            controller: _historySearchController,
-            onChanged: (value) => setState(() => _historySearch = value),
-            decoration: _inputDecoration(
-              'Search donor, email, or donation ID',
-              Icons.search_rounded,
-            ).copyWith(
-              suffixIcon: _historySearch.isEmpty
-                  ? null
-                  : IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 18),
-                      tooltip: 'Clear search',
-                      onPressed: () {
-                        _historySearchController.clear();
-                        setState(() => _historySearch = '');
-                      },
-                    ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
         SizedBox(
           width: 170,
           child: DropdownButtonFormField<_HistoryDateRange>(

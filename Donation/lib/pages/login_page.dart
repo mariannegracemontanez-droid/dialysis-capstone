@@ -7,6 +7,14 @@ import 'landing_page.dart';
 import 'signup_page.dart';
 import 'donation_page.dart';
 
+/// Whether [role] belongs to staff or patient accounts, which this donor-only
+/// login turns away. `superadmin` is the spelling the rest of the project
+/// stores; `super_admin` is kept so nothing that matched before stops matching.
+bool isNonDonorRole(String? role) {
+  const blocked = {'superadmin', 'super_admin', 'admin', 'patient'};
+  return role != null && blocked.contains(role.trim().toLowerCase());
+}
+
 class LoginPage extends StatefulWidget {
   const LoginPage({
     super.key,
@@ -143,7 +151,12 @@ class _LoginPageState extends State<LoginPage>
 
       final role = profile?['role'] as String?;
 
-      if (role == 'super_admin' || role == 'admin' || role == 'patient') {
+      if (isNonDonorRole(role)) {
+        // Sign the rejected account out: otherwise its session stayed active
+        // in the Donation app and a later donation was recorded under it.
+        await Supabase.instance.client.auth.signOut();
+        if (!mounted) return;
+
         showDialog(
           context: context,
           barrierDismissible: false,

@@ -1,3 +1,8 @@
+import 'package:flutter/material.dart';
+
+import '../utils/center_capacity.dart';
+import '../utils/center_status.dart';
+
 class CenterModel {
   final String id;
   final String name;
@@ -15,6 +20,11 @@ class CenterModel {
   final String contactNumber;
   final DateTime createdAt;
 
+  /// The saved `created_at`, or null when the row has none (or it cannot be
+  /// read). [createdAt] falls back to "now" so sorting keeps working; use
+  /// this instead wherever the date is shown.
+  final DateTime? savedCreatedAt;
+
   CenterModel({
     required this.id,
     required this.name,
@@ -31,32 +41,50 @@ class CenterModel {
     required this.shifts,
     required this.contactNumber,
     required this.createdAt,
+    this.savedCreatedAt,
   });
 
-  /// The one LIFECYCLE value `clinics.status` can hold. Everything else it
-  /// can hold ('open', 'busy', 'full') is an OPERATIONAL AVAILABILITY value.
-  /// Kept here, next to the model that reads the column, so the centres page
-  /// and the dashboard test for "closed" the same way instead of each
-  /// repeating the literal.
-  static const String closedStatus = 'closed';
+  /// The `clinics.status` value that marks an INACTIVE centre record (the
+  /// existing soft-delete marker). See utils/center_status.dart for how
+  /// record status and Open/Closed availability are both derived.
+  static const String closedStatus = inactiveCenterStatusValue;
 
-  /// True when this centre has been soft-closed. A closed centre is not an
-  /// active operational centre: it is excluded from the centres list, from
-  /// the dashboard's operational figures, and its lifecycle state must
-  /// survive an ordinary edit (see DashboardService.updateCenter).
-  bool get isClosed => status.toLowerCase().trim() == closedStatus;
+  /// Active / Inactive record status. Legacy 'busy'/'full' rows are Active.
+  CenterRecordStatus get recordStatus => centerRecordStatusOf(status);
 
-  bool get isOpen => status.toLowerCase() == 'open';
-  String get statusText => isOpen ? 'Open' : 'Closed';
+  bool get isActive => recordStatus == CenterRecordStatus.active;
+
+  /// True when this centre record is Inactive (`clinics.status == 'closed'`).
+  /// Not the same as being closed for the day -- see [availability]. An
+  /// inactive centre is excluded from the dashboard's operational figures
+  /// and from new admin assignments.
+  bool get isClosed => !isActive;
+
+  /// Open / Closed right now: Open only for an Active centre inside its
+  /// operating hours.
+  CenterAvailability availability({TimeOfDay? now}) => centerAvailabilityOf(
+    storedStatus: status,
+    operatingHours: operatingHours,
+    now: now,
+  );
+
+  /// Machines × this centre's saved shifts (see utils/center_capacity.dart).
+  int get totalCapacity =>
+      totalCenterCapacity(machines: machines, shifts: shifts);
+
+  bool get isOpen => availability() == CenterAvailability.open;
+  String get statusText => availability().label;
 
   factory CenterModel.fromJson(Map<String, dynamic> json) {
     final statusValue = json['open_status'] ?? json['status'] ?? 'open';
     final openTime = json['open_time']?.toString() ?? '';
     final closeTime = json['close_time']?.toString() ?? '';
+    // No invented fallback: a centre without saved hours shows "Not set" and
+    // is never counted as open. (This used to default to 7:00 AM - 5:00 PM.)
     final hours = json['operating_hours']?.toString() ??
         (openTime.isNotEmpty && closeTime.isNotEmpty
             ? '$openTime - $closeTime'
-            : '7:00 AM - 5:00 PM');
+            : '');
 
     return CenterModel(
       id: json['id']?.toString() ?? '',
@@ -77,12 +105,16 @@ class CenterModel {
           int.tryParse(json['slots_available']?.toString() ?? '') ?? 0,
       status: statusValue.toString(),
       operatingHours: hours,
-      shifts: int.tryParse(json['shifts']?.toString() ?? '') ?? 2,
-      contactNumber: json['contact_number']?.toString() ?? 'N/A',
+      // The saved shift count; the default applies only when it is missing.
+      shifts: savedShiftsOrDefault(json['shifts']),
+      contactNumber: json['contact_number']?.toString() ?? '',
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString()) ??
               DateTime.now()
           : DateTime.now(),
+      savedCreatedAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'].toString())
+          : null,
     );
   }
 }

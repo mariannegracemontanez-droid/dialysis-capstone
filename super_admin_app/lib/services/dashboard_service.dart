@@ -1,19 +1,13 @@
-import 'dart:math' as math;
-
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import '../models/center_model.dart';
 import '../models/donation_summary.dart';
 import '../models/notification_item.dart';
+import '../utils/center_capacity.dart';
+import '../utils/center_status.dart';
 
 class DashboardService {
   final SupabaseClient _supabase = SupabaseConfig.client;
-
-  String computeStatus(int availableSlots) {
-    if (availableSlots == 0) return 'full';
-    if (availableSlots <= 2) return 'busy';
-    return 'open';
-  }
 
   /// Patient statuses that count as "accepted/reserved" at a clinic for the
   /// Super Admin capacity ESTIMATE (see calculateAvailableSlotsEstimate) --
@@ -49,8 +43,10 @@ class DashboardService {
   }
 
   /// The Super Admin's own live capacity ESTIMATE: total theoretical
-  /// capacity (machines x 2 shifts) minus how many patients are currently
-  /// reserved/accepted at this clinic (see getReservedPatientCount).
+  /// capacity (machines × the centre's saved shifts) minus how many patients
+  /// are currently reserved/accepted at this clinic (see
+  /// getReservedPatientCount). The arithmetic lives in
+  /// utils/center_capacity.dart so every screen uses the same formula.
   ///
   /// This is deliberately separate from, and never written into,
   /// clinics.slots_available -- it is NOT the authoritative day/shift
@@ -60,10 +56,13 @@ class DashboardService {
   /// negative -- clamped to 0 if reserved patients exceed capacity.
   int calculateAvailableSlotsEstimate({
     required int machines,
+    required int shifts,
     required int reservedPatients,
   }) {
-    final totalCapacity = machines * 2;
-    return math.max(0, totalCapacity - reservedPatients);
+    return estimatedAvailableSlots(
+      totalCapacity: totalCenterCapacity(machines: machines, shifts: shifts),
+      reservedPatients: reservedPatients,
+    );
   }
 
   List<String> _parseRequirements(String requirements) {
@@ -128,6 +127,44 @@ class DashboardService {
         .toList();
   }
 
+  /// Every centre, Active and Inactive, for the Centres management page --
+  /// inactive centres stay visible there (with their status) so they can be
+  /// reactivated. Operational views keep using [fetchCenters].
+  Future<List<CenterModel>> fetchAllCenters() async {
+    final response = await _supabase
+        .from('clinics')
+        .select()
+        .order('created_at', ascending: false);
+
+    return (response as List<dynamic>)
+        .map((row) => CenterModel.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Marks a centre record Active or Inactive by writing its
+  /// `clinics.status` (see utils/center_status.dart). Only the status column
+  /// changes: the centre row, its donations, patients, admins and audit
+  /// history are all left as they are.
+  Future<void> setCenterRecordStatus({
+    required String centerId,
+    required CenterRecordStatus status,
+  }) async {
+    // .select() so a zero-row update (centre removed, or not permitted) is
+    // reported instead of silently looking like success.
+    final updated = await _supabase
+        .from('clinics')
+        .update({'status': status.storedValue})
+        .eq('id', centerId)
+        .select('id');
+
+    if (updated.isEmpty) {
+      throw Exception(
+        'This center could not be updated. It may have been removed or '
+        'changed by someone else. Refresh and try again.',
+      );
+    }
+  }
+
   Future<List<NotificationItem>> fetchNotifications() async {
     final response = await _supabase
         .from('notifications')
@@ -166,8 +203,6 @@ class DashboardService {
     required String operatingHours,
     required String contactNumber,
   }) async {
-    final status = computeStatus(slotAvailable);
-
     await _supabase.from('clinics').insert({
       'name': name,
       'address': address,
@@ -178,24 +213,18 @@ class DashboardService {
       'slots_available': slotAvailable,
       'machine': machines,
       'shifts': shifts,
-      'status': status,
+      // A new centre starts Active. Open/Closed availability is not stored;
+      // it follows the operating hours.
+      'status': CenterRecordStatus.active.storedValue,
       'operating_hours': operatingHours,
       'contact_number': contactNumber,
     });
   }
 
-  /// [currentStatus] is the centre's stored `clinics.status` as it was when
-  /// the edit form was opened. It exists only so a soft-closed centre keeps
-  /// its lifecycle state: `computeStatus` can only ever return an
-  /// OPERATIONAL value ('open'/'busy'/'full'), so writing it
-  /// unconditionally -- as this did before -- silently reopened any centre
-  /// that was 'closed'. When the centre is closed the `status` key is left
-  /// out of the update entirely, so the column keeps its existing value and
-  /// every other field still saves normally. Passing null (or any
-  /// non-closed value) keeps the previous behaviour exactly.
-  ///
-  /// This deliberately does NOT reactivate anything and does not change what
-  /// soft-close means -- it only stops an ordinary edit from undoing it.
+  /// Saves an ordinary edit. `clinics.status` (Active/Inactive) is never
+  /// written here -- only [setCenterRecordStatus] changes it -- so editing a
+  /// centre can neither reopen an inactive one nor rewrite a legacy value.
+  /// [currentStatus] is still accepted from existing callers but unused.
   Future<void> updateCenter({
     required String centerId,
     required String name,
@@ -211,9 +240,6 @@ class DashboardService {
     required String contactNumber,
     String? currentStatus,
   }) async {
-    final isClosed =
-        currentStatus?.toLowerCase().trim() == CenterModel.closedStatus;
-
     final payload = <String, dynamic>{
       'name': name,
       'address': address,
@@ -227,10 +253,6 @@ class DashboardService {
       'operating_hours': operatingHours,
       'contact_number': contactNumber,
     };
-
-    if (!isClosed) {
-      payload['status'] = computeStatus(slotAvailable);
-    }
 
     // .select() so the update reports which rows it actually changed. A
     // PostgREST update that matches nothing is NOT an error -- it quietly
@@ -248,9 +270,5 @@ class DashboardService {
         'changed by someone else. Refresh and try again.',
       );
     }
-  }
-
-  Future<void> deleteCenter(String centerId) async {
-    await _supabase.from('clinics').delete().eq('id', centerId);
   }
 }

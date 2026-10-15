@@ -4,6 +4,19 @@ import '../pages/dashboard_page.dart';
 import '../config/supabase_config.dart';
 import '../theme/app_theme.dart';
 
+/// Whether [user] may enter the Super Admin portal.
+///
+/// Only trusted sources count: the `profiles.role` column ([profileRole]),
+/// which every superadmin RLS policy and RPC also checks, and `app_metadata`,
+/// which only the server can write. `user_metadata` is deliberately ignored:
+/// any signed-in user can set it on themselves via `auth.updateUser`.
+bool isSuperAdminAccount(User user, Object? profileRole) {
+  bool isSuperAdmin(Object? role) =>
+      role != null && role.toString().toLowerCase().trim() == 'superadmin';
+
+  return isSuperAdmin(profileRole) || isSuperAdmin(user.appMetadata['role']);
+}
+
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -65,12 +78,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  bool _isSuperAdminRole(dynamic roleValue) {
-    if (roleValue == null) return false;
-    final roleString = roleValue.toString().toLowerCase().trim();
-    return roleString == 'superadmin';
-  }
-
   Future<void> _signIn() async {
     FocusScope.of(context).unfocus();
 
@@ -100,16 +107,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           .eq('id', res.user!.id)
           .maybeSingle();
 
-      final roleFromProfile = profile?['role'];
-      final roleFromAppMetadata = res.user!.appMetadata['role'];
-      final roleFromUserMetadata = res.user!.userMetadata?['role'];
-
-      final isSuperAdmin =
-          _isSuperAdminRole(roleFromProfile) ||
-          _isSuperAdminRole(roleFromAppMetadata) ||
-          _isSuperAdminRole(roleFromUserMetadata);
-
-      if (!isSuperAdmin) {
+      if (!isSuperAdminAccount(res.user!, profile?['role'])) {
         await SupabaseConfig.client.auth.signOut();
         setState(() {
           _message = 'Incorrect email or password. Please try again.';

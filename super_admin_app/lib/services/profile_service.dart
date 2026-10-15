@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
+import '../utils/center_assignment.dart';
 
 class ProfileService {
   final SupabaseClient _supabase = SupabaseConfig.client;
@@ -147,6 +148,49 @@ class ProfileService {
       throw Exception(
         'This account could not be reactivated. It may have been removed or '
         'changed by someone else. Refresh and try again.',
+      );
+    }
+  }
+
+  /// Re-checks, immediately before saving, that [clinicId] can still take an
+  /// admin assignment: the centre exists, is Active, and has no other active
+  /// admin. The modal's dropdown already hides ineligible centres, but its
+  /// list may be stale (another session may have assigned or deactivated the
+  /// centre since it loaded). Throws an [Exception] with a user-facing
+  /// message when the centre is no longer eligible. [adminId] is the account
+  /// being assigned, which never counts against itself.
+  Future<void> ensureClinicAssignable(
+    String clinicId, {
+    String? adminId,
+  }) async {
+    final clinic = await _supabase
+        .from('clinics')
+        .select('id, status')
+        .eq('id', clinicId)
+        .maybeSingle();
+
+    final admins = await _supabase
+        .from('profiles')
+        .select('id, clinic_id')
+        .eq('role', 'admin')
+        .eq('status', 'active')
+        .eq('is_active', true)
+        .eq('clinic_id', clinicId);
+
+    final otherAdmins = admins
+        .where((row) => row['id']?.toString() != adminId)
+        .map((row) => row['clinic_id']?.toString())
+        .whereType<String>()
+        .toSet();
+
+    if (clinic == null ||
+        !isCenterEligibleForAssignment(clinic, clinicsWithAdmin: otherAdmins)) {
+      throw Exception(
+        clinic == null
+            ? 'The selected center no longer exists. Refresh and choose '
+                  'another center.'
+            : 'The selected center is no longer available -- it is inactive '
+                  'or another admin was assigned to it. Choose another center.',
       );
     }
   }

@@ -1,30 +1,17 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:super_admin_app/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  // Replaces the default Flutter "Counter increments" template test, which
+  // tested a counter this app never had. The init-error path is the one
+  // MyApp build that needs no Supabase connection, so it can run here.
+  testWidgets('shows the initialization error instead of crashing', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const MyApp(initError: 'missing SUPABASE_URL'));
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('Initialization Error'), findsOneWidget);
+    expect(find.textContaining('missing SUPABASE_URL'), findsOneWidget);
   });
 }

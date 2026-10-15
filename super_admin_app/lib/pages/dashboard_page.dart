@@ -8,6 +8,7 @@ import '../models/user_model.dart';
 import '../services/dashboard_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/operating_hours.dart';
+import '../widgets/center_status_badges.dart';
 import '../widgets/super_admin_notice.dart';
 import 'admin_accounts_page.dart';
 import 'center_page.dart';
@@ -960,55 +961,17 @@ class _DashboardPageState extends State<DashboardPage>
         itemBuilder: (context, index) {
           final center = _centers[index];
 
-          final machine = center.machines;
-          final shifts = center.shifts;
           final slots = center.availableSlots;
-          // totalCapacity is kept only for the "No Data" status branch below.
           // The occupancy percentage that used to be derived here was removed
-          // (R9): it was (totalCapacity - slots_available) / totalCapacity,
-          // and the center form stores slots_available AS machines x 2 -- the
-          // same figure as totalCapacity -- so it evaluated to 0% for every
-          // center saved through the current UI, and clamped to 0% for older
-          // rows. It also contradicted the approved live-capacity estimate on
-          // the Centers page, which measures real reserved patients.
-          final totalCapacity = machine * shifts;
+          // (R9): slots_available is normally saved AS machines × shifts, so
+          // it evaluated to 0% for most centers and contradicted the Centers
+          // page's live capacity estimate.
 
-          final isOpen = isWithinOperatingHours(center.operatingHours);
-          final dbStatus = center.status.toLowerCase();
-
-          final statusColor = !isOpen
-              ? const Color(0xFF6B7280)
-              : _statusColor(dbStatus);
-
-          String statusLabel;
-
-          if (center.isClosed) {
-            // Lifecycle beats availability and beats operating hours: a
-            // soft-closed centre is never labelled Open. Checked before the
-            // switch below, which only knows the OPERATIONAL vocabulary and
-            // would otherwise fall through its `default` and label 'closed'
-            // as 'Open'.
-            statusLabel = 'Closed';
-          } else if (totalCapacity == 0) {
-            statusLabel = 'No Data';
-          } else if (!isOpen) {
-            statusLabel = 'Closed';
-          } else {
-            switch (dbStatus) {
-              case 'maintenance':
-                statusLabel = 'Maintenance';
-                break;
-              case 'full':
-                statusLabel = 'Full';
-                break;
-              case 'busy':
-                statusLabel = 'Busy';
-                break;
-              case 'open':
-              default:
-                statusLabel = 'Open';
-            }
-          }
+          // Open/Closed only: an Active centre inside its operating hours is
+          // Open, anything else is Closed (see utils/center_status.dart).
+          final availability = center.availability();
+          final statusColor = centerAvailabilityStyle(availability).$1;
+          final statusLabel = availability.label;
 
           return Material(
             color: AppTheme.surface,
@@ -1168,44 +1131,10 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Future<void> _showCenterDetailsModal(CenterModel center) async {
-    final machine = center.machines;
-    final shifts = center.shifts;
-    // Same removal as the center grid (R9): the occupancy percentage derived
-    // from slots_available was structurally 0% and conflicted with the
-    // approved live-capacity estimate. totalCapacity stays for the "No Data"
-    // status branch below.
-    final totalCapacity = machine * shifts;
-
-    final isOpen = isWithinOperatingHours(center.operatingHours);
-    final dbStatus = center.status.toLowerCase();
-    final statusColor = !isOpen
-        ? const Color(0xFF6B7280)
-        : _statusColor(dbStatus);
-
-    String statusLabel;
-    if (center.isClosed) {
-      // Same lifecycle-beats-availability rule as the centre grid above.
-      statusLabel = 'Closed';
-    } else if (totalCapacity == 0) {
-      statusLabel = 'No Data';
-    } else if (!isOpen) {
-      statusLabel = 'Closed';
-    } else {
-      switch (dbStatus) {
-        case 'maintenance':
-          statusLabel = 'Maintenance';
-          break;
-        case 'full':
-          statusLabel = 'Full';
-          break;
-        case 'busy':
-          statusLabel = 'Busy';
-          break;
-        case 'open':
-        default:
-          statusLabel = 'Open';
-      }
-    }
+    // Same Open/Closed rule as the centre grid above.
+    final availability = center.availability();
+    final statusColor = centerAvailabilityStyle(availability).$1;
+    final statusLabel = availability.label;
 
     await showDialog<void>(
       context: context,
@@ -1358,13 +1287,8 @@ class _DashboardPageState extends State<DashboardPage>
                               : center.requirements,
                         ),
 
-                        const SizedBox(height: 12),
-
-                        _modalDetailBlock(
-                          icon: Icons.location_on_rounded,
-                          title: 'Center Address',
-                          value: center.address,
-                        ),
+                        // No separate "Center Address" block here: the
+                        // address is already shown under the centre name.
 
                         const SizedBox(height: 22),
                       ],
@@ -1647,24 +1571,6 @@ class _DashboardPageState extends State<DashboardPage>
         ),
       ),
     );
-  }
-
-  Color _statusColor(String? status) {
-    switch (status?.toLowerCase()) {
-      case 'open':
-        return const Color(0xFF1F9D55);
-      case 'busy':
-        return const Color(0xFFED8F12);
-      case 'full':
-        return const Color(0xFFB91C1C);
-      case 'maintenance':
-      // Soft-closed: the same muted grey the !isOpen path already uses, so
-      // a closed centre is never tinted like an active operational one.
-      case CenterModel.closedStatus:
-        return const Color(0xFF6B7280);
-      default:
-        return const Color(0xFF2563EB);
-    }
   }
 
   String _formattedToday() {

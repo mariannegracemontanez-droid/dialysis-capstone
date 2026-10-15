@@ -44,7 +44,33 @@ import 'package:flutter/material.dart';
 /// previous implementations used. It is injectable so the behaviour can be
 /// tested at a fixed time; no timezone conversion is performed here.
 bool isWithinOperatingHours(String? operatingHours, {TimeOfDay? now}) {
-  if (operatingHours == null || operatingHours.trim().isEmpty) return false;
+  final range = parseOperatingHoursRange(operatingHours);
+  if (range == null) return false;
+
+  final (open: openTime, close: closeTime) = range;
+  final currentTime = now ?? TimeOfDay.now();
+
+  final nowMinutes = (currentTime.hour * 60) + currentTime.minute;
+  final openMinutes = (openTime.hour * 60) + openTime.minute;
+  final closeMinutes = (closeTime.hour * 60) + closeTime.minute;
+
+  if (openMinutes == closeMinutes) return true;
+
+  // Handles overnight schedules like 8:00 PM - 6:00 AM.
+  if (closeMinutes < openMinutes) {
+    return nowMinutes >= openMinutes || nowMinutes <= closeMinutes;
+  }
+
+  return nowMinutes >= openMinutes && nowMinutes <= closeMinutes;
+}
+
+/// The opening and closing times in a stored `clinics.operating_hours`
+/// string, or null when it is blank or cannot be read. Accepts everything
+/// [isWithinOperatingHours] accepts (it is the same parser).
+({TimeOfDay open, TimeOfDay close})? parseOperatingHoursRange(
+  String? operatingHours,
+) {
+  if (operatingHours == null || operatingHours.trim().isEmpty) return null;
 
   try {
     final normalized = operatingHours
@@ -54,27 +80,41 @@ bool isWithinOperatingHours(String? operatingHours, {TimeOfDay? now}) {
         .replaceAll(RegExp(r'\s+until\s+', caseSensitive: false), '-');
 
     final parts = normalized.split('-');
-    if (parts.length < 2) return false;
+    if (parts.length < 2) return null;
 
-    final openTime = _parseOperatingTime(parts[0]);
-    final closeTime = _parseOperatingTime(parts[1]);
-    final currentTime = now ?? TimeOfDay.now();
-
-    final nowMinutes = (currentTime.hour * 60) + currentTime.minute;
-    final openMinutes = (openTime.hour * 60) + openTime.minute;
-    final closeMinutes = (closeTime.hour * 60) + closeTime.minute;
-
-    if (openMinutes == closeMinutes) return true;
-
-    // Handles overnight schedules like 8:00 PM - 6:00 AM.
-    if (closeMinutes < openMinutes) {
-      return nowMinutes >= openMinutes || nowMinutes <= closeMinutes;
-    }
-
-    return nowMinutes >= openMinutes && nowMinutes <= closeMinutes;
+    return (
+      open: _parseOperatingTime(parts[0]),
+      close: _parseOperatingTime(parts[1]),
+    );
   } catch (_) {
-    return false;
+    return null;
   }
+}
+
+/// `7:00 AM` -- the 12-hour form the centre form has always stored.
+String formatOperatingTime(TimeOfDay time) {
+  final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+  final minute = time.minute.toString().padLeft(2, '0');
+  final period = time.period == DayPeriod.am ? 'AM' : 'PM';
+  return '$hour:$minute $period';
+}
+
+/// `7:00 AM - 5:00 PM`, the value written to `clinics.operating_hours`.
+/// [parseOperatingHoursRange] reads it back exactly.
+String formatOperatingHours(TimeOfDay open, TimeOfDay close) =>
+    '${formatOperatingTime(open)} - ${formatOperatingTime(close)}';
+
+/// Validation message for a picked opening/closing pair, or null when valid.
+/// A closing time earlier than the opening time is allowed and read as an
+/// overnight range; identical times are rejected because the stored string
+/// could not tell "24 hours" from a mistake.
+String? validateOperatingTimes(TimeOfDay? open, TimeOfDay? close) {
+  if (open == null) return 'Select an opening time.';
+  if (close == null) return 'Select a closing time.';
+  if (open.hour == close.hour && open.minute == close.minute) {
+    return 'Opening and closing times must be different.';
+  }
+  return null;
 }
 
 /// Reads one side of an operating-hours range. Throws a [FormatException] for

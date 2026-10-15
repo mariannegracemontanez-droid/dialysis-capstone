@@ -11,6 +11,21 @@ import '../widgets/ui.dart';
 import 'landing_page.dart';
 import 'login_page.dart';
 
+/// Largest amount `donations.amount numeric(12, 2)` can hold.
+const double maxDonationAmount = 9999999999.99;
+
+/// Parses the custom amount field: plain digits with at most two decimal
+/// places (centavos), up to [maxDonationAmount]. Returns null for anything
+/// else. `double.tryParse` alone also accepted "NaN" (which slipped past the
+/// `amount <= 0` check), "Infinity", "1e3" and sub-centavo amounts.
+double? parseDonationAmount(String input) {
+  final value = input.trim();
+  if (!RegExp(r'^(\d+(\.\d{0,2})?|\.\d{1,2})$').hasMatch(value)) return null;
+
+  final amount = double.parse(value);
+  return amount > maxDonationAmount ? null : amount;
+}
+
 /// Step two of the donation journey: amount, destination and payment
 /// channel.
 ///
@@ -246,11 +261,7 @@ class _DonationPageState extends State<DonationPage>
     return emailRegex.hasMatch(email);
   }
 
-  double? _parseAmount() {
-    final value = _customAmountController.text.trim();
-    if (value.isEmpty) return null;
-    return double.tryParse(value);
-  }
+  double? _parseAmount() => parseDonationAmount(_customAmountController.text);
 
   /// Returns to the landing page and clears the whole donation journey from
   /// the navigation stack.

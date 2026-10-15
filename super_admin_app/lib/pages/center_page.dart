@@ -9,7 +9,15 @@ import '../services/dashboard_service.dart';
 import '../config/supabase_config.dart';
 import '../services/profile_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/center_capacity.dart';
+import '../utils/center_capacity_input.dart';
+import '../utils/center_requirements.dart';
+import '../utils/center_status.dart';
+import '../utils/form_dirty_state.dart';
 import '../utils/operating_hours.dart';
+import '../utils/ph_contact_number.dart';
+import '../widgets/center_details_dialog.dart';
+import '../widgets/center_status_badges.dart';
 import '../widgets/super_admin_notice.dart';
 import 'dart:ui';
 
@@ -35,25 +43,6 @@ String? _validateWholeNumberField(String value) {
   return null;
 }
 
-/// Validates a Contact Number entry: allows the characters normally found in
-/// a phone number (digits, spaces, +, -, parentheses) and requires enough
-/// digits to be a plausible number, without enforcing one specific format.
-String? _validateContactNumberField(String value) {
-  final allowedCharacters = RegExp(r'^[0-9+\-() ]+$');
-
-  if (!allowedCharacters.hasMatch(value)) {
-    return 'Please enter a valid contact number';
-  }
-
-  final digitsOnly = value.replaceAll(RegExp(r'[^0-9]'), '');
-
-  if (digitsOnly.length < 7) {
-    return 'Please enter a valid contact number';
-  }
-
-  return null;
-}
-
 /// The fixed list of common dialysis center requirements shown as checkboxes
 /// in the Add/Edit Center form. Anything a stored center's requirements list
 /// contains that isn't exactly one of these is treated as an "Other
@@ -71,96 +60,28 @@ const List<String> _commonRequirementOptions = [
   '1×1 Picture',
 ];
 
-/// Splits a center's stored `requirements` value back into individual
-/// requirement items for the Edit checkboxes/Other-Requirements list.
-///
-/// Data-preservation note: `clinic.requirements` (CenterModel) is always a
-/// Dart String by the time it reaches here, but what's *behind* that string
-/// differs by how the row was written. When Supabase returns a real
-/// array/jsonb column, CenterModel's `.toString()` renders it in Dart's own
-/// bracketed "[A, B, C]" form -- there, the commas are guaranteed to be
-/// Dart's own List.toString() separators (added by DashboardService's
-/// existing write path, not typed by a user), so splitting on them is safe.
-/// A row with no brackets, however, has no such guarantee: it may be a
-/// legacy value from before this checkbox UI existed, when the field was a
-/// plain free-text box with no delimiter contract at all -- a stored value
-/// like "ID, Referral" could just as easily be one single item the admin
-/// typed as it could be two. mobile-app's clinic_detail_page.dart
-/// (_requirementItems) makes the same distinction for the same reason: a
-/// non-List value there is treated as one atomic requirement, never split
-/// on comma/semicolon. So this only splits an unbracketed value on newline
-/// -- the delimiter this app's own new UI intentionally writes going
-/// forward (see _buildRequirementsValue) and one that was never a plausible
-/// way to separate items in old comma-based prose typed into a 2-line text
-/// box either, so treating it as a delimiter carries none of the
-/// comma/semicolon risk. Nothing is ever discarded either way.
-List<String> _parseStoredRequirements(String raw) {
-  final trimmed = raw.trim();
+/// The Centres page's status filter. Availability (Open/Closed, from the
+/// operating hours) and record status (Active/Inactive) are separate
+/// concepts, so each option matches exactly one of them -- the same values
+/// the table's two status badges show. Busy and Full no longer exist.
+enum _CenterStatusFilter {
+  open('Open'),
+  closed('Closed'),
+  active('Active'),
+  inactive('Inactive');
 
-  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-    final inner = trimmed.substring(1, trimmed.length - 1);
-    return inner
-        .split(RegExp(r'[,;\n]'))
-        .map((item) => item.trim())
-        .where((item) => item.isNotEmpty)
-        .toList();
-  }
-
-  return trimmed
-      .split('\n')
-      .map((item) => item.trim())
-      .where((item) => item.isNotEmpty)
-      .toList();
-}
-
-/// The ONE user-facing status for a center. Both the Status column and the
-/// Status filter read this, so they can never disagree about what a center's
-/// status is (they previously used two unrelated notions: the filter matched
-/// the stored `clinics.status`, while the column showed Open/Closed derived
-/// from the operating-hours string).
-///
-/// [filterValue] is the exact value the Status dropdown already used, so the
-/// filter's own options and semantics are unchanged.
-enum _CenterStatusView {
-  open('Open', 'open'),
-  busy('Busy', 'busy'),
-  full('Full', 'full'),
-  closed('Closed', 'closed');
-
-  const _CenterStatusView(this.label, this.filterValue);
+  const _CenterStatusFilter(this.label);
 
   final String label;
-  final String filterValue;
-}
 
-/// Derives a center's single user-facing status.
-///
-/// LIFECYCLE FIRST: a soft-closed center is always [._CenterStatusView.closed]
-/// and is never reported as an operational state. In practice a closed center
-/// never reaches this list at all (DashboardService.fetchCenters excludes
-/// them), so this is the same defensive precedence the dashboard applies --
-/// it does not reopen anything or change what soft-close means.
-///
-/// OTHERWISE: the center's stored `clinics.status`, which is exactly what
-/// DashboardService.computeStatus(slotsAvailable) wrote ('full' at 0 slots,
-/// 'busy' at <= 2, else 'open'). No new thresholds are introduced here and no
-/// capacity figure is recomputed -- this only reads the value already stored.
-///
-/// An unrecognised value falls back to `open`, matching CenterModel.fromJson's
-/// own existing `?? 'open'` default for a missing status rather than inventing
-/// a new state the filter could not express.
-_CenterStatusView _centerStatusView(CenterModel clinic) {
-  if (clinic.isClosed) return _CenterStatusView.closed;
-
-  switch (clinic.status.toLowerCase().trim()) {
-    case 'full':
-      return _CenterStatusView.full;
-    case 'busy':
-      return _CenterStatusView.busy;
-    case 'open':
-    default:
-      return _CenterStatusView.open;
-  }
+  bool matches(CenterModel clinic) => switch (this) {
+    _CenterStatusFilter.open =>
+      clinic.availability() == CenterAvailability.open,
+    _CenterStatusFilter.closed =>
+      clinic.availability() == CenterAvailability.closed,
+    _CenterStatusFilter.active => clinic.isActive,
+    _CenterStatusFilter.inactive => !clinic.isActive,
+  };
 }
 
 /// User-controlled sort options for the centers table. Sorting only reorders
@@ -206,7 +127,7 @@ class _ClinicsPageState extends State<ClinicsPage> {
   // Center management filters/sort -- all client-side, applied on top of the
   // already-loaded _clinics list. null sentinels mean "All Statuses"/
   // "All Cities" respectively.
-  String? _statusFilter;
+  _CenterStatusFilter? _statusFilter;
   String? _cityFilter;
   _CenterSortOption _sortOption = _CenterSortOption.newestFirst;
 
@@ -222,7 +143,9 @@ class _ClinicsPageState extends State<ClinicsPage> {
     setState(() => _isLoading = true);
 
     try {
-      final clinics = await _service.fetchCenters();
+      // Active AND inactive centres: inactive ones stay listed (with their
+      // status) so they can be reactivated.
+      final clinics = await _service.fetchAllCenters();
       clinics.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       // Reserved/accepted patient headcount per clinic, for the Super
@@ -289,12 +212,8 @@ class _ClinicsPageState extends State<ClinicsPage> {
 
     final statusFilter = _statusFilter;
     if (statusFilter != null) {
-      // Filters on the SAME value the Status column displays (see
-      // _centerStatusView), so selecting "Busy" can only ever return the
-      // rows whose Status pill reads Busy.
-      result = result.where(
-        (clinic) => _centerStatusView(clinic).filterValue == statusFilter,
-      );
+      // Matches the same values the table's status badges display.
+      result = result.where(statusFilter.matches);
     }
 
     final cityFilter = _cityFilter;
@@ -352,7 +271,8 @@ class _ClinicsPageState extends State<ClinicsPage> {
   /// network call. Stays associated with the right clinic via clinic.id
   /// regardless of the list's current search/filter/sort order.
   _CapacityEstimate _capacityEstimateFor(CenterModel clinic) {
-    final totalCapacity = clinic.machines * 2;
+    // Machines × this centre's saved shifts (same formula as the modal).
+    final totalCapacity = clinic.totalCapacity;
     final reserved = _reservedCounts[clinic.id];
 
     if (reserved == null) {
@@ -368,6 +288,7 @@ class _ClinicsPageState extends State<ClinicsPage> {
       reserved: reserved,
       available: _service.calculateAvailableSlotsEstimate(
         machines: clinic.machines,
+        shifts: clinic.shifts,
         reservedPatients: reserved,
       ),
     );
@@ -388,18 +309,13 @@ class _ClinicsPageState extends State<ClinicsPage> {
     });
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
-
   /// Trimmed, lower-cased names of the currently loaded ACTIVE centres,
   /// excluding [excluding] -- the centre being edited, so re-saving it under
   /// its own unchanged name is never blocked.
   ///
-  /// Closed centres are deliberately absent: _clinics comes from
-  /// fetchCenters(), which already excludes them, so a new centre may still
-  /// reuse a closed historical centre's name. Only a duplicate ACTIVE name
-  /// is prevented.
+  /// Inactive centres are deliberately excluded (the list now holds them
+  /// too), so a new centre may still reuse an inactive historical centre's
+  /// name. Only a duplicate ACTIVE name is prevented.
   ///
   /// This is a client-side check against the list this page has already
   /// loaded. It cannot see a centre created concurrently in another session
@@ -407,7 +323,7 @@ class _ClinicsPageState extends State<ClinicsPage> {
   /// server-side create, neither of which is in scope here.
   Set<String> _activeCenterNamesExcluding(CenterModel? excluding) {
     return _clinics
-        .where((clinic) => clinic.id != excluding?.id)
+        .where((clinic) => clinic.isActive && clinic.id != excluding?.id)
         .map((clinic) => clinic.name.trim().toLowerCase())
         .where((name) => name.isNotEmpty)
         .toSet();
@@ -439,55 +355,75 @@ class _ClinicsPageState extends State<ClinicsPage> {
     );
   }
 
-  Future<void> _deleteClinic(CenterModel clinic) async {
-    // A warning notice rather than a dialog of its own, so the question is
-    // raised into the root overlay -- above the center form modal when it is
-    // asked from there -- and an outside click cannot answer it.
-    final confirmed = await SuperAdminNotice.confirm(
-      context,
-      title: 'Delete center?',
-      message:
-          'Deleting ${clinic.name} will deactivate all assigned admins. '
-          'This action cannot be undone.',
-      confirmLabel: 'Delete',
-      destructive: true,
-      icon: Icons.delete_outline_rounded,
-    );
-
-    if (!confirmed) return;
-    if (!mounted) return;
-
+  /// How many active admin accounts are assigned to [clinic], for the
+  /// deactivation confirmation. Null when the count could not be read.
+  Future<int?> _assignedAdminCount(CenterModel clinic) async {
     try {
-      await SupabaseConfig.client
+      final rows = await SupabaseConfig.client
           .from('profiles')
-          .update({'status': 'inactive'})
+          .select('id')
           .eq('clinic_id', clinic.id)
           .eq('role', 'admin')
-          .select();
+          .eq('status', 'active');
+      return rows.length;
+    } catch (_) {
+      return null;
+    }
+  }
 
-      // .select() so the close reports whether it actually changed the row.
-      // A PostgREST update that matches nothing is NOT an error -- it
-      // quietly affects zero rows -- so a center already removed by someone
-      // else would still have reported "Center deleted".
-      //
-      // Note the profiles update above deliberately does NOT get this
-      // treatment: zero rows there is a legitimate outcome (a center may
-      // simply have no admin assigned), so it must not be a failure.
-      final closed = await SupabaseConfig.client
-          .from('clinics')
-          .update({'status': 'closed'})
-          .eq('id', clinic.id)
-          .select();
+  /// Marks [clinic] Inactive (when [activate] is false) or Active again.
+  ///
+  /// Replaces the old "Delete center" action, which hid the centre for good
+  /// and set every assigned admin inactive. Now ONLY `clinics.status`
+  /// changes: the centre record, its donations, patients, audit history and
+  /// admin accounts are left exactly as they are, and the centre stays
+  /// listed here so it can be reactivated.
+  Future<void> _setCenterActive(
+    CenterModel clinic, {
+    required bool activate,
+  }) async {
+    final adminCount = activate ? null : await _assignedAdminCount(clinic);
+    if (!mounted) return;
 
-      if (closed.isEmpty) {
-        throw Exception(
-          'This center could not be closed. It may have been removed or '
-          'changed by someone else. Refresh and try again.',
-        );
-      }
+    final adminNote = switch (adminCount) {
+      null => '',
+      0 => ' No admin account is assigned to it.',
+      1 =>
+        ' 1 admin account is assigned to it; that account is not changed '
+            '-- manage it from Account Management if needed.',
+      _ =>
+        ' $adminCount admin accounts are assigned to it; those accounts are '
+            'not changed -- manage them from Account Management if needed.',
+    };
+
+    // A warning notice rather than a dialog of its own, so the question is
+    // raised into the root overlay and an outside click cannot answer it.
+    final confirmed = await SuperAdminNotice.confirm(
+      context,
+      title: activate ? 'Reactivate center?' : 'Deactivate center?',
+      message: activate
+          ? '${clinic.name} will be marked Active again and can be assigned '
+                'a clinic admin and shown in operational views.'
+          : '${clinic.name} will be marked Inactive. It stays in this list '
+                'with all of its history, is hidden from the dashboard, and '
+                'cannot be chosen for new admin assignments.$adminNote',
+      confirmLabel: activate ? 'Reactivate' : 'Deactivate',
+      destructive: !activate,
+      icon: activate ? Icons.restart_alt_rounded : Icons.block_rounded,
+    );
+
+    if (!confirmed || !mounted) return;
+
+    try {
+      await _service.setCenterRecordStatus(
+        centerId: clinic.id,
+        status: activate
+            ? CenterRecordStatus.active
+            : CenterRecordStatus.inactive,
+      );
 
       await ProfileService().logAction(
-        action: 'delete_clinic',
+        action: activate ? 'reactivate_clinic' : 'deactivate_clinic',
         targetId: clinic.id,
         targetName: clinic.name,
       );
@@ -501,26 +437,45 @@ class _ClinicsPageState extends State<ClinicsPage> {
 
       SuperAdminNotice.success(
         context,
-        'Center deleted. Admins set to inactive.',
+        activate
+            ? '${clinic.name} is Active again.'
+            : '${clinic.name} is now Inactive.',
       );
     } catch (error) {
       if (!mounted) return;
 
-      SuperAdminNotice.error(context, 'Unable to delete center: $error');
+      SuperAdminNotice.error(
+        context,
+        'Unable to ${activate ? 'reactivate' : 'deactivate'} center: $error',
+      );
     }
+  }
+
+  void _showCenterDetails(CenterModel clinic) {
+    final estimate = _capacityEstimateFor(clinic);
+    showCenterDetailsDialog(
+      context,
+      clinic,
+      reservedPatients: estimate.reserved,
+      estimatedAvailable: estimate.available,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final clinics = _filteredClinics;
-    final openCount = _clinics
-        .where((clinic) => isWithinOperatingHours(clinic.operatingHours))
+    // The stat cards describe the operational network, so they count Active
+    // centres only; inactive ones are listed below but not counted here.
+    final activeClinics = _clinics.where((clinic) => clinic.isActive).toList();
+    final inactiveCount = _clinics.length - activeClinics.length;
+    final openCount = activeClinics
+        .where((clinic) => clinic.availability() == CenterAvailability.open)
         .length;
-    final totalSlots = _clinics.fold<int>(
+    final totalSlots = activeClinics.fold<int>(
       0,
       (sum, clinic) => sum + clinic.availableSlots,
     );
-    final totalMachines = _clinics.fold<int>(
+    final totalMachines = activeClinics.fold<int>(
       0,
       (sum, clinic) => sum + clinic.machines,
     );
@@ -567,19 +522,18 @@ class _ClinicsPageState extends State<ClinicsPage> {
                 final cards = [
                   _DashboardStatCard(
                     icon: Icons.business_rounded,
-                    label: 'Total Centers',
-                    value: _clinics.length.toString(),
-                    description: 'Registered dialysis centers',
+                    label: 'Active Centers',
+                    value: activeClinics.length.toString(),
+                    description: inactiveCount == 0
+                        ? 'Registered dialysis centers'
+                        : '$inactiveCount inactive not counted',
                   ),
 
                   _DashboardStatCard(
                     icon: Icons.schedule_rounded,
-                    // Counts centers inside their operating hours RIGHT NOW
-                    // (unchanged calculation -- see openCount). Named for
-                    // that, so it is not read as a count of centers whose
-                    // Status is "Open": Status is a separate, capacity-based
-                    // value (see _centerStatusView) and the two legitimately
-                    // differ.
+                    // Active centres whose availability is Open right now
+                    // (inside their operating hours) -- the same value the
+                    // table's Open/Closed badge shows.
                     label: 'Open Now',
                     value: openCount.toString(),
                     description: 'Currently within operating hours',
@@ -672,10 +626,11 @@ class _ClinicsPageState extends State<ClinicsPage> {
                 // vs. there being no centers at all -- different situations
                 // with different messaging and a different call to action.
                 hasAnyCenters: _clinics.isNotEmpty,
-                formatDate: _formatDate,
                 onAdd: () => _showClinicDialog(),
                 onEdit: _showClinicDialog,
-                onDelete: _deleteClinic,
+                onView: _showCenterDetails,
+                onSetActive: (clinic, activate) =>
+                    _setCenterActive(clinic, activate: activate),
                 capacityEstimateFor: _capacityEstimateFor,
               ),
             ),
@@ -703,35 +658,6 @@ class _ClinicsPageState extends State<ClinicsPage> {
     );
   }
 
-}
-
-/// Limits a phone-style field to at most [maxDigits] digits while still
-/// letting the existing supported formatting characters (spaces, +, -,
-/// parentheses) through -- counts by digits, not raw string length, so a
-/// nicely formatted number isn't penalized for its own formatting
-/// characters. Never touches text it isn't given interactively: setting a
-/// controller's initial `text` (e.g. when opening Edit) does not go through
-/// input formatters at all, so an existing stored value is never truncated
-/// by this -- it only blocks typing/pasting a value whose digit count would
-/// exceed the limit.
-class _MaxDigitsTextInputFormatter extends TextInputFormatter {
-  final int maxDigits;
-
-  const _MaxDigitsTextInputFormatter(this.maxDigits);
-
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final digitCount = newValue.text.replaceAll(RegExp(r'[^0-9]'), '').length;
-
-    if (digitCount > maxDigits) {
-      return oldValue;
-    }
-
-    return newValue;
-  }
 }
 
 /// The Add/Edit Center dialog's own content and local state (form fields,
@@ -773,17 +699,41 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
   late final TextEditingController addressController;
   late final TextEditingController cityController;
   late final TextEditingController machinesController;
-  // Read-only, system-computed (see _recalculateAvailableSlots): never
-  // typed into directly, so it's still a TextEditingController only so it
-  // can reuse the existing _buildTextField display/decoration and be read
-  // by the Save handler exactly like before.
+  // Add: editable. Pre-filled as Machines × Shifts until the Super Admin
+  // types their own value, which is then never overwritten (see
+  // _recalculateAvailableSlots). Edit: read-only, as before.
   late final TextEditingController slotsController;
-  // Read-only display of the fixed shift count. The Save handler still
-  // hardcodes `shifts: 2` itself (unchanged) -- this controller only exists
-  // so the business rule is visible in the form instead of being invisible.
+  // Add: editable, starting at 2. Edit: read-only, showing the centre's
+  // saved shift count, which is saved back unchanged.
   late final TextEditingController shiftsController;
-  late final TextEditingController hoursController;
+
+  /// True once the Super Admin has typed into Available Slots on Add, so a
+  /// later Machines/Shifts change no longer replaces their value.
+  bool _slotsEditedByUser = false;
+
+  /// Set while the form itself writes slotsController, so that write is not
+  /// mistaken for the Super Admin's own edit.
+  bool _updatingSlots = false;
+
+  // Operating hours come from two time pickers and are saved in the existing
+  // `7:00 AM - 5:00 PM` text form. A stored value the parser cannot read is
+  // kept in _legacyHours and saved back untouched unless new times are
+  // picked, so an existing record is never broken by opening Edit.
+  TimeOfDay? _openTime;
+  TimeOfDay? _closeTime;
+  String? _legacyHours;
+  String? _hoursError;
+
+  // Holds only the 10 digits after the fixed +63 prefix.
   late final TextEditingController contactController;
+
+  // A stored contact number that is not a recognisable PH mobile number
+  // (e.g. a landline or "N/A"); shown so the Super Admin can re-enter it.
+  String? _legacyContact;
+
+  /// Field values as they were when the form opened, for the "unsaved
+  /// changes" checks (see hasFormChanges).
+  late final Map<String, Object?> _originalValues;
 
   // Requirements: a fixed checkbox list plus free-form "Other Requirements"
   // entries, instead of one free-text field. Selected/typed values are
@@ -833,7 +783,7 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
     // "Other Requirement" row rather than being discarded or forced into a
     // standard label it doesn't actually match.
     final storedRequirements = clinic != null
-        ? _parseStoredRequirements(clinic.requirements)
+        ? parseStoredRequirements(clinic.requirements)
         : const <String>[];
 
     selectedCommonRequirements = {
@@ -861,23 +811,156 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
     slotsController = TextEditingController(
       text: clinic?.availableSlots.toString() ?? '0',
     );
-    // Fixed business rule, not read from the clinic -- createCenter and
-    // updateCenter already hardcode `shifts: 2` on every save (both Add and
-    // Edit), unconditionally, before this subtask. This is purely a display
-    // of that existing fact.
-    shiftsController = TextEditingController(text: '2');
+    // Add: 2 shifts per day by default (the value every centre used to be
+    // saved with). Edit: the centre's saved shift count.
+    shiftsController = TextEditingController(
+      text: (clinic?.shifts ?? defaultShiftsPerDay).toString(),
+    );
     machinesController.addListener(_recalculateAvailableSlots);
-    hoursController = TextEditingController(
-      text: clinic?.operatingHours ?? '',
-    );
-    contactController = TextEditingController(
-      text: clinic?.contactNumber ?? '',
-    );
+    shiftsController.addListener(_recalculateAvailableSlots);
+    slotsController.addListener(() {
+      if (!_updatingSlots) _slotsEditedByUser = true;
+    });
+
+    final storedHours = clinic?.operatingHours.trim() ?? '';
+    final hoursRange = parseOperatingHoursRange(storedHours);
+    if (hoursRange != null) {
+      _openTime = hoursRange.open;
+      _closeTime = hoursRange.close;
+    } else if (storedHours.isNotEmpty) {
+      _legacyHours = storedHours;
+    }
+
+    final storedContact = clinic?.contactNumber.trim() ?? '';
+    final localDigits = phLocalDigitsFromStored(storedContact);
+    contactController = TextEditingController(text: localDigits ?? '');
+    if (localDigits == null && storedContact.isNotEmpty) {
+      _legacyContact = storedContact;
+    }
 
     selectedLatitude = clinic?.latitude;
     selectedLongitude = clinic?.longitude;
 
     mapController = MapController();
+
+    _originalValues = _currentValues();
+
+    // Rebuild on every edit so the Save button follows the dirty state.
+    for (final controller in [
+      nameController,
+      addressController,
+      cityController,
+      machinesController,
+      contactController,
+    ]) {
+      controller.addListener(_onFieldChanged);
+    }
+  }
+
+  void _onFieldChanged() {
+    if (mounted) setState(() {});
+  }
+
+  static int? _minutesOf(TimeOfDay? time) =>
+      time == null ? null : time.hour * 60 + time.minute;
+
+  /// The values a save would write, in comparable form.
+  Map<String, Object?> _currentValues() => {
+    'name': nameController.text,
+    'address': addressController.text,
+    'city': cityController.text,
+    'requirements': _buildRequirementsValue(),
+    'machines': machinesController.text,
+    'shifts': shiftsController.text,
+    'slots': slotsController.text,
+    'open': _minutesOf(_openTime),
+    'close': _minutesOf(_closeTime),
+    'contact': contactController.text,
+    'latitude': selectedLatitude,
+    'longitude': selectedLongitude,
+  };
+
+  bool get _isEditing => widget.clinic != null;
+
+  /// True once any value differs from what the form opened with. Changing a
+  /// value back to its original makes this false again.
+  bool get _hasChanges => hasFormChanges(_originalValues, _currentValues());
+
+  bool get _hoursChanged =>
+      _minutesOf(_openTime) != _originalValues['open'] ||
+      _minutesOf(_closeTime) != _originalValues['close'];
+
+  /// The `operating_hours` value to save: the picked times, or -- when the
+  /// times were not touched on an edit -- exactly what was stored before.
+  String _hoursToSave() {
+    final open = _openTime;
+    final close = _closeTime;
+    if (_isEditing && !_hoursChanged) {
+      return widget.clinic!.operatingHours.trim();
+    }
+    return formatOperatingHours(open!, close!);
+  }
+
+  /// The `contact_number` value to save: the stored value unchanged when the
+  /// digits were not edited, otherwise `+63` followed by the 10 digits.
+  String _contactToSave() {
+    final digits = contactController.text.trim();
+    if (_isEditing && digits == _originalValues['contact']) {
+      return widget.clinic!.contactNumber.trim();
+    }
+    return composePhContactNumber(digits);
+  }
+
+  /// Hours validation for Save. Unchanged legacy hours on an edit are
+  /// accepted as they are; anything new must be a valid picked pair.
+  String? _validateHours() {
+    final hadSavedHours =
+        _originalValues['open'] != null || _legacyHours != null;
+    if (_isEditing && !_hoursChanged && hadSavedHours) return null;
+    return validateOperatingTimes(_openTime, _closeTime);
+  }
+
+  Future<void> _pickTime({required bool opening}) async {
+    final current = opening ? _openTime : _closeTime;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime:
+          current ??
+          (opening
+              ? const TimeOfDay(hour: 7, minute: 0)
+              : const TimeOfDay(hour: 17, minute: 0)),
+      helpText: opening ? 'Opening time' : 'Closing time',
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() {
+      if (opening) {
+        _openTime = picked;
+      } else {
+        _closeTime = picked;
+      }
+      _hoursError = null;
+    });
+  }
+
+  /// Close request from Cancel or the X button. Asks before discarding
+  /// unsaved changes; closes straight away when there are none.
+  Future<void> _requestClose() async {
+    if (isSaving) return;
+
+    if (_hasChanges) {
+      final discard = await SuperAdminNotice.confirm(
+        context,
+        title: 'Discard changes?',
+        message: 'Your changes to this center have not been saved.',
+        confirmLabel: 'Discard',
+        destructive: true,
+        icon: Icons.edit_off_rounded,
+      );
+      if (!discard || !mounted) return;
+    }
+
+    Navigator.of(context).pop(false);
   }
 
   @override
@@ -892,7 +975,6 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
     machinesController.dispose();
     slotsController.dispose();
     shiftsController.dispose();
-    hoursController.dispose();
     contactController.dispose();
     super.dispose();
   }
@@ -910,31 +992,31 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
     });
   }
 
-  /// Recomputes Available Slots as Machines × 2 shifts, in place, whenever
-  /// Machines is actually edited -- for a new center this is the only way
-  /// it's ever set; for an existing one, this is what lets a deliberate
-  /// Machines change update capacity, while leaving the field alone (at
-  /// whatever value initState loaded from the center's own stored data)
-  /// the rest of the time, so simply opening Edit can never reset it.
+  /// Recomputes Available Slots as Machines × Shifts, in place, whenever
+  /// Machines (or, on Add, Shifts) is actually edited. Opening Edit never
+  /// resets it: the field keeps the centre's stored value until Machines is
+  /// changed, exactly as before.
   ///
-  /// Mirrors _validateWholeNumberField's own notion of "valid" (a
-  /// non-negative whole number) exactly, so a value the validator would
-  /// reject (blank, "abc", "1.5", negative) is likewise never used to
-  /// recalculate or overwrite the displayed Available Slots -- the field
-  /// simply keeps showing the last valid calculation until Machines is
-  /// corrected.
+  /// On Add, once the Super Admin has typed their own Available Slots value
+  /// it is kept as entered and never overwritten by this.
+  ///
+  /// A Machines or Shifts value the validators would reject (blank, "abc",
+  /// "1.5", negative) is never used -- the field keeps its last value.
   void _recalculateAvailableSlots() {
-    final parsed = double.tryParse(machinesController.text.trim());
+    if (_slotsEditedByUser) return;
 
-    if (parsed == null || parsed < 0 || parsed != parsed.truncateToDouble()) {
-      return;
-    }
+    final suggested = suggestedAvailableSlots(
+      machinesController.text,
+      shiftsController.text,
+    );
+    if (suggested == null) return;
 
-    final machinesValue = parsed.round();
+    final next = suggested.toString();
+    if (slotsController.text == next) return;
 
-    setState(() {
-      slotsController.text = (machinesValue * 2).toString();
-    });
+    _updatingSlots = true;
+    setState(() => slotsController.text = next);
+    _updatingSlots = false;
   }
 
   /// Builds the single string sent to createCenter/updateCenter, exactly as
@@ -1052,6 +1134,151 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
         suffixIcon: readOnly
             ? Icon(Icons.lock_outline_rounded, size: 18, color: mutedText)
             : null,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFDCEAF1)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: primary, width: 1.6),
+        ),
+        filled: true,
+        fillColor: const Color(0xFFF6FBFF),
+      ),
+    );
+  }
+
+  /// Opening and closing time pickers, replacing the old free-text hours
+  /// field.
+  Widget _buildOperatingHoursPicker() {
+    final open = _openTime;
+    final close = _closeTime;
+    final isOvernight =
+        open != null && close != null && _minutesOf(close)! < _minutesOf(open)!;
+
+    Widget timeButton({
+      required String label,
+      required TimeOfDay? value,
+      required bool opening,
+    }) {
+      return OutlinedButton.icon(
+        onPressed: isSaving ? null : () => _pickTime(opening: opening),
+        icon: Icon(
+          opening ? Icons.wb_sunny_outlined : Icons.nightlight_outlined,
+          size: 18,
+          color: primary,
+        ),
+        label: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            value == null
+                ? '$label: select'
+                : '$label: ${formatOperatingTime(value)}',
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: value == null ? mutedText : darkBlue,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(52),
+          backgroundColor: const Color(0xFFF6FBFF),
+          side: const BorderSide(color: Color(0xFFDCEAF1)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      );
+    }
+
+    final opening = timeButton(label: 'Opens', value: open, opening: true);
+    final closing = timeButton(label: 'Closes', value: close, opening: false);
+
+    final legacy = _legacyHours;
+    final error = _hoursError;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Operating Hours',
+          style: TextStyle(
+            color: darkBlue,
+            fontWeight: FontWeight.w700,
+            fontSize: 13.5,
+          ),
+        ),
+        const SizedBox(height: 8),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 420) {
+              return Column(
+                children: [opening, const SizedBox(height: 10), closing],
+              );
+            }
+            return Row(
+              children: [
+                Expanded(child: opening),
+                const SizedBox(width: 12),
+                Expanded(child: closing),
+              ],
+            );
+          },
+        ),
+        if (legacy != null && !_hoursChanged)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Saved as "$legacy", which cannot be read as times. It is kept '
+              'as-is unless you pick new opening and closing times.',
+              style: const TextStyle(color: mutedText, fontSize: 12),
+            ),
+          ),
+        if (isOvernight)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              'Closes the next day (overnight hours).',
+              style: TextStyle(color: mutedText, fontSize: 12),
+            ),
+          ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              error,
+              style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Contact number with a fixed +63 prefix; only the 10 local digits are
+  /// typed.
+  Widget _buildContactNumberField() {
+    final legacy = _legacyContact;
+
+    return TextFormField(
+      controller: contactController,
+      keyboardType: TextInputType.phone,
+      inputFormatters: const [PhLocalDigitsInputFormatter()],
+      validator: (value) => validatePhLocalDigits(value ?? ''),
+      decoration: InputDecoration(
+        labelText: 'Contact Number',
+        hintText: '9171234567',
+        helperText: legacy != null
+            ? 'Saved as "$legacy" -- enter it as a 10-digit mobile number.'
+            : '10-digit mobile number without the leading 0.',
+        helperMaxLines: 2,
+        prefixIcon: const Icon(Icons.phone_rounded, color: primary),
+        prefixText: '$phCountryCode ',
+        prefixStyle: const TextStyle(
+          color: darkBlue,
+          fontWeight: FontWeight.w700,
+        ),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
@@ -1268,9 +1495,7 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
                                   ),
                                 ),
                                 IconButton(
-                                  onPressed: isSaving
-                                      ? null
-                                      : () => Navigator.pop(context),
+                                  onPressed: isSaving ? null : _requestClose,
                                   icon: const Icon(Icons.close_rounded),
                                   color: const Color(0xFF263B4A),
                                 ),
@@ -1525,12 +1750,24 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
                                         ),
                                         const SizedBox(width: 12),
                                         Expanded(
+                                          // Editable when adding a centre;
+                                          // read-only on Edit, as before.
                                           child: _buildTextField(
                                             controller: shiftsController,
                                             label: 'Shifts',
                                             icon: Icons.repeat_rounded,
-                                            readOnly: true,
-                                            helperText: 'System-defined.',
+                                            readOnly: clinic != null,
+                                            keyboardType:
+                                                TextInputType.number,
+                                            inputFormatters: [
+                                              FilteringTextInputFormatter
+                                                  .digitsOnly,
+                                            ],
+                                            extraValidator:
+                                                validateShiftsInput,
+                                            helperText: clinic != null
+                                                ? 'Saved shifts per day.'
+                                                : 'Shifts per day.',
                                           ),
                                         ),
                                         const SizedBox(width: 12),
@@ -1539,10 +1776,22 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
                                             controller: slotsController,
                                             label: 'Available Slots',
                                             icon: Icons.event_available_rounded,
-                                            readOnly: true,
-                                            helperText:
-                                                'Automatically calculated from '
-                                                'machines × 2 shifts.',
+                                            readOnly: clinic != null,
+                                            keyboardType:
+                                                TextInputType.number,
+                                            inputFormatters: [
+                                              FilteringTextInputFormatter
+                                                  .digitsOnly,
+                                            ],
+                                            extraValidator:
+                                                _validateWholeNumberField,
+                                            helperText: clinic != null
+                                                ? 'Recalculated from machines '
+                                                      '× shifts when Machines '
+                                                      'changes.'
+                                                : 'Starts as machines × '
+                                                      'shifts; you can change '
+                                                      'it.',
                                           ),
                                         ),
                                       ],
@@ -1629,31 +1878,11 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
 
                                     const SizedBox(height: 14),
 
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: _buildTextField(
-                                            controller: hoursController,
-                                            label: 'Operating Hours',
-                                            icon: Icons.schedule_rounded,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: _buildTextField(
-                                            controller: contactController,
-                                            label: 'Contact Number',
-                                            icon: Icons.phone_rounded,
-                                            keyboardType: TextInputType.phone,
-                                            inputFormatters: [
-                                              _MaxDigitsTextInputFormatter(11),
-                                            ],
-                                            extraValidator:
-                                                _validateContactNumberField,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
+                                    _buildOperatingHoursPicker(),
+
+                                    const SizedBox(height: 16),
+
+                                    _buildContactNumberField(),
                                   ],
                                 ),
                               ),
@@ -1672,14 +1901,16 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
                                 TextButton(
-                                  onPressed: isSaving
-                                      ? null
-                                      : () => Navigator.pop(context),
+                                  onPressed: isSaving ? null : _requestClose,
                                   child: const Text('Cancel'),
                                 ),
                                 const SizedBox(width: 10),
                                 FilledButton.icon(
-                                  onPressed: isSaving
+                                  // Editing: stays disabled until a value
+                                  // actually differs from the saved record.
+                                  onPressed:
+                                      isSaving ||
+                                          (clinic != null && !_hasChanges)
                                       ? null
                                       : () async {
                                           // Explicit re-entrancy guard: the
@@ -1693,8 +1924,35 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
                                           // that window.
                                           if (isSaving) return;
 
-                                          if (!formKey.currentState!
-                                              .validate()) {
+                                          final formValid = formKey
+                                              .currentState!
+                                              .validate();
+
+                                          // Hours and contact are checked
+                                          // again here, not only by the
+                                          // fields, so nothing invalid can
+                                          // reach the database.
+                                          final hoursError = _validateHours();
+                                          setState(
+                                            () => _hoursError = hoursError,
+                                          );
+
+                                          if (!formValid ||
+                                              hoursError != null) {
+                                            return;
+                                          }
+
+                                          final contactError =
+                                              validatePhLocalDigits(
+                                                contactController.text,
+                                              );
+                                          if (contactError != null) {
+                                            SuperAdminNotice.error(
+                                              context,
+                                              contactError,
+                                              title:
+                                                  'Check this before saving',
+                                            );
                                             return;
                                           }
 
@@ -1738,13 +1996,12 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
                                                   machinesController.text
                                                       .trim(),
                                                 ).round(),
-                                                shifts: 2,
-                                                operatingHours: hoursController
-                                                    .text
-                                                    .trim(),
-                                                contactNumber: contactController
-                                                    .text
-                                                    .trim(),
+                                                shifts: int.parse(
+                                                  shiftsController.text.trim(),
+                                                ),
+                                                operatingHours: _hoursToSave(),
+                                                contactNumber:
+                                                    _contactToSave(),
                                               );
                                             } else {
                                               await _service.updateCenter(
@@ -1779,13 +2036,12 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
                                                   machinesController.text
                                                       .trim(),
                                                 ).round(),
-                                                shifts: 2,
-                                                operatingHours: hoursController
-                                                    .text
-                                                    .trim(),
-                                                contactNumber: contactController
-                                                    .text
-                                                    .trim(),
+                                                shifts: int.parse(
+                                                  shiftsController.text.trim(),
+                                                ),
+                                                operatingHours: _hoursToSave(),
+                                                contactNumber:
+                                                    _contactToSave(),
                                               );
                                             }
 
@@ -1831,8 +2087,8 @@ class _ClinicFormDialogState extends State<_ClinicFormDialog> {
                                               ? 'Saving...'
                                               : 'Save Center')
                                         : (isSaving
-                                              ? 'Updating...'
-                                              : 'Update Center'),
+                                              ? 'Saving...'
+                                              : 'Save Changes'),
                                   ),
                                   style: FilledButton.styleFrom(
                                     backgroundColor: primary,
@@ -2039,8 +2295,8 @@ class _CentersPanel extends StatefulWidget {
   final ValueChanged<String> onSearchChanged;
   final VoidCallback onRefresh;
 
-  final String? statusFilter;
-  final ValueChanged<String?> onStatusChanged;
+  final _CenterStatusFilter? statusFilter;
+  final ValueChanged<_CenterStatusFilter?> onStatusChanged;
 
   final _CenterSortOption sortOption;
   final ValueChanged<_CenterSortOption> onSortChanged;
@@ -2052,10 +2308,10 @@ class _CentersPanel extends StatefulWidget {
   final List<CenterModel> clinics;
   final bool hasAnyCenters;
 
-  final String Function(DateTime date) formatDate;
   final VoidCallback onAdd;
   final void Function(CenterModel clinic) onEdit;
-  final void Function(CenterModel clinic) onDelete;
+  final void Function(CenterModel clinic) onView;
+  final void Function(CenterModel clinic, bool activate) onSetActive;
   final _CapacityEstimate Function(CenterModel clinic) capacityEstimateFor;
 
   const _CentersPanel({
@@ -2071,10 +2327,10 @@ class _CentersPanel extends StatefulWidget {
     required this.isLoading,
     required this.clinics,
     required this.hasAnyCenters,
-    required this.formatDate,
     required this.onAdd,
     required this.onEdit,
-    required this.onDelete,
+    required this.onView,
+    required this.onSetActive,
     required this.capacityEstimateFor,
   });
 
@@ -2286,18 +2542,20 @@ class _CentersPanelState extends State<_CentersPanel> {
             runSpacing: 12,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              _filterDropdown<String?>(
+              _filterDropdown<_CenterStatusFilter?>(
                 keyPrefix: 'status',
                 icon: Icons.tune_rounded,
                 value: widget.statusFilter,
-                items: const [
-                  DropdownMenuItem<String?>(
+                items: [
+                  const DropdownMenuItem<_CenterStatusFilter?>(
                     value: null,
                     child: Text('All Statuses'),
                   ),
-                  DropdownMenuItem<String?>(value: 'open', child: Text('Open')),
-                  DropdownMenuItem<String?>(value: 'busy', child: Text('Busy')),
-                  DropdownMenuItem<String?>(value: 'full', child: Text('Full')),
+                  for (final option in _CenterStatusFilter.values)
+                    DropdownMenuItem<_CenterStatusFilter?>(
+                      value: option,
+                      child: Text(option.label),
+                    ),
                 ],
                 onChanged: widget.onStatusChanged,
               ),
@@ -2333,7 +2591,8 @@ class _CentersPanelState extends State<_CentersPanel> {
             accentSoft: AppTheme.accentTealSoft,
             title: 'Centers List',
             subtitle:
-                'Review center details quickly and use actions to update or remove records.',
+                'Select a center to see its details. Use the actions to edit, '
+                'deactivate or reactivate it.',
             trailing: widget.isLoading || widget.clinics.isEmpty
                 ? null
                 : Text(
@@ -2364,9 +2623,9 @@ class _CentersPanelState extends State<_CentersPanel> {
                   )
                 : _CentersTable(
                     clinics: widget.clinics,
-                    formatDate: widget.formatDate,
                     onEdit: widget.onEdit,
-                    onDelete: widget.onDelete,
+                    onView: widget.onView,
+                    onSetActive: widget.onSetActive,
                     capacityEstimateFor: widget.capacityEstimateFor,
                   ),
           ),
@@ -2380,16 +2639,16 @@ class _CentersPanelState extends State<_CentersPanel> {
 /// before -- only the spacing, type scale and pill treatment changed.
 class _CentersTable extends StatelessWidget {
   final List<CenterModel> clinics;
-  final String Function(DateTime date) formatDate;
   final void Function(CenterModel clinic) onEdit;
-  final void Function(CenterModel clinic) onDelete;
+  final void Function(CenterModel clinic) onView;
+  final void Function(CenterModel clinic, bool activate) onSetActive;
   final _CapacityEstimate Function(CenterModel clinic) capacityEstimateFor;
 
   const _CentersTable({
     required this.clinics,
-    required this.formatDate,
     required this.onEdit,
-    required this.onDelete,
+    required this.onView,
+    required this.onSetActive,
     required this.capacityEstimateFor,
   });
 
@@ -2418,6 +2677,9 @@ class _CentersTable extends StatelessWidget {
             child: ConstrainedBox(
               constraints: BoxConstraints(minWidth: constraints.maxWidth),
               child: DataTable(
+                // Rows open the centre's details when clicked; no selection
+                // checkboxes.
+                showCheckboxColumn: false,
                 headingRowColor: WidgetStateProperty.all(AppTheme.surfaceTint),
                 headingRowHeight: 44,
                 headingTextStyle: _headingStyle,
@@ -2435,16 +2697,8 @@ class _CentersTable extends StatelessWidget {
                   const DataColumn(label: Text('CITY')),
                   const DataColumn(label: Text('SLOTS')),
                   const DataColumn(label: Text('MACHINES')),
-                  const DataColumn(label: Text('TOTAL CAPACITY')),
-                  DataColumn(
-                    label: Tooltip(
-                      message:
-                          'Patients accepted/reserved at this center '
-                          '(status: no_sched or active), counted live '
-                          'from the patients table.',
-                      child: Text('RESERVED'),
-                    ),
-                  ),
+                  // Total capacity, reserved count and created date are
+                  // shown in the centre details modal instead.
                   DataColumn(
                     label: Tooltip(
                       message:
@@ -2454,14 +2708,28 @@ class _CentersTable extends StatelessWidget {
                       child: Text('AVAILABLE (EST.)'),
                     ),
                   ),
-                  const DataColumn(label: Text('STATUS')),
-                  const DataColumn(label: Text('CREATED')),
+                  const DataColumn(
+                    label: Tooltip(
+                      message:
+                          'Open or Closed right now, from the operating hours.',
+                      child: Text('AVAILABILITY'),
+                    ),
+                  ),
+                  const DataColumn(
+                    label: Tooltip(
+                      message:
+                          'Active or Inactive center record. Inactive centers '
+                          'keep their history but are not used operationally.',
+                      child: Text('RECORD'),
+                    ),
+                  ),
                   const DataColumn(label: Text('ACTIONS')),
                 ],
                 rows: clinics.map((clinic) {
                   final estimate = capacityEstimateFor(clinic);
 
                   return DataRow(
+                    onSelectChanged: (_) => onView(clinic),
                     cells: [
                       DataCell(
                         SizedBox(
@@ -2539,25 +2807,6 @@ class _CentersTable extends StatelessWidget {
                         ),
                       ),
                       DataCell(
-                        _MiniPill(
-                          text: estimate.totalCapacity.toString(),
-                          icon: Icons.dashboard_customize_rounded,
-                        ),
-                      ),
-                      DataCell(
-                        estimate.reserved == null
-                            ? const _MiniPill(
-                                text: '—',
-                                icon: Icons.groups_rounded,
-                                background: Color(0xFFF1F3F5),
-                                foreground: AppTheme.textMuted,
-                              )
-                            : _MiniPill(
-                                text: estimate.reserved.toString(),
-                                icon: Icons.groups_rounded,
-                              ),
-                      ),
-                      DataCell(
                         estimate.available == null
                             ? const _MiniPill(
                                 text: '—',
@@ -2579,22 +2828,23 @@ class _CentersTable extends StatelessWidget {
                               ),
                       ),
                       DataCell(
-                        // Same derivation the Status filter uses, so the
-                        // pill and the filter can never disagree.
-                        _StatusPill(status: _centerStatusView(clinic)),
+                        CenterAvailabilityBadge(
+                          availability: clinic.availability(),
+                        ),
                       ),
                       DataCell(
-                        Text(
-                          formatDate(clinic.createdAt),
-                          style: const TextStyle(
-                            color: AppTheme.textMuted,
-                            fontSize: 12.5,
-                          ),
-                        ),
+                        CenterRecordStatusBadge(status: clinic.recordStatus),
                       ),
                       DataCell(
                         Row(
                           children: [
+                            _ActionIconButton(
+                              icon: Icons.visibility_outlined,
+                              color: AppTheme.accentTeal,
+                              tooltip: 'View details',
+                              onTap: () => onView(clinic),
+                            ),
+                            const SizedBox(width: 8),
                             _ActionIconButton(
                               icon: Icons.edit_rounded,
                               color: AppTheme.blue1,
@@ -2602,12 +2852,20 @@ class _CentersTable extends StatelessWidget {
                               onTap: () => onEdit(clinic),
                             ),
                             const SizedBox(width: 8),
-                            _ActionIconButton(
-                              icon: Icons.delete_outline_rounded,
-                              color: AppTheme.danger,
-                              tooltip: 'Delete center',
-                              onTap: () => onDelete(clinic),
-                            ),
+                            if (clinic.isActive)
+                              _ActionIconButton(
+                                icon: Icons.block_rounded,
+                                color: AppTheme.danger,
+                                tooltip: 'Deactivate center',
+                                onTap: () => onSetActive(clinic, false),
+                              )
+                            else
+                              _ActionIconButton(
+                                icon: Icons.restart_alt_rounded,
+                                color: AppTheme.accentGreen,
+                                tooltip: 'Reactivate center',
+                                onTap: () => onSetActive(clinic, true),
+                              ),
                           ],
                         ),
                       ),
@@ -2660,76 +2918,10 @@ class _ActionIconButton extends StatelessWidget {
   }
 }
 
-/// Renders the single user-facing status from [_centerStatusView]. Same pill
-/// shape, sizing, icon treatment and palette tokens as before -- it just
-/// carries all four states instead of only Open/Closed, so it can show the
-/// same value the Status filter matches on.
-class _StatusPill extends StatelessWidget {
-  final _CenterStatusView status;
-
-  const _StatusPill({required this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    // Open keeps its existing green and Closed its existing red-toned
-    // treatment; Busy reuses the orange pair already used elsewhere on this
-    // page, and a soft-closed center uses the same muted grey the table's
-    // "unknown" pills use.
-    final (Color foreground, Color background, IconData icon) =
-        switch (status) {
-          _CenterStatusView.open => (
-            AppTheme.accentGreen,
-            AppTheme.accentGreenSoft,
-            Icons.check_circle_rounded,
-          ),
-          _CenterStatusView.busy => (
-            AppTheme.accentOrange,
-            AppTheme.accentOrangeSoft,
-            Icons.hourglass_bottom_rounded,
-          ),
-          _CenterStatusView.full => (
-            AppTheme.danger,
-            AppTheme.dangerSoft,
-            Icons.do_not_disturb_on_rounded,
-          ),
-          _CenterStatusView.closed => (
-            AppTheme.textMuted,
-            const Color(0xFFF1F3F5),
-            Icons.cancel_rounded,
-          ),
-        };
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: foreground.withValues(alpha: 0.20)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 13, color: foreground),
-          const SizedBox(width: 5),
-          Text(
-            status.label,
-            style: TextStyle(
-              color: foreground,
-              fontWeight: FontWeight.w600,
-              height: 1.2,
-              fontSize: 11,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// One clinic's Super Admin capacity ESTIMATE (see DashboardService
 /// .getReservedPatientCount/.calculateAvailableSlotsEstimate) --
-/// [totalCapacity] is always known (machines x 2, pure arithmetic on
-/// already-loaded data); [reserved]/[available] are null when that
+/// [totalCapacity] is always known (machines × saved shifts, pure
+/// arithmetic on already-loaded data); [reserved]/[available] are null when that
 /// clinic's patient-count query failed, so the UI can show "--" instead of
 /// a misleadingly confident number.
 class _CapacityEstimate {
