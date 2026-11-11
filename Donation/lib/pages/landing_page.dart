@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../services/public_donation_service.dart';
 import '../theme/brand.dart';
 import '../widgets/decor.dart';
 import '../widgets/motion.dart';
@@ -195,46 +196,27 @@ class _LandingPageState extends State<LandingPage>
     );
   }
 
-  Stream<List<Map<String, String>>> get _verifiedDonationsStream {
-    return Supabase.instance.client
-        .from('donations')
-        .stream(primaryKey: ['id'])
-        .eq('status', 'verified')
-        .order('created_at', ascending: false)
-        .map((data) {
-          return data.map<Map<String, String>>((item) {
-            return {
-              'name': item['name'] ?? 'Anonymous',
-              'date': item['created_at'] != null
-                  ? DateTime.parse(
-                      item['created_at'],
-                    ).toLocal().toString().split(' ')[0]
-                  : '',
-              'amount': '₱ ${item['amount'] ?? 0}',
-              'status': 'Verified',
-            };
-          }).toList();
-        });
-  }
+  /// The five most recent verified donations: display name, date and
+  /// amount only. Read through public_donation_feed() because visitors may
+  /// not read the donations table itself (it holds donor emails). Created
+  /// once, so a rebuild does not start a second poller.
+  late final Stream<List<Map<String, String>>> _verifiedDonationsStream =
+      _pausedWhenUnused(PublicDonationService().recentDonations(limit: 5));
 
-  /// The same verified records, reduced to the two totals shown in the
-  /// statistics band. Nothing is estimated or projected - it is a count and
-  /// a sum of rows that exist.
-  Stream<({int count, double total})> get _verifiedTotalsStream {
-    return Supabase.instance.client
-        .from('donations')
-        .stream(primaryKey: ['id'])
-        .eq('status', 'verified')
-        .map((data) {
-          double total = 0;
+  /// The verified totals shown in the statistics band. Nothing is
+  /// estimated or projected - it is a count and a sum of rows that exist.
+  late final Stream<({int count, double total})> _verifiedTotalsStream =
+      _pausedWhenUnused(PublicDonationService().totals());
 
-          for (final item in data) {
-            total +=
-                double.tryParse(item['amount']?.toString() ?? '0') ?? 0;
-          }
-
-          return (count: data.length, total: total);
-        });
+  /// Shares one poller between rebuilds and stops polling while nothing on
+  /// screen listens (e.g. after leaving the page).
+  static Stream<T> _pausedWhenUnused<T>(Stream<T> source) {
+    return source.asBroadcastStream(
+      onCancel: (subscription) => subscription.pause(),
+      onListen: (subscription) {
+        if (subscription.isPaused) subscription.resume();
+      },
+    );
   }
 
   bool _isMobile(double width) => Brand.isMobile(width);
@@ -1194,7 +1176,7 @@ class _LandingPageState extends State<LandingPage>
                         title: 'Enter your details',
                         text:
                             'Set the amount you would like to give and pick '
-                            'your payment channel — GCash or bank transfer.',
+                            'pay securely with GCash.',
                         delay: 90,
                       ),
                       _stepCard(

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../services/auth_feedback.dart';
+import '../services/donation_checkout_service.dart';
 import '../theme/brand.dart';
+import '../widgets/unfinished_donation_dialog.dart';
 
 import 'landing_page.dart';
 import 'signup_page.dart';
@@ -109,6 +112,74 @@ class _LoginPageState extends State<LoginPage>
     super.dispose();
   }
 
+  void _showWelcome() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Welcome back! You are now logged in.'),
+        backgroundColor: primaryColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+    );
+  }
+
+  /// Returns true when it navigated (the donor chose to continue).
+  Future<bool> _offerUnfinishedDonation(String userId) async {
+    final service = DonationCheckoutService();
+    final pending = await service.loadPending();
+    if (pending == null ||
+        !pendingBelongsTo(pending, anonymousFlow: false, userId: userId)) {
+      return false;
+    }
+
+    DonationCheckout checkout;
+    try {
+      checkout = await service.fetchCheckout(pending.id, pending.secret);
+    } catch (_) {
+      await service.clearPending();
+      return false;
+    }
+    if (!checkout.isOpen) {
+      await service.clearPending();
+      return false;
+    }
+    if (!mounted) return false;
+
+    setState(() => _isLoading = false);
+    final choice = await showUnfinishedDonationDialog(context, checkout);
+    if (!mounted) return false;
+
+    switch (choice) {
+      case UnfinishedDonationChoice.continueDonation:
+        _showWelcome();
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const DonationPage(continueUnfinished: true)),
+          (route) => false,
+        );
+        return true;
+      case UnfinishedDonationChoice.startOver:
+        try {
+          await service.cancel(checkout.donationId, pending.secret);
+        } catch (_) {
+          // Already closed on the server.
+        }
+        await service.clearPending();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Donation ${checkout.reference} was cancelled. You can start a new donation.'),
+              backgroundColor: primaryColor,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+          );
+        }
+        return false;
+      case null:
+        return false; // decide later: it stays available on the donation page
+    }
+  }
+
   Future<void> _login() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
@@ -124,6 +195,11 @@ class _LoginPageState extends State<LoginPage>
         _emailError = email.isEmpty ? 'Email is required' : null;
         _passwordError = password.isEmpty ? 'Password is required' : null;
       });
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      setState(() => _emailError = 'Please enter a valid email address.');
       return;
     }
 
@@ -192,6 +268,12 @@ class _LoginPageState extends State<LoginPage>
           ),
         );
       } else {
+  // An unfinished donation this account started in this browser: ask
+  // whether to continue it or start over before going anywhere else.
+  if (await _offerUnfinishedDonation(user.id)) return;
+  if (!mounted) return;
+
+  _showWelcome();
   if (widget.fromDonation) {
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(
@@ -211,7 +293,7 @@ class _LoginPageState extends State<LoginPage>
     } on AuthException catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = e.message;
+        _errorMessage = friendlyAuthError(e.message);
       });
     } catch (_) {
       if (!mounted) return;

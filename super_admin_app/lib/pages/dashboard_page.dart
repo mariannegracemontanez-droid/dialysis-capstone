@@ -9,6 +9,7 @@ import '../services/dashboard_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/operating_hours.dart';
 import '../widgets/center_status_badges.dart';
+import '../widgets/donation_overview_section.dart';
 import '../widgets/super_admin_notice.dart';
 import 'admin_accounts_page.dart';
 import 'center_page.dart';
@@ -85,6 +86,10 @@ class _DashboardPageState extends State<DashboardPage>
   static const Color primaryColor = AppTheme.blue1;
   static const Color bgColor = AppTheme.canvas;
 
+  /// Bumped on every dashboard load and live donation change; used as the
+  /// Donation Overview's key so it reloads its figures.
+  int _overviewRevision = 0;
+
   @override
   void initState() {
     super.initState();
@@ -128,6 +133,9 @@ class _DashboardPageState extends State<DashboardPage>
 
       setState(() {
         _stats['donations'] = totalDonations;
+        // Rebuilds the Donation Overview so its KPIs and trends follow the
+        // same live changes.
+        _overviewRevision++;
       });
     }, onError: _onRealtimeError);
 
@@ -214,6 +222,7 @@ class _DashboardPageState extends State<DashboardPage>
         _stats['donations'] = verifiedDonationTotal;
         _centers = centers;
         _donationTotals = [];
+        _overviewRevision++;
       });
     } catch (error) {
       if (mounted) {
@@ -588,6 +597,12 @@ class _DashboardPageState extends State<DashboardPage>
 
               const SizedBox(height: AppTheme.gapLg),
 
+              DonationOverviewSection(
+                key: ValueKey('donation-overview-$_overviewRevision'),
+              ),
+
+              const SizedBox(height: AppTheme.gapLg),
+
               _buildOperationsBanner(),
 
               const SizedBox(height: AppTheme.gapLg),
@@ -777,7 +792,7 @@ class _DashboardPageState extends State<DashboardPage>
         label: 'Donation Fund',
         value: _formatPeso(_stats['donations'] ?? 0),
         icon: Icons.volunteer_activism_rounded,
-        note: 'Verified donations only',
+        note: 'Collected funds from verified donations',
       ),
     ];
 

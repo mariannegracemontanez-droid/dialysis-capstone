@@ -5,8 +5,8 @@ import '../theme/brand.dart';
 /// The donation journey, shown as three steps.
 ///
 /// These describe the flow the site actually performs: pick how you want to
-/// give, fill in the donation details, and the donation is written to
-/// CureNurture's records. It is a progress *indicator* only - it reports
+/// give, fill in the donation details, then review the recipients and pay
+/// with GCash. It is a progress *indicator* only - it reports
 /// where the visitor is, and changes nothing about how donating works.
 class DonationSteps extends StatelessWidget {
   const DonationSteps({
@@ -33,8 +33,8 @@ class DonationSteps extends StatelessWidget {
       icon: Icons.edit_note_rounded,
     ),
     (
-      title: 'Donation recorded',
-      subtitle: 'Saved to CureNurture’s verified records',
+      title: 'Review & pay',
+      subtitle: 'Confirm recipients, then pay with GCash',
       icon: Icons.verified_rounded,
     ),
   ];

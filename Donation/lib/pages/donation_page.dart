@@ -1,13 +1,15 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../config/payment_config.dart';
+import '../services/donation_checkout_service.dart';
 import '../theme/brand.dart';
 import '../widgets/decor.dart';
 import '../widgets/donation_steps.dart';
 import '../widgets/motion.dart';
 import '../widgets/ui.dart';
+import '../widgets/unfinished_donation_dialog.dart';
+import 'checkout_page.dart';
 import 'landing_page.dart';
 import 'login_page.dart';
 
@@ -29,17 +31,27 @@ double? parseDonationAmount(String input) {
 /// Step two of the donation journey: amount, destination and payment
 /// channel.
 ///
-/// Everything that decides what a donation *is* - validation, the three
-/// allocation methods, the equal-split arithmetic and the write to the
-/// donation records - is unchanged from the original page and marked below.
-/// This file only changes how that form looks and reads.
+/// This page only COLLECTS the donor's choices and shows a preview. The
+/// donation itself -- amount validation, centre eligibility, the random
+/// pick, the equal split and the database write -- is made server-side by
+/// `create_donation_checkout()` (see supabase_migration_donation_sandbox.sql),
+/// after which the donor continues to [CheckoutPage].
 class DonationPage extends StatefulWidget {
   const DonationPage({
     super.key,
     this.isAnonymous = false,
+    this.service,
+    this.continueUnfinished = false,
   });
 
   final bool isAnonymous;
+
+  /// Set when the donor already chose "Continue donation" (after logging
+  /// in): the unfinished donation is reopened without asking again.
+  final bool continueUnfinished;
+
+  /// Injectable for tests; defaults to the live Supabase client.
+  final DonationCheckoutService? service;
 
   @override
   State<DonationPage> createState() => _DonationPageState();
@@ -52,13 +64,28 @@ class _DonationPageState extends State<DonationPage>
   final _emailController = TextEditingController();
   final _customAmountController = TextEditingController();
 
-  String? _selectedPaymentChannel;
+  // GCash is the only channel while Bank Transfer is hidden, so it starts
+  // selected.
+  String? _selectedPaymentChannel = kBankTransferEnabled ? null : kGcashMethod;
   String? _selectedAllocationMethod;
   String? _selectedCenterId;
   bool _isLoading = false;
   bool _isLoadingCenters = false;
   List<Map<String, dynamic>> _dialysisCenters = [];
   String? _errorMessage;
+
+  late final DonationCheckoutService _service =
+      widget.service ?? DonationCheckoutService();
+  DonationPaymentSettings _settings = DonationPaymentSettings.fallback;
+
+  /// The current submit attempt; reused when the donor retries the same
+  /// donation so the server returns it instead of creating a duplicate.
+  CheckoutRequest? _pendingRequest;
+
+  /// An unfinished checkout from earlier in this browser (e.g. before a
+  /// refresh), offered for resuming.
+  DonationCheckout? _resumable;
+  String? _resumableSecret;
 
   late final AnimationController _animationController;
   late final Animation<double> _fadeAnimation;
@@ -111,6 +138,8 @@ class _DonationPageState extends State<DonationPage>
     _animationController.forward();
 
     _loadDialysisCenters();
+    _loadSettings();
+    _loadResumableCheckout(prompt: true);
 
     _customAmountController.addListener(_onAmountChanged);
   }
@@ -119,27 +148,170 @@ class _DonationPageState extends State<DonationPage>
     setState(() {});
   }
 
+  Future<void> _loadSettings() async {
+    try {
+      final settings = await _service.fetchSettings();
+      if (!mounted) return;
+      setState(() => _settings = settings);
+    } catch (_) {
+      // Keep the defaults; the server re-checks everything on submit.
+    }
+  }
+
+  /// Offers to resume a checkout left open in this browser (for example
+  /// after a refresh). Its recipients come back from the server unchanged.
+  ///
+  /// While that checkout is open, its original request is kept (also across a
+  /// refresh), so continuing again with the same details returns the SAME
+  /// donation -- the random centre and the equal split are never redone. Once
+  /// the donation is finished or cancelled, the request is dropped.
+  ///
+  /// Only a donation that belongs to this flow is offered: the anonymous flow
+  /// gets anonymous donations, a signed-in donor gets only their own. When
+  /// [prompt] is set (the page was just opened), the donor is asked once
+  /// whether to continue it or start over.
+  Future<void> _loadResumableCheckout({bool prompt = false}) async {
+    final pending = await _service.loadPending();
+    if (pending == null) {
+      if (mounted && !_isLoading) setState(() => _pendingRequest = null);
+      return;
+    }
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (!pendingBelongsTo(pending, anonymousFlow: widget.isAnonymous, userId: userId)) {
+      // Started by someone else in this browser (or by the other flow):
+      // never shown here, and left untouched for its owner.
+      return;
+    }
+
+    DonationCheckout checkout;
+    try {
+      checkout = await _service.fetchCheckout(pending.id, pending.secret);
+    } catch (_) {
+      await _service.clearPending();
+      if (mounted) setState(() => _pendingRequest = null);
+      return;
+    }
+    if (!mounted) return;
+    if (!checkout.isOpen) {
+      await _service.clearPending();
+      if (mounted) setState(() => _pendingRequest = null);
+      return;
+    }
+    setState(() {
+      _resumable = checkout;
+      _resumableSecret = pending.secret;
+      _pendingRequest = pending.request ?? _pendingRequest;
+    });
+
+    if (!prompt || _resumePrompted) return;
+    _resumePrompted = true;
+
+    if (widget.continueUnfinished) {
+      _restoreForm(checkout);
+      await _openCheckout(checkout, pending.secret);
+      return;
+    }
+
+    final choice = await showUnfinishedDonationDialog(context, checkout);
+    if (!mounted) return;
+    switch (choice) {
+      case UnfinishedDonationChoice.continueDonation:
+        _restoreForm(checkout);
+        await _openCheckout(checkout, pending.secret);
+      case UnfinishedDonationChoice.startOver:
+        await _startOver(checkout, pending.secret);
+      case null:
+        break; // left as is; the "unfinished donation" card stays available
+    }
+  }
+
+  bool _resumePrompted = false;
+
+  /// Puts the unfinished donation's details back into the form: amount,
+  /// allocation option and (for a specific centre) the centre. The recipients
+  /// and amounts themselves come from the server and are shown on review.
+  void _restoreForm(DonationCheckout c) {
+    setState(() {
+      _customAmountController.text = centavosToAmountInput(c.amountCentavos);
+      _selectedAllocationMethod = switch (c.mode) {
+        DonationMode.specificCenter => 'Specific Dialysis Center',
+        DonationMode.randomCenter => 'Randomly Assign a Dialysis Center',
+        DonationMode.allCenters => 'Distribute Donation Equally Among All Centers',
+        null => _selectedAllocationMethod,
+      };
+      _selectedCenterId = c.mode == DonationMode.specificCenter && c.allocations.isNotEmpty
+          ? c.allocations.first.clinicId
+          : null;
+      _errorMessage = null;
+    });
+  }
+
+  /// Opens the review & pay step for an existing (unfinished) donation.
+  Future<void> _openCheckout(DonationCheckout checkout, String secret) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CheckoutPage(
+          checkout: checkout,
+          clientSecret: secret,
+          service: _service,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _resumable = null);
+    _loadResumableCheckout();
+  }
+
+  /// Discards an unfinished donation after the donor confirmed it: cancels it
+  /// on the server (nothing was charged) and resets the form.
+  Future<void> _startOver(DonationCheckout checkout, String secret) async {
+    try {
+      await _service.cancel(checkout.donationId, secret);
+    } catch (_) {
+      // Already closed on the server; just forget it here.
+    }
+    await _service.clearPending();
+    if (!mounted) return;
+    setState(() {
+      _resumable = null;
+      _resumableSecret = null;
+      _pendingRequest = null;
+      _customAmountController.clear();
+      _selectedAllocationMethod = null;
+      _selectedCenterId = null;
+      _errorMessage = null;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Donation ${checkout.reference} was cancelled. You can start a new donation.'),
+        backgroundColor: Brand.brand,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+    );
+  }
+
+  /// The same eligible-centre list the server allocates from
+  /// (`donation_eligible_centers()`, i.e. every centre not marked closed),
+  /// in the server's allocation order.
   Future<void> _loadDialysisCenters() async {
     setState(() {
       _isLoadingCenters = true;
     });
 
     try {
-      final response = await Supabase.instance.client
-          .from('clinics')
-          .select('id, name, address, city, status')
-          .or('status.is.null,status.neq.closed')
-          .order('name', ascending: true);
+      final centers = await _service.fetchEligibleCenters();
 
       if (!mounted) return;
 
       setState(() {
-        _dialysisCenters = List<Map<String, dynamic>>.from(response);
+        _dialysisCenters = sortCentersForAllocation(centers);
         _isLoadingCenters = false;
 
-        if (_selectedAllocationMethod == 'Randomly Assign a Dialysis Center' &&
-            _selectedCenterId == null) {
-          _selectedCenterId = _pickRandomCenterId();
+        // A previously chosen centre that is no longer eligible is cleared.
+        if (_selectedCenterId != null &&
+            !_dialysisCenters.any((c) => c['id']?.toString() == _selectedCenterId)) {
+          _selectedCenterId = null;
         }
       });
     } catch (e) {
@@ -171,43 +343,15 @@ class _DonationPageState extends State<DonationPage>
   void _selectAllocationMethod(String method) {
     setState(() {
       _selectedAllocationMethod = method;
-      _selectedCenterId = (method == 'Randomly Assign a Dialysis Center' && !_isLoadingCenters)
-          ? _pickRandomCenterId()
-          : null;
+      // The random centre is picked by the server when the donation is
+      // created -- never here -- so only a specific pick is kept locally.
+      _selectedCenterId = null;
     });
   }
 
-  String? _pickRandomCenterId() {
-    if (_dialysisCenters.isEmpty) return null;
-    return _dialysisCenters[Random().nextInt(_dialysisCenters.length)]['id']
-        ?.toString();
-  }
-
-  String? _centerNameById(String? centerId) {
-    if (centerId == null) return null;
-    for (final center in _dialysisCenters) {
-      if (center['id']?.toString() == centerId) {
-        return center['name']?.toString();
-      }
-    }
-    return null;
-  }
-
-  // Splits [amount] into [centerCount] shares using integer centavos so the
-  // shares always sum back to exactly [amount], even when it doesn't divide evenly.
-  List<double> _computeEqualShares(double amount, int centerCount) {
-    if (centerCount <= 0) return [];
-
-    final totalCentavos = (amount * 100).round();
-    final baseCentavos = totalCentavos ~/ centerCount;
-    final remainder = totalCentavos % centerCount;
-
-    return List<double>.generate(centerCount, (i) {
-      final centavos = baseCentavos + (i < remainder ? 1 : 0);
-      return centavos / 100;
-    });
-  }
-
+  /// Preview of the Donate-to-All split. The server recomputes it with the
+  /// same rule when the donation is created, and the checkout page shows
+  /// the server's figures before payment.
   Widget _buildEqualDistributionSummary() {
     final textStyle = TextStyle(
       color: _darkTeal,
@@ -226,27 +370,56 @@ class _DonationPageState extends State<DonationPage>
       );
     }
 
-    final amount = _parseAmount();
-    if (amount == null || amount <= 0) {
+    final centerCount = _dialysisCenters.length;
+    final centavos = _parseCentavos();
+    if (centavos == null || centavos <= 0) {
       return Text(
-        'Enter a donation amount to see the equal distribution breakdown.',
+        'Your donation will be split equally among $centerCount eligible '
+        '${centerCount == 1 ? 'center' : 'centers'}. Enter an amount to see '
+        'each center\'s share.',
         style: textStyle,
       );
     }
 
-    final centerCount = _dialysisCenters.length;
-    final shares = _computeEqualShares(amount, centerCount);
-    final minShare = shares.reduce((a, b) => a < b ? a : b);
-    final maxShare = shares.reduce((a, b) => a > b ? a : b);
+    final shares = splitCentavosEqually(centavos, centerCount);
+    if (shares.isEmpty) {
+      return Text(
+        'The amount is too small to divide among $centerCount centers.',
+        style: textStyle,
+      );
+    }
 
-    final perCenterText = minShare == maxShare
-        ? '₱${minShare.toStringAsFixed(2)} per center'
-        : '₱${minShare.toStringAsFixed(2)}–₱${maxShare.toStringAsFixed(2)} per center';
-
-    return Text(
-      '$perCenterText × $centerCount ${centerCount == 1 ? 'center' : 'centers'} = '
-      '₱${amount.toStringAsFixed(2)} total',
-      style: textStyle,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${formatCentavos(centavos)} split equally among $centerCount eligible '
+          '${centerCount == 1 ? 'center' : 'centers'}:',
+          style: textStyle,
+        ),
+        const SizedBox(height: 8),
+        for (int i = 0; i < centerCount; i++)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            decoration: BoxDecoration(
+              border: i == 0
+                  ? null
+                  : Border(top: BorderSide(color: _darkTeal.withValues(alpha: 0.10))),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _dialysisCenters[i]['name']?.toString() ?? 'Unnamed Center',
+                    style: Brand.body(13.5, color: Brand.textStrong),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(formatCentavos(shares[i]), style: textStyle.copyWith(fontSize: 13.5)),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
@@ -256,12 +429,7 @@ class _DonationPageState extends State<DonationPage>
     });
   }
 
-  bool _isValidEmail(String email) {
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-    return emailRegex.hasMatch(email);
-  }
-
-  double? _parseAmount() => parseDonationAmount(_customAmountController.text);
+  int? _parseCentavos() => parseAmountToCentavos(_customAmountController.text);
 
   /// Returns to the landing page and clears the whole donation journey from
   /// the navigation stack.
@@ -881,9 +1049,11 @@ class _DonationPageState extends State<DonationPage>
                     Expanded(
                       child: Text(
                         _isLoadingCenters
-                            ? 'Selecting a dialysis center...'
-                            : (_centerNameById(_selectedCenterId) != null
-                                  ? 'Randomly assigned to: ${_centerNameById(_selectedCenterId)}'
+                            ? 'Checking available dialysis centers...'
+                            : (_dialysisCenters.isNotEmpty
+                                  ? 'One of ${_dialysisCenters.length} centers '
+                                        'will be chosen at random. You will see '
+                                        'which one before you pay.'
                                   : 'No dialysis centers are currently available.'),
                         style: Brand.label(13, color: Brand.brandDeep),
                       ),
@@ -909,16 +1079,32 @@ class _DonationPageState extends State<DonationPage>
             _sectionLabel(
               icon: Icons.account_balance_wallet_outlined,
               title: 'Payment Method',
-              subtitle:
-                  'Select the channel you will use to send your donation.',
+              subtitle: kBankTransferEnabled
+                  ? 'Select the channel you will use to send your donation.'
+                  : 'Donations are paid with GCash.',
               accent: Brand.mint,
               accentSoft: Brand.mintSoft,
             ),
             const SizedBox(height: 18),
 
+            // Bank Transfer is hidden by kBankTransferEnabled (see
+            // config/payment_config.dart); the original two-option layout
+            // below is kept intact for when it is switched back on.
             LayoutBuilder(
               builder: (context, constraints) {
                 final narrow = constraints.maxWidth < 720;
+
+                if (!kBankTransferEnabled) {
+                  return _paymentButton(
+                    method: kGcashMethod,
+                    icon: Icons.phone_android_rounded,
+                    subtitle: !_settings.isSandbox
+                        ? 'Mobile wallet'
+                        : _settings.paymongoTestEnabled
+                            ? 'Mobile wallet · PayMongo test mode'
+                            : 'Mobile wallet · simulated payment',
+                  );
+                }
 
                 if (narrow) {
                   return Column(
@@ -1007,7 +1193,7 @@ class _DonationPageState extends State<DonationPage>
                           children: [
                             Icon(Icons.favorite_rounded, size: 21),
                             SizedBox(width: 10),
-                            Text('SUBMIT DONATION'),
+                            Text('REVIEW & CONTINUE TO GCASH'),
                           ],
                         ),
                 ),
@@ -1024,12 +1210,22 @@ class _DonationPageState extends State<DonationPage>
       _errorMessage = null;
     });
 
-    // Validate donation amount
-    final amount = _parseAmount();
+    // Validate donation amount (integer centavos; the server re-validates).
+    final centavos = _parseCentavos();
 
-    if (amount == null || amount <= 0) {
+    if (centavos == null || centavos <= 0) {
       setState(() {
         _errorMessage = 'Please enter a valid donation amount.';
+      });
+      return;
+    }
+
+    if (centavos < _settings.minAmountCentavos ||
+        centavos > _settings.maxAmountCentavos) {
+      setState(() {
+        _errorMessage = 'Please enter an amount between '
+            '${formatCentavos(_settings.minAmountCentavos)} and '
+            '${formatCentavos(_settings.maxAmountCentavos)}.';
       });
       return;
     }
@@ -1051,20 +1247,12 @@ class _DonationPageState extends State<DonationPage>
       return;
     }
 
-    // Validate random center assignment
-    if (_selectedAllocationMethod == 'Randomly Assign a Dialysis Center' &&
-        _selectedCenterId == null) {
-      setState(() {
-        _errorMessage = 'No dialysis centers are currently available for random assignment.';
-      });
-      return;
-    }
-
-    // Validate equal distribution has eligible centers
-    if (_selectedAllocationMethod == 'Distribute Donation Equally Among All Centers' &&
+    // Random and Donate to All need at least one eligible centre (the
+    // server checks again, against the live list).
+    if (_selectedAllocationMethod != 'Specific Dialysis Center' &&
         _dialysisCenters.isEmpty) {
       setState(() {
-        _errorMessage = 'No dialysis centers are currently available for equal distribution.';
+        _errorMessage = 'No dialysis centers are currently available to receive donations.';
       });
       return;
     }
@@ -1076,6 +1264,14 @@ class _DonationPageState extends State<DonationPage>
       });
       return;
     }
+
+    if (_selectedPaymentChannel != kGcashMethod) {
+      setState(() {
+        _errorMessage = 'Only GCash is available for donations right now.';
+      });
+      return;
+    }
+
 
     // For registered donors, make sure they are logged in.
     final user = Supabase.instance.client.auth.currentUser;
@@ -1116,163 +1312,131 @@ class _DonationPageState extends State<DonationPage>
 
       return;
     }
-
     setState(() {
       _isLoading = true;
     });
 
+    final mode = switch (_selectedAllocationMethod) {
+      'Randomly Assign a Dialysis Center' => DonationMode.randomCenter,
+      'Distribute Donation Equally Among All Centers' => DonationMode.allCenters,
+      _ => DonationMode.specificCenter,
+    };
+    final clinicId =
+        mode == DonationMode.specificCenter ? _selectedCenterId : null;
+    final enteredName = _nameController.text.trim();
+    final donorName =
+        widget.isAnonymous || enteredName.isEmpty ? null : enteredName;
+
+    // Reuse the previous attempt's keys if nothing changed, so a retry after
+    // a timeout -- or continuing again after Back or a refresh while that
+    // checkout is still open -- returns the same donation (same random
+    // centre, same split) instead of creating a second one.
+    final previous = _pendingRequest;
+    final request = previous != null &&
+            previous.sameAs(
+              mode: mode,
+              amountCentavos: centavos,
+              clinicId: clinicId,
+              anonymous: widget.isAnonymous,
+              donorName: donorName,
+            )
+        ? previous
+        : CheckoutRequest(
+            mode: mode,
+            amountCentavos: centavos,
+            clinicId: clinicId,
+            anonymous: widget.isAnonymous,
+            donorName: donorName,
+          );
+    _pendingRequest = request;
+
     try {
-      String? donorId;
-      String donorName;
-      String donorEmail;
-
-      if (widget.isAnonymous) {
-    // Anonymous donation:
-    // Do not store the donor's account information.
-    donorId = null;
-    donorName = '';
-    donorEmail = '';
-  } else  {
-        // Registered donation:
-        // Use the currently logged-in account.
-        donorId = user!.id;
-
-        donorEmail = user.email ?? '';
-
-        final profile = await Supabase.instance.client
-            .from('profiles')
-            .select('full_name')
-            .eq('id', user.id)
-            .maybeSingle();
-
-        // What the donor actually typed into Full Name / Organization wins.
-        // The field is editable and asks them to "Enter your name", so a
-        // value entered there is the name this donation is recorded under --
-        // it lets a donor give under an organisation's name, or a different
-        // spelling, without altering their account.
-        //
-        // Left blank, this falls back to exactly the chain it always used:
-        // the account's profile name, then the account email, then a generic
-        // label -- so a donor who ignores the field is recorded as before.
-        // Account identification (donor_id) and the donor's email are taken
-        // from the authenticated account either way, and are untouched here.
-        final enteredName = _nameController.text.trim();
-
-        donorName = enteredName.isNotEmpty
-            ? enteredName
-            : (profile?['full_name'] as String?)?.trim() ?? '';
-
-        if (donorName.isEmpty) {
-          donorName = user.email ?? 'Registered Donor';
-        }
-
-        if (donorEmail.isEmpty || !_isValidEmail(donorEmail)) {
-          throw Exception('The registered account does not have a valid email.');
-        }
-      }
-
-      // Save the donation record.
-      //
-      // Specific and Random both resolve to exactly one center, so they use
-      // the existing donations.clinic_id column directly -- the donation is
-      // immediately associated with that center, with no Super Admin step.
-      // Equal Distribution has no single center, so clinic_id is left null on
-      // the parent row (amount is still the full total); the per-center
-      // breakdown is saved separately below, into donation_allocations, so
-      // each center admin can see their own share.
-      final isEqualDistribution = _selectedAllocationMethod ==
-          'Distribute Donation Equally Among All Centers';
-
-      // Records which of the three allocation methods the donor picked, so
-      // Super Admin's review screen can show it truthfully -- a specific-
-      // center pick and a random-center pick both end up as the same
-      // donations.clinic_id, so that column alone can't tell them apart.
-      final allocationType = isEqualDistribution
-          ? 'equal_distribution'
-          : (_selectedAllocationMethod == 'Randomly Assign a Dialysis Center'
-                ? 'random_center'
-                : 'specific_center');
-
-      final response = await Supabase.instance.client
-          .from('donations')
-          .insert({
-            'donor_id': donorId,
-            'name': widget.isAnonymous ? null : donorName,
-            'email': widget.isAnonymous ? null : donorEmail,
-            'amount': amount,
-            'payment_method': _selectedPaymentChannel,
-            'status': 'verified',
-            'clinic_id': isEqualDistribution ? null : _selectedCenterId,
-            'allocation_type': allocationType,
-          })
-          .select('id')
-          .single();
-
-      final donationId = response['id'].toString();
-
-      if (isEqualDistribution) {
-        // Reuses the exact shares already calculated and shown to the donor
-        // in the Fund Allocation summary -- not recalculated here.
-        final shares = _computeEqualShares(amount, _dialysisCenters.length);
-
-        await Supabase.instance.client.from('donation_allocations').insert([
-          for (int i = 0; i < _dialysisCenters.length; i++)
-            {
-              'donation_id': donationId,
-              'clinic_id': _dialysisCenters[i]['id'],
-              'amount': shares[i],
-            },
-        ]);
-      }
+      final checkout = await _service.createCheckout(request);
 
       if (!mounted) return;
 
+      // The request is kept until this donation is finished or cancelled
+      // (see _loadResumableCheckout), not cleared here.
       setState(() {
         _isLoading = false;
       });
 
-      // Donations are voluntary and no longer require a payment receipt or any
-      // review before they count -- the donation (and its center routing,
-      // above) is already fully recorded at this point, so we just confirm
-      // that to the donor instead of asking for proof of payment.
-      // Not dismissible on purpose: closing this by tapping the barrier or
-      // pressing Escape used to drop the donor back onto a still-filled form
-      // that could be submitted a second time. "Back to Home" below is the
-      // only way out of it.
-      await showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) {
-          return AlertDialog(
-            title: const Text('Thank You!'),
-            content: const Text(
-              'Your donation has been recorded successfully. We truly appreciate your generosity.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('Back to Home'),
-              ),
-            ],
-          );
-        },
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => CheckoutPage(
+            checkout: checkout,
+            clientSecret: request.clientSecret,
+            service: _service,
+          ),
+        ),
       );
 
-      if (!mounted) return;
-
-      // The donation is fully recorded by this point; all that is left is to
-      // put the donor back on the landing page. This runs once the dialog has
-      // actually closed and -- because the dialog is not dismissible -- only
-      // ever by way of the "Back to Home" button above.
-      _goToLandingPage();
-    } catch (e) {
+      // Back from an unfinished checkout: offer to resume it here.
+      if (mounted) _loadResumableCheckout();
+    } on DonationCheckoutException catch (e) {
       if (!mounted) return;
 
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Unable to continue with your donation. ${e.toString()}';
+        _errorMessage = e.message;
       });
+
+      // The centre list may have changed underneath the donor.
+      if (e.code == 'CENTER_NOT_ELIGIBLE' || e.code == 'NO_ELIGIBLE_CENTERS') {
+        _pendingRequest = null;
+        _loadDialysisCenters();
+      }
     }
+  }
+
+  /// Shown when this browser still has an unpaid checkout. Resuming reloads
+  /// it from the server, so the recipient(s) cannot have changed.
+  Widget _buildResumeCard() {
+    final checkout = _resumable!;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Brand.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Brand.brand.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('You have an unfinished donation', style: Brand.heading(17)),
+          const SizedBox(height: 6),
+          Text(
+            '${checkout.reference} · ${formatCentavos(checkout.amountCentavos)} · '
+            '${checkout.allocations.length == 1 ? checkout.allocations.first.clinicName : '${checkout.allocations.length} centers'}',
+            style: Brand.body(13.5),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              ElevatedButton(
+                onPressed: () async {
+                  _restoreForm(checkout);
+                  await _openCheckout(checkout, _resumableSecret!);
+                },
+                child: const Text('Resume checkout'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  final secret = _resumableSecret!;
+                  if (!await confirmStartOver(context, checkout)) return;
+                  await _startOver(checkout, secret);
+                },
+                child: const Text('Cancel it'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildLoginRequiredCard() {
@@ -1335,10 +1499,9 @@ class _DonationPageState extends State<DonationPage>
 
   /// What actually happens on submit.
   ///
-  /// The wording here follows the behaviour in [_handleDonate]: the record
-  /// is written and confirmed straight away, and the transfer itself is
-  /// made by the donor through the channel they picked above. There is no
-  /// separate proof-upload or review step in this flow.
+  /// The wording here follows [_handleDonate]: the server creates a pending
+  /// donation with fixed recipients, and it only counts once the payment is
+  /// confirmed on the checkout page.
   Widget _buildReminderStrip() {
     return _animatedEntry(
       child: Container(
@@ -1373,10 +1536,10 @@ class _DonationPageState extends State<DonationPage>
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Your donation is saved to CureNurture’s donation records '
-                    'along with the amount, the payment channel you selected '
-                    'and the dialysis centre it is directed to. You will see a '
-                    'confirmation as soon as it has been recorded.',
+                    'You will review the amount and recipient center(s) before '
+                    'paying with GCash. Your donation is complete once the '
+                    'payment goes through.'
+                    '${_settings.isSandbox ? ' $kDemoBannerText' : ''}',
                     style: Brand.body(13.5),
                   ),
                 ],
@@ -1414,6 +1577,10 @@ class _DonationPageState extends State<DonationPage>
                       maxWidth: 1000,
                       child: Column(
                         children: [
+                          if (_resumable != null) ...[
+                            _buildResumeCard(),
+                            const SizedBox(height: 22),
+                          ],
                           (!widget.isAnonymous && user == null)
                               ? _buildLoginRequiredCard()
                               : _buildDonationForm(),

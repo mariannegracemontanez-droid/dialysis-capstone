@@ -7,6 +7,40 @@ import 'supabase_config.dart';
 class DashboardService {
   final SupabaseClient client = SupabaseConfig.client;
 
+  /// PostgREST filter for the donations a center counts as received: verified
+  /// donations only -- the same rule as the Super Admin totals and the public
+  /// Donation website. A completed simulated payment is never received money:
+  /// it keeps status 'pending' (donations_sandbox_never_verified forbids
+  /// 'verified' in the sandbox), so it never matches. Unpaid, failed,
+  /// cancelled and rejected rows do not match either. Keep in step with
+  /// [_isReceivedDonation].
+  static const String _receivedDonationFilter = 'status.eq.verified';
+
+  /// Center admins read donations only through these privacy-safe views
+  /// (Donation v5 migration): their own clinic, while active, with no donor
+  /// contact details or account identifiers.
+  static const String _donationsView = 'center_admin_donations';
+  static const String _allocationsView = 'center_admin_allocations';
+
+  /// The parent donation of a [_allocationsView] row, in the same shape the
+  /// old embedded `donations(...)` join returned.
+  static Map<String, dynamic> _parentOf(Map item) => {
+        'status': item['donation_status'],
+        'clinic_id': item['donation_clinic_id'],
+        'payment_status': item['payment_status'],
+        'payment_environment': item['payment_environment'],
+      };
+
+  /// The in-Dart form of [_receivedDonationFilter], for a parent donation
+  /// of an allocation row.
+  static bool _isReceivedDonation(dynamic donation) {
+    if (donation is! Map) return false;
+
+    // Verified only, and never a sandbox (simulated / test-mode) payment.
+    return donation['status'] == 'verified' &&
+        donation['payment_environment'] != 'sandbox';
+  }
+
   Future<String?> getCurrentClinicId() async {
     final user = client.auth.currentUser;
     if (user == null) return null;
@@ -175,9 +209,10 @@ class DashboardService {
 
   /// The center's most recent *received* donation, across every source the
   /// "Received" total is built from: the Super Admin's manual
-  /// fund_distributions ledger, verified donations sent directly to this
+  /// fund_distributions ledger, received donations sent directly to this
   /// clinic (specific/random allocation), and this clinic's share of
-  /// verified equal-distribution donations.
+  /// received equal-distribution donations. "Received" means verified only
+  /// (never a simulated payment); see [_receivedDonationFilter].
   ///
   /// This used to read fund_distributions alone, so a donor-driven donation
   /// moved the Received total without ever becoming the "Latest Donation" --
@@ -187,8 +222,9 @@ class DashboardService {
   /// (center_name for the manual ledger, clinic_id for the donor flow), so
   /// "latest" is always the newest of exactly what the total counts.
   ///
-  /// Pending and rejected donations are excluded for the same reason they
-  /// are excluded from the total: the center has not received them.
+  /// Unpaid, failed, cancelled and rejected donations are excluded for the
+  /// same reason they are excluded from the total: the center has not
+  /// received them.
   ///
   /// Returns a normalized row -- amount, received_at, remarks, source -- or
   /// null when the center has received nothing yet.
@@ -254,10 +290,10 @@ class DashboardService {
       //    writes the row at submission time and the status column is what
       //    marks it as usable by the center.
       final direct = await client
-          .from('donations')
+          .from(_donationsView)
           .select('amount, created_at')
           .eq('clinic_id', clinicId)
-          .eq('status', 'verified')
+          .or(_receivedDonationFilter)
           .order('created_at', ascending: false)
           .limit(1)
           .maybeSingle();
@@ -275,16 +311,21 @@ class DashboardService {
       //    what decides whether it counts -- same join and same in-Dart
       //    status check getAllocatedDonationTotal already uses.
       final shares = await client
-          .from('donation_allocations')
-          .select('amount, created_at, donations(status)')
+          .from(_allocationsView)
+          .select(
+            'amount, created_at, '
+            'donation_status, donation_clinic_id, payment_status, payment_environment',
+          )
           .eq('clinic_id', clinicId)
           .order('created_at', ascending: false);
 
       for (final item in shares) {
-        final parent = item['donations'];
-        final parentStatus = parent is Map ? parent['status'] : null;
+        final parent = _parentOf(item);
 
-        if (parentStatus != 'verified') continue;
+        if (!_isReceivedDonation(parent)) continue;
+        // A single-centre donation's allocation row duplicates the parent's
+        // clinic_id (already counted above as a direct donation).
+        if (parent['clinic_id'] != null) continue;
 
         addCandidate(
           amount: item['amount'],
@@ -298,7 +339,8 @@ class DashboardService {
     if (candidates.isEmpty) return null;
 
     candidates.sort(
-      (a, b) => (b['_sort_at'] as DateTime).compareTo(a['_sort_at'] as DateTime),
+      (a, b) =>
+          (b['_sort_at'] as DateTime).compareTo(a['_sort_at'] as DateTime),
     );
 
     final latest = Map<String, dynamic>.from(candidates.first)
@@ -339,35 +381,42 @@ class DashboardService {
     return List<Map<String, dynamic>>.from(response);
   }
 
-  /// The center's real received total from the donor-driven donation flow:
-  /// verified donations sent directly to this clinic (specific/random
-  /// allocation) plus this clinic's share of verified equal-distribution
-  /// donations. This is separate from -- and additive with -- the manual
+  /// The center's received total from the donor-driven donation flow:
+  /// received donations sent directly to this clinic (specific/random
+  /// allocation) plus this clinic's share of received equal-distribution
+  /// donations, where "received" is defined by [_receivedDonationFilter].
+  /// This is separate from -- and additive with -- the manual
   /// fund_distributions ledger above, so existing manually-distributed
   /// amounts are never dropped from the center's total.
   Future<num> getAllocatedDonationTotal(String clinicId) async {
     num total = 0;
 
     final direct = await client
-        .from('donations')
+        .from(_donationsView)
         .select('amount')
         .eq('clinic_id', clinicId)
-        .eq('status', 'verified');
+        .or(_receivedDonationFilter);
 
     for (final item in direct) {
       total += (item['amount'] as num?) ?? 0;
     }
 
     final shares = await client
-        .from('donation_allocations')
-        .select('amount, donations(status)')
+        .from(_allocationsView)
+        .select(
+          'amount, '
+          'donation_status, donation_clinic_id, payment_status, payment_environment',
+        )
         .eq('clinic_id', clinicId);
 
     for (final item in shares) {
-      final parent = item['donations'];
-      final parentStatus = parent is Map ? parent['status'] : null;
+      final parent = _parentOf(item);
 
-      if (parentStatus == 'verified') {
+      // A single-centre donation's allocation row duplicates the parent's
+      // clinic_id, which the direct query above already counted.
+      final isSplitShare = parent['clinic_id'] == null;
+
+      if (_isReceivedDonation(parent) && isSplitShare) {
         total += (item['amount'] as num?) ?? 0;
       }
     }

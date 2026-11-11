@@ -1,17 +1,19 @@
 ﻿import 'package:flutter/material.dart';
 import '../models/center_donation_history_entry.dart';
+import '../models/donation_history_status.dart';
 import '../models/donation_record.dart';
 import 'package:super_admin_app/services/donation_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/donation_history_export.dart';
 import '../utils/file_download.dart';
+import '../widgets/payment_transactions_section.dart';
 import '../widgets/purchase_logs_section.dart';
 import '../widgets/super_admin_notice.dart';
 
 /// Which history section an export was started from.
-enum _ExportSection { centerHistory, overallHistory }
+enum _ExportSection { overallHistory }
 
-/// Preset date windows for the Center Donation History filter. Applied
+/// Preset date windows for the donation history filter. Applied
 /// client-side against the existing donation date -- no new fields or queries.
 enum _HistoryDateRange {
   allTime('All Time', null),
@@ -41,6 +43,11 @@ class _OverallHistoryRow {
   final String? donorName;
   final String? donorEmail;
 
+  /// Checkout reference / outcome / environment (null for older donations).
+  final String? reference;
+  final String? paymentStatus;
+  final String? paymentEnvironment;
+
   _OverallHistoryRow({
     required this.donationId,
     required this.amount,
@@ -50,7 +57,16 @@ class _OverallHistoryRow {
     required this.centerLabel,
     this.donorName,
     this.donorEmail,
+    this.reference,
+    this.paymentStatus,
+    this.paymentEnvironment,
   });
+
+  DonationHistoryTone get tone => donationHistoryTone(
+        status: status,
+        paymentStatus: paymentStatus,
+        paymentEnvironment: paymentEnvironment,
+      );
 
   String get allocationLabel {
     switch (allocationType) {
@@ -65,16 +81,13 @@ class _OverallHistoryRow {
     }
   }
 
-  String get statusLabel {
-    switch (status) {
-      case 'verified':
-        return 'Received';
-      case 'rejected':
-        return 'Rejected';
-      default:
-        return 'Pending';
-    }
-  }
+  /// Same labels as the Donation Transactions section (see
+  /// donation_history_status.dart).
+  String get statusLabel => donationHistoryStatusLabel(
+        status: status,
+        paymentStatus: paymentStatus,
+        paymentEnvironment: paymentEnvironment,
+      );
 }
 
 class DonationsPage extends StatefulWidget {
@@ -101,24 +114,10 @@ class _DonationsPageState extends State<DonationsPage> {
   /// calculation -- only where it lives has changed.
   int _verifiedCount = 0;
 
-  // Center Donation History section.
-  String? _historyCenterId;
-  List<CenterDonationHistoryEntry> _historyEntries = [];
-  bool _isLoadingHistory = false;
-
-  // Center Donation History filters -- applied client-side to the already
-  // loaded _historyEntries, so they only affect which rows the table shows.
-  final TextEditingController _historySearchController = TextEditingController();
-  String _historySearch = '';
-  _HistoryDateRange _historyRange = _HistoryDateRange.allTime;
-
-  // Overall Donation History section (read-only, all centers). Fully
-  // independent of the Center Donation History state above -- it reuses the
-  // same _HistoryDateRange presets but keeps its own selection/search/range
-  // so neither section affects the other. "All Centers" (null) reads
-  // straight from _donations (already loaded); picking one center switches
-  // to _overallCenterEntries, fetched via the same fetchCenterDonationHistory
-  // the Center Donation History section already uses.
+  // Overall Donation History section (read-only, all centers). "All
+  // Centers" (null) reads straight from _donations (already loaded); picking
+  // one center switches to _overallCenterEntries, fetched via
+  // fetchCenterDonationHistory.
   String? _overallCenterId;
   List<CenterDonationHistoryEntry> _overallCenterEntries = [];
   bool _isLoadingOverall = false;
@@ -131,8 +130,6 @@ class _DonationsPageState extends State<DonationsPage> {
   _ExportSection? _exportingSection;
 
   static const Color _primary = Color(0xFF0F719F);
-  static const Color _dark = Color(0xFF0F3A55);
-  static const Color _muted = Color(0xFF647583);
   static const Color _bg = Color(0xFFF3F7FA);
   static const Color _success = Color(0xFF2E7D32);
   static const Color _danger = Color(0xFFDE4D4D);
@@ -143,15 +140,7 @@ class _DonationsPageState extends State<DonationsPage> {
   // scroll internally) instead of growing with the record count.
   static const double _historyPanelHeightWide = 500;
   static const double _historyPanelHeightCompact = 440;
-  static const double _tabletBreakpoint = 900;
   static const double _mobileBreakpoint = 640;
-
-  Map<String, dynamic>? get _selectedHistoryCenter {
-    for (final center in _centers) {
-      if (center['id'].toString() == _historyCenterId) return center;
-    }
-    return null;
-  }
 
   Map<String, dynamic>? get _selectedOverallCenter {
     for (final center in _centers) {
@@ -168,7 +157,6 @@ class _DonationsPageState extends State<DonationsPage> {
 
   @override
   void dispose() {
-    _historySearchController.dispose();
     _overallSearchController.dispose();
     super.dispose();
   }
@@ -203,38 +191,27 @@ class _DonationsPageState extends State<DonationsPage> {
 
         _totalVerifiedDonations = totalDonations;
 
-        _verifiedCount = donations.where((d) => d.status == 'verified').length;
+        // Received (verified) donations only -- the list now also holds
+        // Donation-app checkouts, and a simulated payment is never received.
+        _verifiedCount = donations.where((d) => d.isReceived).length;
 
-        // Keep the current selection if that center still exists in this
-        // fresh list, otherwise fall back to the first center.
-        final stillExists = centers.any((c) => c['id'].toString() == _historyCenterId);
-        if (_historyCenterId == null || !stillExists) {
-          _historyCenterId = centers.isNotEmpty ? centers.first['id'].toString() : null;
-        }
-
-        // Same reconciliation for the Overall Donation History selector,
-        // which previously had none. Now that closed centers are filtered
-        // out of this list, a selection made before a center was closed can
-        // point at an id the dropdown no longer offers -- and its items must
-        // contain the selected value exactly once.
+        // Reconcile the Overall Donation History selector. Now that closed
+        // centers are filtered out of this list, a selection made before a
+        // center was closed can point at an id the dropdown no longer
+        // offers -- and its items must contain the selected value exactly
+        // once.
         //
         // Reset goes to null, not to centers.first: null is this dropdown's
-        // own "All Centers" option (unlike the Center Donation History
-        // selector above, which has no such option and must always hold a
-        // center). So null is always a valid item here, it is this section's
-        // normal default, and it avoids silently switching the Super Admin
-        // onto an unrelated center's records. A null selection is therefore
-        // left exactly as it is.
+        // own "All Centers" option, so it is always a valid item, it is this
+        // section's normal default, and it avoids silently switching the
+        // Super Admin onto an unrelated center's records. A null selection is
+        // therefore left exactly as it is.
         final overallCenterId = _overallCenterId;
         if (overallCenterId != null &&
             !centers.any((c) => c['id'].toString() == overallCenterId)) {
           _overallCenterId = null;
         }
       });
-
-      if (_historyCenterId != null) {
-        await _loadCenterHistory(_historyCenterId!);
-      }
     } catch (error) {
       if (!mounted) return;
       SuperAdminNotice.error(context, 'Failed to load donations: $error');
@@ -245,34 +222,8 @@ class _DonationsPageState extends State<DonationsPage> {
     }
   }
 
-  Future<void> _loadCenterHistory(String clinicId) async {
-    if (mounted) {
-      setState(() => _isLoadingHistory = true);
-    }
-
-    try {
-      final entries = await _service.fetchCenterDonationHistory(clinicId);
-      // A response for a center that is no longer selected (the Super Admin
-      // switched again while it was in flight) must not overwrite the rows.
-      if (!mounted || clinicId != _historyCenterId) return;
-      setState(() => _historyEntries = entries);
-    } catch (error) {
-      if (!mounted) return;
-      SuperAdminNotice.error(
-        context,
-        'Failed to load center history: $error',
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isLoadingHistory = false);
-      }
-    }
-  }
-
   /// Loads a single center's donations for the Overall Donation History
-  /// section when it is narrowed from "All Centers" to one center. Reuses
-  /// the exact same service call as _loadCenterHistory above -- this method
-  /// only exists so the two sections keep fully independent state.
+  /// section when it is narrowed from "All Centers" to one center.
   Future<void> _loadOverallHistory(String clinicId) async {
     if (mounted) {
       setState(() => _isLoadingOverall = true);
@@ -280,7 +231,8 @@ class _DonationsPageState extends State<DonationsPage> {
 
     try {
       final entries = await _service.fetchCenterDonationHistory(clinicId);
-      // Same stale-response guard as _loadCenterHistory.
+      // A response for a center that is no longer selected (the Super Admin
+      // switched again while it was in flight) must not overwrite the rows.
       if (!mounted || clinicId != _overallCenterId) return;
       setState(() => _overallCenterEntries = entries);
     } catch (error) {
@@ -357,14 +309,14 @@ class _DonationsPageState extends State<DonationsPage> {
                     ],
                   ),
                   const SizedBox(height: AppTheme.gapLg),
-                  _SectionCard(
-                    title: 'Center Donation History',
+                  const _SectionCard(
+                    title: 'Donation Transactions (GCash Checkout)',
                     subtitle:
-                        'Review one center\'s full donation record -- specific, random, and equal-share allocations.',
-                    icon: Icons.local_hospital_outlined,
-                    accent: AppTheme.accentTeal,
-                    accentSoft: AppTheme.accentTealSoft,
-                    child: _buildCenterHistory(),
+                        'Every GCash checkout with its recipient allocation breakdown. Open a transaction for its status, payment type and allocation.',
+                    icon: Icons.receipt_long_outlined,
+                    accent: AppTheme.accentBlue,
+                    accentSoft: AppTheme.accentBlueSoft,
+                    child: PaymentTransactionsSection(),
                   ),
                   const SizedBox(height: AppTheme.gapLg),
                   _SectionCard(
@@ -480,10 +432,17 @@ class _DonationsPageState extends State<DonationsPage> {
     );
   }
 
-  Color _historyStatusColor(String status) {
-    if (status == 'verified') return _success;
-    if (status == 'rejected') return _danger;
-    return _warning;
+  Color _historyStatusColor(DonationHistoryTone tone) {
+    switch (tone) {
+      case DonationHistoryTone.received:
+        return _success;
+      case DonationHistoryTone.negative:
+        return _danger;
+      case DonationHistoryTone.simulated:
+        return _primary;
+      case DonationHistoryTone.pending:
+        return _warning;
+    }
   }
 
   /// Earliest date a [range] keeps, or null for All Time. Shared by both
@@ -504,25 +463,6 @@ class _DonationsPageState extends State<DonationsPage> {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return true;
     return fields.map((f) => f ?? '').join(' ').toLowerCase().contains(q);
-  }
-
-  /// The loaded history rows narrowed by the search box and the date-range
-  /// dropdown. Order is left untouched, so the service's newest-first sort is
-  /// preserved. Search is a case-insensitive substring match across donor
-  /// name, donor email, donation ID, and the selected center's name.
-  List<CenterDonationHistoryEntry> _filteredHistoryEntries() {
-    final centerName = _selectedHistoryCenter?['name']?.toString() ?? '';
-    final cutoff = _rangeCutoff(_historyRange);
-
-    return _historyEntries.where((entry) {
-      if (cutoff != null && entry.date.isBefore(cutoff)) return false;
-      return _matchesSearch(_historySearch, [
-        entry.donorName,
-        entry.donorEmail,
-        entry.donationId,
-        centerName,
-      ]);
-    }).toList();
   }
 
   // ---- Overall Donation History (Step 3, read-only, all centers) --------
@@ -551,6 +491,9 @@ class _DonationsPageState extends State<DonationsPage> {
             centerLabel: _overallCenterLabel(d),
             donorName: d.donorName,
             donorEmail: d.email,
+            reference: d.reference,
+            paymentStatus: d.paymentStatus,
+            paymentEnvironment: d.paymentEnvironment,
           ),
         )
         .toList();
@@ -571,6 +514,9 @@ class _DonationsPageState extends State<DonationsPage> {
             centerLabel: centerName,
             donorName: e.donorName,
             donorEmail: e.donorEmail,
+            reference: e.reference,
+            paymentStatus: e.paymentStatus,
+            paymentEnvironment: e.paymentEnvironment,
           ),
         )
         .toList();
@@ -591,6 +537,7 @@ class _DonationsPageState extends State<DonationsPage> {
     return rows.where((row) {
       if (cutoff != null && row.date.isBefore(cutoff)) return false;
       return _matchesSearch(_overallSearch, [
+        row.reference,
         row.donorName,
         row.donorEmail,
         row.donationId,
@@ -649,23 +596,10 @@ class _DonationsPageState extends State<DonationsPage> {
     _HistoryDateRange range,
     String search,
   })? _exportScope(_ExportSection section) {
-    final String? clinicId;
-    final String? centerName;
-    final _HistoryDateRange range;
-    final String search;
-
-    if (section == _ExportSection.overallHistory) {
-      clinicId = _overallCenterId;
-      centerName = _selectedOverallCenter?['name']?.toString();
-      range = _overallRange;
-      search = _overallSearch;
-    } else {
-      clinicId = _historyCenterId;
-      centerName = _selectedHistoryCenter?['name']?.toString();
-      range = _historyRange;
-      search = _historySearch;
-      if (clinicId == null) return null;
-    }
+    final String? clinicId = _overallCenterId;
+    final String? centerName = _selectedOverallCenter?['name']?.toString();
+    final _HistoryDateRange range = _overallRange;
+    final String search = _overallSearch;
 
     // A selected center must resolve to its name: the Admin Dashboard
     // matches manual distributions by center name, so without it the export
@@ -847,449 +781,6 @@ class _DonationsPageState extends State<DonationsPage> {
           ),
         ),
       ),
-    );
-  }
-
-  // Sidebar (desktop/tablet) + history panel layout. Data fetching is
-  // unchanged from before -- _centers, _historyCenterId, _historyEntries,
-  // and _loadCenterHistory all still work exactly as they did with the
-  // dropdown-only version; only the selector's presentation changes based
-  // on available width, and the mobile breakpoint still reuses that same
-  // dropdown rather than inventing a new selector.
-  Widget _buildCenterHistory() {
-    if (_centers.isEmpty) {
-      return const _EmptyState(
-        icon: Icons.local_hospital_outlined,
-        title: 'No centers yet',
-        message: 'Add a dialysis center to see its donation history.',
-      );
-    }
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isMobile = constraints.maxWidth < _mobileBreakpoint;
-        final isTablet = !isMobile && constraints.maxWidth < _tabletBreakpoint;
-        final panelHeight =
-            isMobile ? _historyPanelHeightCompact : _historyPanelHeightWide;
-        final sidebarWidth = isTablet ? 168.0 : 224.0;
-
-        if (isMobile) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildCenterDropdown(),
-              const SizedBox(height: 16),
-              SizedBox(height: panelHeight, child: _buildHistoryPanel()),
-            ],
-          );
-        }
-
-        return SizedBox(
-          height: panelHeight,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(width: sidebarWidth, child: _buildCenterSidebar()),
-              const SizedBox(width: 22),
-              const VerticalDivider(width: 1, color: Color(0xFFE7EFF5)),
-              const SizedBox(width: 22),
-              Expanded(child: _buildHistoryPanel()),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildCenterDropdown() {
-    // Keyed on the clinic id (a String, compared by content) rather than
-    // the clinic Map itself. Map equality in Dart is by reference, and
-    // DropdownButtonFormField only reads its `initialValue` once to seed
-    // internal state -- it does not resync on every rebuild -- so passing
-    // a fresh Map instance from each _loadDonations() reload left the
-    // field holding a stale reference that no longer matched any item in
-    // `items`, crashing the page. An id string survives that because
-    // '6ec...' == '6ec...' regardless of which fetch produced it.
-    return DropdownButtonFormField<String>(
-      dropdownColor: AppTheme.surface,
-      elevation: 2,
-      borderRadius: BorderRadius.circular(AppTheme.menuRadius),
-      icon: const Icon(
-        Icons.expand_more_rounded,
-        size: 18,
-        color: AppTheme.iconMuted,
-      ),
-      key: ValueKey(_historyCenterId),
-      initialValue: _historyCenterId,
-      items: _centers.map((center) {
-        return DropdownMenuItem<String>(
-          value: center['id'].toString(),
-          child: Text(
-            center['name']?.toString() ?? 'Unnamed Center',
-            overflow: TextOverflow.ellipsis,
-          ),
-        );
-      }).toList(),
-      decoration: _inputDecoration('Center', Icons.local_hospital_outlined),
-      onChanged: (value) async {
-        if (value == null) return;
-        setState(() => _historyCenterId = value);
-        await _loadCenterHistory(value);
-      },
-    );
-  }
-
-  Widget _buildCenterSidebar() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.only(left: 6, bottom: 10),
-          child: Text(
-            'CENTERS',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: _muted,
-              letterSpacing: 0.6,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Scrollbar(
-            thickness: 4,
-            radius: const Radius.circular(8),
-            child: ListView.builder(
-              padding: EdgeInsets.zero,
-              itemCount: _centers.length,
-              itemBuilder: (context, index) {
-                final center = _centers[index];
-                final id = center['id'].toString();
-                final isSelected = id == _historyCenterId;
-
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(10),
-                    onTap: isSelected
-                        ? null
-                        : () async {
-                            setState(() => _historyCenterId = id);
-                            await _loadCenterHistory(id);
-                          },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 11,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? _primary.withAlpha(18)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border(
-                          left: BorderSide(
-                            color: isSelected ? _primary : Colors.transparent,
-                            width: 3,
-                          ),
-                        ),
-                      ),
-                      child: Text(
-                        center['name']?.toString() ?? 'Unnamed Center',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                          color: isSelected ? _dark : _muted,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildHistoryPanel() {
-    final centerName = _selectedHistoryCenter?['name']?.toString() ??
-        'Select a center';
-    // TOTAL RECEIVED stays a lifetime figure for the center -- it is
-    // intentionally computed from the full list, not the filtered view.
-    final totalReceived = _historyEntries
-        .where((e) => e.status == 'verified')
-        .fold<double>(0, (sum, e) => sum + e.amount);
-
-    final visibleEntries = _filteredHistoryEntries();
-    final hasFilters =
-        _historySearch.trim().isNotEmpty || _historyRange != _HistoryDateRange.allTime;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    centerName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
-                      color: _dark,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    'Donation History',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: _muted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (!_isLoadingHistory && _historyEntries.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: _success.withAlpha(20),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    const Text(
-                      'TOTAL RECEIVED',
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                        color: _success,
-                        letterSpacing: 0.4,
-                      ),
-                    ),
-                    Text(
-                      '₱${totalReceived.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        color: _success,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            const SizedBox(width: 10),
-            _buildExportButton(
-              _ExportSection.centerHistory,
-              dataLoading: _isLoadingHistory,
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        const Divider(height: 1, color: Color(0xFFE7EFF5)),
-        const SizedBox(height: 6),
-        if (!_isLoadingHistory && _historyEntries.isNotEmpty) ...[
-          _buildHistoryFilters(),
-          const SizedBox(height: 10),
-        ],
-        Expanded(
-          child: _isLoadingHistory
-              ? const Center(
-                  child: SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2.4),
-                  ),
-                )
-              : _historyEntries.isEmpty
-                  ? const Center(
-                      child: _EmptyState(
-                        icon: Icons.receipt_long_outlined,
-                        title: 'No donation history yet',
-                        message:
-                            'This center has not received any recorded donations.',
-                      ),
-                    )
-                  : visibleEntries.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const _EmptyState(
-                                icon: Icons.search_off_rounded,
-                                title: 'No donations match your filters',
-                                message: 'Try a different date range.',
-                              ),
-                              if (hasFilters)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 12),
-                                  child: TextButton.icon(
-                                    onPressed: _clearHistoryFilters,
-                                    icon: const Icon(Icons.clear_all_rounded),
-                                    label: const Text('Clear filters'),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        )
-                      : _buildHistoryTable(visibleEntries),
-        ),
-      ],
-    );
-  }
-
-  void _clearHistoryFilters() {
-    _historySearchController.clear();
-    setState(() {
-      _historySearch = '';
-      _historyRange = _HistoryDateRange.allTime;
-    });
-  }
-
-  // The Center Donation History section has no search field of its own (the
-  // page-wide search lives in Overall Donation History); only its date range
-  // remains here. _historySearch therefore stays empty, which leaves the
-  // shared filter/export code unchanged.
-  Widget _buildHistoryFilters() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        SizedBox(
-          width: 170,
-          child: DropdownButtonFormField<_HistoryDateRange>(
-            dropdownColor: AppTheme.surface,
-            elevation: 2,
-            borderRadius: BorderRadius.circular(AppTheme.menuRadius),
-            icon: const Icon(
-              Icons.expand_more_rounded,
-              size: 18,
-              color: AppTheme.iconMuted,
-            ),
-            initialValue: _historyRange,
-            isExpanded: true,
-            decoration:
-                _inputDecoration('Date Range', Icons.date_range_rounded),
-            items: _HistoryDateRange.values
-                .map(
-                  (range) => DropdownMenuItem<_HistoryDateRange>(
-                    value: range,
-                    child: Text(
-                      range.label,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                )
-                .toList(),
-            onChanged: (value) {
-              if (value == null) return;
-              setState(() => _historyRange = value);
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildHistoryTable(List<CenterDonationHistoryEntry> entries) {
-    const columnWidths = {
-      0: FlexColumnWidth(1.2),
-      1: FlexColumnWidth(1.3),
-      2: FlexColumnWidth(1.7),
-      3: FlexColumnWidth(1.1),
-    };
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Header stays fixed above the scrollable body below it, so the
-        // column labels never scroll out of view while browsing records.
-        Table(
-          columnWidths: columnWidths,
-          children: const [
-            TableRow(
-              decoration: BoxDecoration(color: Color(0xFFF4F9FC)),
-              children: [
-                _AuditHeaderCell('Date'),
-                _AuditHeaderCell('Amount'),
-                _AuditHeaderCell('Allocation'),
-                _AuditHeaderCell('Status'),
-              ],
-            ),
-          ],
-        ),
-        Expanded(
-          child: Scrollbar(
-            thickness: 4,
-            radius: const Radius.circular(8),
-            child: SingleChildScrollView(
-              child: Table(
-                columnWidths: columnWidths,
-                border: const TableBorder(
-                  horizontalInside: BorderSide(color: Color(0xFFEDF2F6), width: 1),
-                ),
-                children: entries.map((entry) {
-                  final statusColor = _historyStatusColor(entry.status);
-
-                  return TableRow(
-                    children: [
-                      _AuditBodyCell(
-                        '${entry.date.year}-${entry.date.month.toString().padLeft(2, '0')}-${entry.date.day.toString().padLeft(2, '0')}',
-                      ),
-                      _AuditBodyCell(
-                        '₱${entry.amount.toStringAsFixed(2)}',
-                        isBold: true,
-                        color: _primary,
-                      ),
-                      _AuditBodyCell(entry.allocationLabel),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
-                        ),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: statusColor.withAlpha(24),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              entry.statusLabel,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                color: statusColor,
-                                fontSize: 11.5,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                }).toList(),
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -1497,11 +988,12 @@ class _DonationsPageState extends State<DonationsPage> {
   Widget _buildOverallTable(List<_OverallHistoryRow> rows) {
     const columnWidths = {
       0: FlexColumnWidth(1.1),
-      1: FlexColumnWidth(1.8),
-      2: FlexColumnWidth(1.5),
-      3: FlexColumnWidth(1.0),
-      4: FlexColumnWidth(1.2),
-      5: FlexColumnWidth(1.0),
+      1: FlexColumnWidth(1.4),
+      2: FlexColumnWidth(1.8),
+      3: FlexColumnWidth(1.5),
+      4: FlexColumnWidth(1.0),
+      5: FlexColumnWidth(1.2),
+      6: FlexColumnWidth(1.3),
     };
 
     return Column(
@@ -1516,6 +1008,7 @@ class _DonationsPageState extends State<DonationsPage> {
               decoration: BoxDecoration(color: Color(0xFFF4F9FC)),
               children: [
                 _AuditHeaderCell('Date'),
+                _AuditHeaderCell('Reference'),
                 _AuditHeaderCell('Donor'),
                 _AuditHeaderCell('Center'),
                 _AuditHeaderCell('Amount'),
@@ -1536,7 +1029,7 @@ class _DonationsPageState extends State<DonationsPage> {
                   horizontalInside: BorderSide(color: Color(0xFFEDF2F6), width: 1),
                 ),
                 children: rows.map((row) {
-                  final statusColor = _historyStatusColor(row.status);
+                  final statusColor = _historyStatusColor(row.tone);
                   final donorName = (row.donorName != null && row.donorName!.isNotEmpty)
                       ? row.donorName!
                       : 'Anonymous';
@@ -1546,6 +1039,7 @@ class _DonationsPageState extends State<DonationsPage> {
                       _AuditBodyCell(
                         '${row.date.year}-${row.date.month.toString().padLeft(2, '0')}-${row.date.day.toString().padLeft(2, '0')}',
                       ),
+                      _AuditBodyCell(row.reference ?? '--'),
                       Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 14,

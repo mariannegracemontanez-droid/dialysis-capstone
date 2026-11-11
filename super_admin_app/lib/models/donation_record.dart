@@ -1,3 +1,5 @@
+import 'donation_history_status.dart';
+
 class DonationRecord {
   final String id;
   final String donorName;
@@ -26,6 +28,26 @@ class DonationRecord {
   /// True when the donor chose to donate without exposing their identity.
   final bool isAnonymous;
 
+  /// Checkout reference (`reference_code`, e.g. CN-SBX-...). Null for older
+  /// donations recorded before the checkout workflow.
+  final String? reference;
+
+  /// Checkout outcome (`payment_status`) and environment
+  /// (`payment_environment`); both null for older donations.
+  final String? paymentStatus;
+  final String? paymentEnvironment;
+
+  /// Status as shown in the donation history (see donation_history_status.dart).
+  String get historyStatusLabel => donationHistoryStatusLabel(
+        status: status,
+        paymentStatus: paymentStatus,
+        paymentEnvironment: paymentEnvironment,
+      );
+
+  /// Money actually received (verified, never a simulated payment).
+  bool get isReceived =>
+      countsAsReceived(status: status, paymentEnvironment: paymentEnvironment);
+
   DonationRecord({
     required this.id,
     required this.donorName,
@@ -39,6 +61,9 @@ class DonationRecord {
     this.clinicName,
     this.isAnonymous = false,
     this.email,
+    this.reference,
+    this.paymentStatus,
+    this.paymentEnvironment,
   });
 
   String get allocationLabel {
@@ -91,6 +116,9 @@ class DonationRecord {
       clinicName: clinicName,
       isAnonymous: anonymous,
       email: anonymous ? null : email,
+      reference: json['reference_code']?.toString(),
+      paymentStatus: json['payment_status']?.toString(),
+      paymentEnvironment: json['payment_environment']?.toString(),
     );
   }
 }

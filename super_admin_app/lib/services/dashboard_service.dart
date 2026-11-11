@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import '../models/center_model.dart';
+import '../models/donation_overview.dart';
 import '../models/donation_summary.dart';
 import '../models/notification_item.dart';
 import '../utils/center_capacity.dart';
@@ -177,6 +178,20 @@ class DashboardService {
     return list
         .map((item) => NotificationItem.fromJson(item as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Donation KPIs and monthly trends for the dashboard (see
+  /// [DonationOverview] for how each figure is defined). Reads only the
+  /// non-identifying columns it needs; RLS limits `donations` to superadmins.
+  Future<DonationOverview> fetchDonationOverview({DateTime? now, int months = 12}) async {
+    final rows = await _supabase
+        .from('donations')
+        .select('amount, amount_centavos, status, payment_environment, payment_status, created_at');
+    return DonationOverview.fromRows(
+      [for (final r in rows as List<dynamic>) Map<String, dynamic>.from(r as Map)],
+      now: now ?? DateTime.now(),
+      months: months,
+    );
   }
 
   Future<List<DonationSummary>> fetchDonationSummary() async {

@@ -16,46 +16,83 @@ import 'package:donation_app/widgets/ui.dart';
 /// design can be reviewed as a picture rather than as code.
 ///
 /// Not a correctness check - run it with `--update-goldens` to regenerate
-/// `test/goldens/*.png`. It is tagged `preview` so a normal `flutter test`
-/// run skips it.
+/// `test/goldens/*.png`. It is tagged `preview`, and `dart_test.yaml` skips
+/// that tag, so a normal `flutter test` run skips it. Run it explicitly with
+/// `flutter test --tags preview --run-skipped`.
+///
+/// Loads the real fonts the design uses, each under its own family name:
+///   * Montserrat - `Brand.displayFont`, from the app's bundled font files;
+///   * Roboto - Flutter's default Material font, used for body and label
+///     text, from the Flutter SDK's `material_fonts` cache;
+///   * MaterialIcons - so icons render as glyphs, not empty boxes.
+/// A missing font file fails the test rather than silently falling back to
+/// the test font, which would make the preview misleading.
 Future<void> _loadFonts() async {
-  // Read straight off disk: these ship as font assets rather than as
-  // entries in the `assets:` list, so rootBundle cannot see them in tests.
-  Future<ByteData> read(String path) async {
-    final bytes = await File(path).readAsBytes();
-    return ByteData.view(bytes.buffer);
-  }
+  final materialFonts = _materialFontsDir();
 
-  for (final family in ['Montserrat', 'Roboto']) {
-    final loader = FontLoader(family)
-      ..addFont(read('lib/assets/image/fonts/Montserrat-Regular.ttf'))
-      ..addFont(read('lib/assets/image/fonts/Montserrat-Bold.ttf'));
+  // Read straight off disk: these ship as font assets (or SDK files) rather
+  // than as entries in the `assets:` list, so rootBundle cannot see them.
+  Future<void> load(String family, List<String> paths) async {
+    final loader = FontLoader(family);
+    for (final path in paths) {
+      final file = File(path);
+      if (!file.existsSync()) {
+        throw StateError('Preview font for "$family" not found: $path');
+      }
+      loader.addFont(
+        file.readAsBytes().then((bytes) => ByteData.view(bytes.buffer)),
+      );
+    }
     await loader.load();
   }
 
-  // Without this every Icon renders as an empty box in the preview.
-  final icons = File(
-    '${_flutterRoot()}/bin/cache/artifacts/material_fonts/'
-    'materialicons-regular.otf',
-  );
+  await load('Montserrat', [
+    'lib/assets/image/fonts/Montserrat-Regular.ttf',
+    'lib/assets/image/fonts/Montserrat-Bold.ttf',
+  ]);
 
-  if (icons.existsSync()) {
-    final loader = FontLoader('MaterialIcons')
-      ..addFont(read(icons.path));
-    await loader.load();
-  }
+  // Regular (400), Medium (500, Material 3 labels and buttons) and Bold (700).
+  // The engine reads each file's weight from the font itself.
+  await load('Roboto', [
+    '$materialFonts/roboto-regular.ttf',
+    '$materialFonts/roboto-medium.ttf',
+    '$materialFonts/roboto-bold.ttf',
+  ]);
+
+  await load('MaterialIcons', ['$materialFonts/materialicons-regular.otf']);
 }
 
-/// Locates the Flutter SDK so the icon font can be pulled from its cache.
-String _flutterRoot() {
-  final env = Platform.environment['FLUTTER_ROOT'];
-  if (env != null && env.isNotEmpty) return env.replaceAll(r'\', '/');
+/// Locates `<flutter>/bin/cache/artifacts/material_fonts` in the Flutter SDK
+/// that is running this test, without assuming any machine-specific path.
+///
+/// Tries `FLUTTER_ROOT` first (set by the `flutter` tool), then walks up from
+/// the running executable: under `flutter test` that is
+/// `<flutter>/bin/cache/artifacts/engine/<platform>/flutter_tester`, and under
+/// the Dart VM it is `<flutter>/bin/cache/dart-sdk/bin/dart`.
+String _materialFontsDir() {
+  const relative = 'bin/cache/artifacts/material_fonts';
+  final roots = <String>[];
 
-  // `dart:io`'s resolvedExecutable points at <flutter>/bin/cache/dart-sdk/bin.
-  final exe = Platform.resolvedExecutable.replaceAll(r'\', '/');
-  final marker = '/bin/cache/dart-sdk/';
-  final index = exe.indexOf(marker);
-  return index == -1 ? '' : exe.substring(0, index);
+  final env = Platform.environment['FLUTTER_ROOT'];
+  if (env != null && env.isNotEmpty) roots.add(env);
+
+  var dir = File(Platform.resolvedExecutable).absolute.parent;
+  while (true) {
+    roots.add(dir.path);
+    final parent = dir.parent;
+    if (parent.path == dir.path) break;
+    dir = parent;
+  }
+
+  for (final root in roots) {
+    final candidate = Directory('$root/$relative');
+    if (candidate.existsSync()) return candidate.path.replaceAll(r'\', '/');
+  }
+
+  throw StateError(
+    'Could not find the Flutter SDK font cache ($relative). Run the test with '
+    '`flutter test`, or set FLUTTER_ROOT to the Flutter SDK directory.',
+  );
 }
 
 /// Reveals need a frame to register as visible and then the length of their

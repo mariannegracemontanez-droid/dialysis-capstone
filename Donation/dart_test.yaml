@@ -1,0 +1,8 @@
+# Test runner configuration for package:test / flutter test.
+tags:
+  # Design-preview goldens (test/design_preview_test.dart). They render the
+  # design to images for visual review and are not a correctness check, so an
+  # ordinary `flutter test` run skips them. Run them explicitly with:
+  #   flutter test --tags preview --run-skipped
+  preview:
+    skip: "Design preview goldens. Run with: flutter test --tags preview --run-skipped"

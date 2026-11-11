@@ -285,8 +285,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
       );
       final manualTotal = await _service.getTotalDonations(centerName);
 
-      // Real donor-driven allocations (specific/random/equal-share, all
-      // resolved and verified through the donation flow) are additive with
+      // Donor-driven allocations (specific/random/equal-share: verified
+      // donations only, never simulated payments) are additive with
       // the manual fund_distributions total above -- not a replacement --
       // so previously-distributed amounts are never dropped from the
       // center's reported total.

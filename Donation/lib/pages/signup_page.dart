@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../services/auth_feedback.dart';
 import '../theme/brand.dart';
 
 import 'landing_page.dart';
@@ -145,6 +146,11 @@ class _SignupPageState extends State<SignupPage>
       return;
     }
 
+    if (!isValidEmail(email)) {
+      setState(() => _emailError = 'Please enter a valid email address.');
+      return;
+    }
+
     // Philippine mobile numbers are ten digits after +63 and always start
     // with 9.
     if (phoneDigits.length != 10 || !phoneDigits.startsWith('9')) {
@@ -195,11 +201,15 @@ class _SignupPageState extends State<SignupPage>
         'phone': phone,
       });
 
+      // New sign-ups are donor accounts. Status is not sent, so it keeps its
+      // default ('pending'); the profile guard still refuses any privileged
+      // role (admin / superadmin) from this path.
       await Supabase.instance.client.from('profiles').upsert({
         'id': user.id,
         'email': email,
         'full_name': fullName,
         'phone': phone,
+        'role': 'donor',
         'created_at': DateTime.now().toIso8601String(),
       });
 
@@ -225,24 +235,17 @@ class _SignupPageState extends State<SignupPage>
     } on AuthException catch (e) {
       if (!mounted) return;
 
-      final lower = e.message.toLowerCase();
-
-      final friendly =
-          lower.contains('already registered') ||
-              lower.contains('duplicate') ||
-              lower.contains('user exists')
-          ? 'This email is already registered. Please log in instead.'
-          : e.message;
-
       setState(() {
-        _errorMessage = friendly;
+        _errorMessage = friendlyAuthError(e.message);
         _isLoading = false;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
 
+      // Raw database or network errors are never shown to the donor.
       setState(() {
-        _errorMessage = 'An error occurred: $e';
+        _errorMessage =
+            'We could not finish creating your account. Please try again.';
         _isLoading = false;
       });
     }

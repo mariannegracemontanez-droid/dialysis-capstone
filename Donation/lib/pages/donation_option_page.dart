@@ -15,11 +15,28 @@ import 'login_page.dart';
 /// The two options, the values behind them and where each one leads are
 /// unchanged - this page only presents that choice more clearly.
 class DonationOptionPage extends StatefulWidget {
-  const DonationOptionPage({super.key});
+  const DonationOptionPage({super.key, this.isSignedIn = _hasSupabaseSession});
+
+  /// Whether a donor session already exists. Defaults to the live Supabase
+  /// session (the same check DonationPage makes on arrival); injectable for
+  /// tests.
+  final bool Function() isSignedIn;
 
   @override
   State<DonationOptionPage> createState() => _DonationOptionPageState();
 }
+
+bool _hasSupabaseSession() => Supabase.instance.client.auth.currentUser != null;
+
+/// Where the "registered account" option leads.
+enum RegisteredDonationStep { donationForm, login }
+
+/// A donor who is already signed in goes straight to the donation form; the
+/// login step is only for someone without a session. The form itself still
+/// checks the session again before creating a donation, and the server ties
+/// the donation to the signed-in account.
+RegisteredDonationStep registeredDonationStep({required bool signedIn}) =>
+    signedIn ? RegisteredDonationStep.donationForm : RegisteredDonationStep.login;
 
 class _DonationOptionPageState extends State<DonationOptionPage> {
   String? _selectedOption;
@@ -59,12 +76,11 @@ class _DonationOptionPageState extends State<DonationOptionPage> {
       // on arrival (a null currentUser is what makes it show "Please log in
       // to donate"), so the two can never disagree about whether a login
       // step is still needed.
-      final isAuthenticated =
-          Supabase.instance.client.auth.currentUser != null;
+      final step = registeredDonationStep(signedIn: widget.isSignedIn());
 
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => isAuthenticated
+          builder: (_) => step == RegisteredDonationStep.donationForm
               // Registered donation on the account already signed in.
               ? const DonationPage()
               : const LoginPage(
@@ -353,9 +369,11 @@ class _DonationOptionPageState extends State<DonationOptionPage> {
                         value: 'registered',
                         icon: Icons.account_circle_rounded,
                         title: 'Donate Using a Registered Account',
-                        description:
-                            'Log in to your donor account before continuing '
-                            'with your donation.',
+                        description: widget.isSignedIn()
+                            ? 'You are already signed in. Continue straight '
+                                'to the donation form with your account.'
+                            : 'Log in to your donor account before continuing '
+                                'with your donation.',
                         accent: Brand.brand,
                         accentSoft: Brand.sky,
                         points: const [

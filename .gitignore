@@ -38,3 +38,37 @@ donation-drive/package-lock.json
 # OS
 *.log
 Thumbs.db
+
+# Database backups: contain password hashes, tokens and patient data
+database-backups/
+/pgtest3/
+security-test-reports/pgtest4-baseline/
+
+# Local PostgreSQL test clusters and copies (full databases)
+/pgtest*/
+security-test-reports/pgtest5-archive-*/
+security-test-reports/pgtest5-results/
+security-test-reports/pgtest5-fingerprints/
+security-test-reports/stage1-results/
+# Local-only Supabase sandbox and local backups
+/supabase-local-test/
+/backups/
+/security-archive/
+/supabase_security.zip
+# Data copied from the production backup
+security-test-reports/donation-clinic-import-proposal/local_import_clinics_*.sql
+# Stray files and golden-test failure output
+*.bak
+Donation/test/failures/
+# Design-lead handoff: local Supabase CLI state and the encrypted data package
+/supabase/.temp/
+/supabase/.branches/
+/handoff-data/
+*.gpg
+# Internal security reports and test material (never published)
+/security-test-reports/
+/supabase_security/
+# Payment QR images contain real account details: delivered only inside the
+# encrypted data package, never in Git or the public Donation build
+Donation/lib/assets/image/gcash_qr.jpg
+Donation/lib/assets/image/bank_qr.jpg

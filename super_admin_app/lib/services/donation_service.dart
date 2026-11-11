@@ -1,15 +1,33 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import '../models/center_donation_history_entry.dart';
+import '../models/donation_activity.dart';
 import '../models/donation_record.dart';
 import '../models/donation_summary.dart';
 import '../models/fund_distribution.dart';
+import '../models/payment_transaction.dart';
 import '../models/purchase_log.dart';
 import '../models/received_donation_record.dart';
 
 class DonationService {
   final SupabaseClient _supabase = SupabaseConfig.client;
 
+  /// True for an allocation row that counts as a centre's RECEIVED share
+  /// (used by [fetchReceivedDonations] only): its parent is a split (Donate
+  /// to All) donation and not a sandbox one. Single-centre workflow donations
+  /// also have one allocation row, but they are already represented by the
+  /// parent's donations.clinic_id, so counting the row too would double it.
+  static bool _isListableShare(Object? parent) {
+    if (parent is! Map) return true;
+    if (parent['clinic_id'] != null) return false;
+    return parent['payment_environment'] != 'sandbox';
+  }
+
+  /// Every donation record for the Overall Donation History: older donations
+  /// and every Donation-app checkout (including simulated ones), newest
+  /// first -- the same `donations` rows the Donation Transactions section
+  /// lists. Labels and money rules are in donation_history_status.dart; the
+  /// verified-only totals use [fetchTotalDonations] / [fetchReceivedDonations].
   Future<List<DonationRecord>> fetchDonations() async {
     final response = await _supabase
         .from('donations')
@@ -49,48 +67,24 @@ class DonationService {
   ) async {
     final direct = await _supabase
         .from('donations')
-        .select('id, amount, allocation_type, status, created_at, name, email')
+        .select(
+          'id, amount, allocation_type, status, created_at, name, email, '
+          'reference_code, payment_status, payment_environment',
+        )
         .eq('clinic_id', clinicId)
         .order('created_at', ascending: false);
 
     final shares = await _supabase
         .from('donation_allocations')
-        .select('donation_id, amount, created_at, donations(status, name, email)')
+        .select(
+          'donation_id, amount, created_at, '
+          'donations(status, name, email, clinic_id, payment_environment, '
+          'payment_status, reference_code)',
+        )
         .eq('clinic_id', clinicId)
         .order('created_at', ascending: false);
 
-    final entries = <CenterDonationHistoryEntry>[
-      for (final item in (direct as List<dynamic>))
-        CenterDonationHistoryEntry(
-          donationId: item['id'].toString(),
-          amount: double.tryParse(item['amount'].toString()) ?? 0.0,
-          allocationType: item['allocation_type']?.toString() ?? 'specific_center',
-          status: item['status']?.toString() ?? 'pending',
-          date: DateTime.tryParse(item['created_at'].toString()) ?? DateTime.now(),
-          donorName: item['name']?.toString(),
-          donorEmail: item['email']?.toString(),
-        ),
-      for (final item in (shares as List<dynamic>))
-        CenterDonationHistoryEntry(
-          donationId: item['donation_id'].toString(),
-          amount: double.tryParse(item['amount'].toString()) ?? 0.0,
-          allocationType: 'equal_distribution',
-          status: (item['donations'] is Map
-                  ? item['donations']['status']?.toString()
-                  : null) ??
-              'pending',
-          date: DateTime.tryParse(item['created_at'].toString()) ?? DateTime.now(),
-          donorName: item['donations'] is Map
-              ? item['donations']['name']?.toString()
-              : null,
-          donorEmail: item['donations'] is Map
-              ? item['donations']['email']?.toString()
-              : null,
-        ),
-    ];
-
-    entries.sort((a, b) => b.date.compareTo(a.date));
-    return entries;
+    return centerHistoryFromRows(direct as List<dynamic>, shares as List<dynamic>);
   }
 
   /// Every amount a center has actually RECEIVED, i.e. exactly the records
@@ -131,7 +125,7 @@ class DonationService {
 
     var sharesQuery = _supabase.from('donation_allocations').select(
           'donation_id, clinic_id, amount, created_at, clinics(name), '
-          'donations(status, donor_id, name, email)',
+          'donations(status, donor_id, name, email, clinic_id, payment_environment)',
         );
     if (clinicId != null) sharesQuery = sharesQuery.eq('clinic_id', clinicId);
 
@@ -169,6 +163,7 @@ class DonationService {
     for (final item in results[1]) {
       final parent = item['donations'];
       if (parent is! Map || parent['status'] != 'verified') continue;
+      if (!_isListableShare(parent)) continue;
 
       final name = parent['name']?.toString();
       final email = parent['email']?.toString();
@@ -213,6 +208,26 @@ class DonationService {
 
     records.sort((a, b) => b.date.compareTo(a.date));
     return records;
+  }
+
+  /// Every donation created by the GCash checkout workflow (sandbox and
+  /// production), newest first, with its recipient allocations.
+  Future<List<PaymentTransaction>> fetchPaymentTransactions() async {
+    final response = await _supabase
+        .from('donations')
+        .select(
+          'id, reference_code, created_at, allocation_type, amount_centavos, '
+          'payment_method, payment_provider, payment_environment, '
+          'payment_status, status_reason, payment_confirmed_at, donor_id, name, '
+          'donation_allocations(clinic_id, clinic_name_snapshot, amount_centavos, '
+          'allocation_status, sort_order, provider_transfer_ref)',
+        )
+        .not('payment_environment', 'is', null)
+        .order('created_at', ascending: false);
+
+    return [
+      for (final item in response) PaymentTransaction.fromJson(item),
+    ];
   }
 
   Future<double> fetchTotalDonations() async {
@@ -306,6 +321,43 @@ class DonationService {
         .order('created_at', ascending: false);
 
     return purchaseLogsFromRows(response as List<dynamic>);
+  }
+
+  /// Latest donation audit events for Super Admin monitoring (all centers;
+  /// RLS: superadmins only). Reads only non-identifying columns -- never
+  /// `performed_by` or `metadata` -- and resolves clinic names and donation
+  /// references with separate reads, so no donor data is joined in.
+  Future<List<DonationActivity>> fetchDonationActivity({int limit = 300}) async {
+    final rows = await _supabase
+        .from('donation_audit_logs')
+        .select('id, donation_id, clinic_id, action, amount, from_entity, created_at')
+        .order('created_at', ascending: false)
+        .limit(limit) as List<dynamic>;
+
+    final clinicRows = await _supabase.from('clinics').select('id, name') as List<dynamic>;
+    final clinicNames = {
+      for (final c in clinicRows)
+        if (c is Map && c['id'] != null) c['id'].toString(): c['name']?.toString() ?? '',
+    };
+
+    final donationIds = {
+      for (final r in rows)
+        if (r is Map && r['donation_id'] != null) r['donation_id'].toString(),
+    }.toList();
+    final references = <String, String>{};
+    if (donationIds.isNotEmpty) {
+      final refRows = await _supabase
+          .from('donations')
+          .select('id, reference_code')
+          .inFilter('id', donationIds) as List<dynamic>;
+      for (final r in refRows) {
+        if (r is Map && r['id'] != null && r['reference_code'] != null) {
+          references[r['id'].toString()] = r['reference_code'].toString();
+        }
+      }
+    }
+
+    return donationActivityFromRows(rows, clinicNames: clinicNames, references: references);
   }
 
   Future<void> createFundDistribution({

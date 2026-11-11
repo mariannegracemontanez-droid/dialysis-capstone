@@ -6,17 +6,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'features/auth/login_page.dart';
 import 'theme/app_theme.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Supabase.initialize(
-    url: 'https://emnpezpkrrrilrcxnuwe.supabase.co',
-    anonKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtbnBlenBrcnJyaWxyY3hudXdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0MTkwNzcsImV4cCI6MjA4Nzk5NTA3N30.ow7VCTizP-Q6j-0FD4gtKWiok3kVUZFCxag5UWg9weM',
-  );
-  runApp(const ProviderScope(child: MyApp()));
-}
-
-Future<void> main2() async {
+/// Reads the Supabase URL and anon key from the bundled `.env` asset.
+///
+/// There is deliberately no built-in default: if `.env` is missing or
+/// incomplete the panel shows a configuration error and does not connect
+/// anywhere, so it can never silently fall back to a different project.
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   String? dotenvError;
@@ -26,28 +21,44 @@ Future<void> main2() async {
     dotenvError = 'Failed to load .env file: $e';
   }
 
-  final url = dotenv.env['SUPABASE_URL'];
-  final anonKey = dotenv.env['SUPABASE_ANON_KEY'];
+  final url = dotenvError == null ? dotenv.env['SUPABASE_URL']?.trim() : null;
+  final anonKey = dotenvError == null ? dotenv.env['SUPABASE_ANON_KEY']?.trim() : null;
 
-  if (dotenvError != null || url == null || anonKey == null) {
-    // Shows a helpful message instead of crashing.
-    final message = dotenvError != null
-        ? '$dotenvError\n\nMake sure you have a .env file in the project root.'
-        : 'Missing .env values.\nMake sure .env contains SUPABASE_URL and SUPABASE_ANNON_KEY.';
-
-    runApp(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(child: Text(message, textAlign: TextAlign.center)),
-        ),
-      ),
-    );
+  if (dotenvError != null || url == null || url.isEmpty || anonKey == null || anonKey.isEmpty) {
+    runApp(ConfigErrorApp(
+      message: dotenvError != null
+          ? '$dotenvError\n\nMake sure you have a .env file in the project root.'
+          : 'Missing .env values.\nMake sure .env contains SUPABASE_URL and SUPABASE_ANON_KEY.',
+    ));
     return;
   }
 
   await Supabase.initialize(url: url, anonKey: anonKey);
 
-  runApp(const MyApp());
+  runApp(const ProviderScope(child: MyApp()));
+}
+
+/// Shown instead of the panel when the Supabase configuration is unusable.
+class ConfigErrorApp extends StatelessWidget {
+  const ConfigErrorApp({super.key, required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'CureNurture | Admin',
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(message, textAlign: TextAlign.center),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class MyApp extends StatelessWidget {
