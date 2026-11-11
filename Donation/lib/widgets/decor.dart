@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show PathMetric;
 
 import 'package:flutter/material.dart';
 
@@ -281,8 +282,10 @@ class _PulsePainter extends CustomPainter {
   final double progress;
   final Color color;
 
-  @override
-  void paint(Canvas canvas, Size size) {
+  /// Length of the brighter stretch of line the dot leaves behind it.
+  static const double _trail = 46;
+
+  Path _line(Size size) {
     final mid = size.height / 2;
     final path = Path()..moveTo(0, mid);
 
@@ -301,6 +304,14 @@ class _PulsePainter extends CustomPainter {
       );
       path.lineTo(x + segment, mid);
     }
+    return path;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+
+    final path = _line(size);
 
     canvas.drawPath(
       path,
@@ -311,18 +322,61 @@ class _PulsePainter extends CustomPainter {
         ..strokeCap = StrokeCap.round,
     );
 
-    // A soft highlight travelling along the line.
-    final dotX = size.width * progress;
+    // The highlight travels ALONG the drawn line: its position is read from
+    // the path itself at the current distance, so it climbs and falls with
+    // every rise instead of sliding along a straight horizontal.
+    final metrics = path.computeMetrics().toList();
+    final total = metrics.fold<double>(0, (sum, m) => sum + m.length);
+    if (total <= 0) return;
+
+    final distance = total * progress.clamp(0.0, 1.0);
+    final head = _pointAt(metrics, distance);
+    if (head == null) return;
+
+    // A short, brighter stretch of the line behind the dot, so the motion
+    // reads as a pulse moving through the curve.
+    final trailStart = math.max(0.0, distance - _trail);
+    double walked = 0;
+    for (final metric in metrics) {
+      final from = math.max(trailStart - walked, 0.0);
+      final to = math.min(distance - walked, metric.length);
+      if (to > from) {
+        canvas.drawPath(
+          metric.extractPath(from, to),
+          Paint()
+            ..color = color.withValues(alpha: 0.55)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.8
+            ..strokeCap = StrokeCap.round,
+        );
+      }
+      walked += metric.length;
+      if (walked >= distance) break;
+    }
+
     canvas.drawCircle(
-      Offset(dotX, mid),
-      3.2,
-      Paint()..color = color.withValues(alpha: 0.85),
-    );
-    canvas.drawCircle(
-      Offset(dotX, mid),
+      head,
       9,
       Paint()..color = color.withValues(alpha: 0.16),
     );
+    canvas.drawCircle(
+      head,
+      3.2,
+      Paint()..color = color.withValues(alpha: 0.85),
+    );
+  }
+
+  /// The point on [metrics] (taken as one continuous line) at [distance].
+  static Offset? _pointAt(List<PathMetric> metrics, double distance) {
+    double walked = 0;
+    for (final metric in metrics) {
+      if (distance <= walked + metric.length) {
+        return metric.getTangentForOffset(distance - walked)?.position;
+      }
+      walked += metric.length;
+    }
+    final last = metrics.last;
+    return last.getTangentForOffset(last.length)?.position;
   }
 
   @override
@@ -424,6 +478,224 @@ class _CareGlyphPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _CareGlyphPainter oldDelegate) =>
       oldDelegate.color != color || oldDelegate.accent != accent;
+}
+
+/// A kidney (bean) outline of width [w], with its hilum - the inward notch -
+/// facing right. [origin] is the shape's top-left corner; height is 1.42w.
+Path _kidneyPath(Offset origin, double w) {
+  final h = w * 1.42;
+  final x = origin.dx;
+  final y = origin.dy;
+
+  return Path()
+    ..moveTo(x + w * 0.62, y + h * 0.04)
+    ..cubicTo(x + w * 0.18, y - h * 0.04, x - w * 0.06, y + h * 0.30,
+        x + w * 0.04, y + h * 0.58)
+    ..cubicTo(x + w * 0.12, y + h * 0.86, x + w * 0.42, y + h * 1.04,
+        x + w * 0.72, y + h * 0.94)
+    ..cubicTo(x + w * 0.98, y + h * 0.86, x + w * 1.02, y + h * 0.66,
+        x + w * 0.84, y + h * 0.56)
+    // the hilum: a soft inward curve on the right-hand side
+    ..cubicTo(x + w * 0.70, y + h * 0.50, x + w * 0.70, y + h * 0.40,
+        x + w * 0.84, y + h * 0.34)
+    ..cubicTo(x + w * 1.02, y + h * 0.24, x + w * 0.98, y + h * 0.08,
+        x + w * 0.62, y + h * 0.04)
+    ..close();
+}
+
+/// [path] reflected about the vertical line x = [cx].
+Path _mirroredPath(Path path, double cx) {
+  return path.transform(
+    (Matrix4.identity()
+          ..translateByDouble(cx * 2, 0, 0, 1)
+          ..scaleByDouble(-1, 1, 1, 1))
+        .storage,
+  );
+}
+
+/// An illustrative dialysis circuit for use on the dark brand gradient: a
+/// pair of kidneys joined by a loop to a filter cartridge, with small dots
+/// travelling the loop - leaving coral, returning turquoise after the
+/// filter - as a gentle picture of treatment that keeps going. Decorative
+/// and schematic, not a medical diagram. With reduced motion the dots
+/// stand still.
+class CareCircuit extends StatefulWidget {
+  const CareCircuit({super.key});
+
+  @override
+  State<CareCircuit> createState() => _CareCircuitState();
+}
+
+class _CareCircuitState extends State<CareCircuit>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 7),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduced = Motion.reduced(context);
+
+    return ExcludeSemantics(
+      child: reduced
+          ? CustomPaint(
+              painter: _CareCircuitPainter(progress: 0.12),
+              size: Size.infinite,
+            )
+          : AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) => CustomPaint(
+                painter: _CareCircuitPainter(progress: _controller.value),
+                size: Size.infinite,
+              ),
+            ),
+    );
+  }
+}
+
+class _CareCircuitPainter extends CustomPainter {
+  _CareCircuitPainter({required this.progress});
+
+  final double progress;
+
+  static const Color _turquoise = Color(0xFF7FD0D9);
+  static const int _dots = 7;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+    final w = size.width;
+    final h = size.height;
+
+    // ---- the kidney pair, left
+    final kw = math.min(h * 0.40, w * 0.14);
+    final kh = kw * 1.42;
+    final pairCx = w * 0.20;
+    final top = (h - kh) / 2;
+    final left = _kidneyPath(Offset(pairCx - kw * 1.08, top), kw);
+    final right = _mirroredPath(
+      _kidneyPath(Offset(pairCx - kw * 1.08, top), kw),
+      pairCx,
+    );
+    canvas.drawPath(left, Paint()..color = _turquoise.withValues(alpha: 0.85));
+    canvas.drawPath(right, Paint()..color = Brand.teal.withValues(alpha: 0.95));
+    for (final k in [left, right]) {
+      canvas.drawPath(
+        k,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.30)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2,
+      );
+    }
+    // A small heart between them, echoing the CureNurture care glyph.
+    final hx = pairCx;
+    final hy = h * 0.5;
+    final r = kw * 0.16;
+    final heart = Path()
+      ..moveTo(hx, hy + r * 0.95)
+      ..cubicTo(hx - r * 1.5, hy + r * 0.05, hx - r * 0.72, hy - r * 1.05,
+          hx, hy - r * 0.28)
+      ..cubicTo(hx + r * 0.72, hy - r * 1.05, hx + r * 1.5, hy + r * 0.05,
+          hx, hy + r * 0.95)
+      ..close();
+    canvas.drawPath(heart, Paint()..color = Brand.coralBright);
+
+    // ---- the filter cartridge, right
+    final fx = w * 0.84;
+    final fw = math.max(18.0, w * 0.065);
+    final fTop = h * 0.16;
+    final fBottom = h * 0.84;
+    final cartridge = RRect.fromRectAndRadius(
+      Rect.fromLTRB(fx - fw / 2, fTop, fx + fw / 2, fBottom),
+      Radius.circular(fw / 2),
+    );
+    canvas.drawRRect(
+      cartridge,
+      Paint()..color = Colors.white.withValues(alpha: 0.10),
+    );
+    canvas.drawRRect(
+      cartridge,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.38)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4,
+    );
+    for (double y = fTop + fw * 0.7; y < fBottom - fw * 0.6; y += 7) {
+      canvas.drawLine(
+        Offset(fx - fw * 0.28, y),
+        Offset(fx + fw * 0.28, y),
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.16)
+          ..strokeWidth = 1,
+      );
+    }
+
+    // ---- the loop: out over the top, through the filter, back underneath
+    final start = Offset(pairCx + kw * 1.0, h * 0.36);
+    final end = Offset(pairCx + kw * 1.0, h * 0.64);
+    final loop = Path()
+      ..moveTo(start.dx, start.dy)
+      ..cubicTo(w * 0.46, h * 0.02, w * 0.70, h * 0.02, fx, fTop)
+      ..lineTo(fx, fBottom)
+      ..cubicTo(w * 0.70, h * 0.98, w * 0.46, h * 0.98, end.dx, end.dy);
+
+    canvas.drawPath(
+      loop,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.24)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round,
+    );
+
+    final metrics = loop.computeMetrics().toList();
+    if (metrics.isEmpty) return;
+    final metric = metrics.first;
+    final length = metric.length;
+
+    // Where the filter section of the loop begins and ends, so dots past
+    // it can be drawn "cleaned" (turquoise).
+    final filterFrom = _lengthTo(metric, fTop, fx);
+
+    for (int i = 0; i < _dots; i++) {
+      final t = (progress + i / _dots) % 1.0;
+      final d = t * length;
+      final p = metric.getTangentForOffset(d)?.position;
+      if (p == null) continue;
+      final cleaned = d > filterFrom + (fBottom - fTop) * 0.5;
+      final colour = cleaned ? _turquoise : Brand.coralBright;
+      canvas.drawCircle(p, 7, Paint()..color = colour.withValues(alpha: 0.18));
+      canvas.drawCircle(p, 3, Paint()..color = colour.withValues(alpha: 0.95));
+    }
+  }
+
+  /// Distance along [metric] at which it first reaches the point (x, y)
+  /// closely enough - here, the top of the filter cartridge.
+  static double _lengthTo(PathMetric metric, double y, double x) {
+    for (double d = 0; d < metric.length; d += 2) {
+      final p = metric.getTangentForOffset(d)?.position;
+      if (p != null && (p.dx - x).abs() < 2 && (p.dy - y).abs() < 2) return d;
+    }
+    return metric.length / 2;
+  }
+
+  @override
+  bool shouldRepaint(covariant _CareCircuitPainter oldDelegate) =>
+      oldDelegate.progress != progress;
 }
 
 /// Scattered, slowly drifting dots. Sits behind light sections to stop

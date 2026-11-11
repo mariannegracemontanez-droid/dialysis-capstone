@@ -2,6 +2,11 @@
 
 How the sandbox donation flow works, how to set it up, and how to demonstrate it.
 
+> **⚠ Local development / design lead handoff: do not use this file for setup.** Follow
+> [docs/DESIGN_LEAD_HANDOFF.md](../docs/DESIGN_LEAD_HANDOFF.md) instead. The database changes
+> described here are already part of `supabase/migrations/` and are applied automatically by
+> `supabase start`. **Do not follow sections 4 and 5**: they act on the live Supabase project.
+
 > **DEMO MODE: NO REAL MONEY IS TRANSFERRED.** Every donation created by this flow is a sandbox
 > transaction. A "successful" payment is either produced by the internal demo simulator or by
 > PayMongo's **test mode**. In both cases no money moves and no dialysis center receives funds.
@@ -159,6 +164,10 @@ can't touch another donor's checkout.
 
 ## 4. Setup
 
+> **⚠ Do not follow for the local handoff — live Supabase operations.** The steps below run SQL in
+> the hosted project's dashboard (SQL Editor). For local development these changes are already in
+> `supabase/migrations/`; follow [docs/DESIGN_LEAD_HANDOFF.md](../docs/DESIGN_LEAD_HANDOFF.md).
+
 1. **Preflight (read-only).** Open the Supabase dashboard, then **SQL Editor → New query**. Paste
    `supabase_preflight_donation_sandbox.sql` and click **Run**. It changes nothing.
    - Every `prerequisite` row should say OK.
@@ -186,6 +195,11 @@ update donation_payment_settings set simulator_enabled = false, paymongo_test_en
 ---
 
 ## 5. PayMongo test mode (optional)
+
+> **⚠ Do not follow for the local handoff — live Supabase operations.** The steps below link the
+> hosted project (`supabase link`), store secrets on it (`supabase secrets set`) and deploy Edge
+> Functions (`supabase functions deploy`). The local handoff keeps PayMongo off and never deploys
+> functions; see [docs/DESIGN_LEAD_HANDOFF.md](../docs/DESIGN_LEAD_HANDOFF.md).
 
 The demo doesn't need this. Do it only when you have a PayMongo account. **Never** put keys in Flutter
 code or in `.env` files that ship to the browser.

@@ -250,6 +250,7 @@ class SectionHeading extends StatelessWidget {
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     final mobile = Brand.isMobile(width);
+    final tablet = Brand.isTablet(width);
     final centred = align == TextAlign.center;
 
     return Reveal(
@@ -260,12 +261,17 @@ class SectionHeading extends StatelessWidget {
         children: [
           Eyebrow(eyebrow, light: light, color: eyebrowColor),
           const SizedBox(height: 18),
-          Text(
-            title,
-            textAlign: align,
-            style: Brand.display(
-              mobile ? 28 : 38,
-              color: light ? Colors.white : Brand.textStrong,
+          ConstrainedBox(
+            // A comfortable measure, so long titles wrap into balanced lines
+            // rather than one very wide line.
+            constraints: const BoxConstraints(maxWidth: 780),
+            child: Text(
+              title,
+              textAlign: align,
+              style: Brand.display(
+                mobile ? 28 : (tablet ? 34 : 38),
+                color: light ? Colors.white : Brand.textStrong,
+              ),
             ),
           ),
           if (subtitle != null) ...[
@@ -389,14 +395,21 @@ class InfoCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Same icon treatment as the impact statistics: a soft disc
+              // with a fine accent ring.
               Container(
                 height: 54,
                 width: 54,
-                decoration: Brand.iconBox(
-                  filled ? Colors.white.withValues(alpha: 0.75) : accentSoft,
-                  radius: 18,
+                decoration: BoxDecoration(
+                  color: filled
+                      ? Colors.white.withValues(alpha: 0.75)
+                      : accentSoft,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: accent.withValues(alpha: hovered ? 0.40 : 0.22),
+                  ),
                 ),
-                child: Icon(icon, color: accent, size: 27),
+                child: Icon(icon, color: accent, size: 26),
               ),
               const SizedBox(height: 20),
               Text(title, style: Brand.heading(19)),

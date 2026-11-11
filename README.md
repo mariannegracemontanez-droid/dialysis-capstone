@@ -1,114 +1,69 @@
-# Dialysis Capstone Thesis Project
+# Dialysis Capstone Thesis Project (CureNurture)
 
-A comprehensive system for managing dialysis patient care including mobile app, admin dashboards, and donation management.
+A system for managing dialysis patient care: a patient mobile app, a centre admin web panel,
+a super admin web portal, and a donation website, all backed by Supabase.
+
+> **Setting up the project?** Start with [docs/DESIGN_LEAD_HANDOFF.md](docs/DESIGN_LEAD_HANDOFF.md).
+> It is the only current setup guide for the Admin Panel, Super Admin and Donation Website.
 
 ## 📁 Project Structure
 
 ```
 dialysis-capstone/
-├── mobile/                  # Flutter mobile app for patients
-├── admin-dashboard/         # Flutter web dashboard for admin
-├── superadmin-dashboard/    # Flutter web dashboard for superadmin
-├── donation-drive/          # Web page for donations
-└── docs/                    # Documentation
+├── admin_panel/                  # Flutter web app for each dialysis centre's admin
+├── super_admin_app/              # Flutter web app for system oversight (super admin)
+├── Donation/                     # Flutter web app for donors (payments are simulated)
+├── packages/curenurture_notice/  # Shared Flutter package (Admin Panel + Super Admin)
+├── supabase/                     # Local Supabase: config, migrations, seed
+├── tools/handoff/                # Data-package import, dev logins, verification
+├── docs/                         # Documentation (setup guide)
+└── mobile-app/                   # Flutter patient mobile app (not part of the design lead handoff)
 ```
 
 ## ✨ Features
 
-### Mobile App (Patients)
+### Mobile App (Patients) — `mobile-app/`
 - User authentication (Login/Signup)
 - Appointment scheduling
 - Medical records management
 - Patient profile information
 - Donation drive registration
 
-### Admin Dashboard
+### Admin Panel — `admin_panel/`
 - Patient management
 - Appointment scheduling
 - Medical records access
 - Donation management
 
-### SuperAdmin Dashboard
+### Super Admin — `super_admin_app/`
 - Full system control
 - Admin management
 - Analytics and reporting
 - System configuration
 
-### Donation Drive
+### Donation Website — `Donation/`
 - Donor registration
 - Donation tracking
 - Donor history
 
 ## 🛠️ Tech Stack
 
-- **Mobile & Web Dashboard:** Flutter + Dart
-- **Backend/Database:** Supabase
-- **Donation Drive:** HTML/CSS/JavaScript
+- **Apps:** Flutter + Dart (mobile app and all three web apps, including the Donation Website)
+- **Backend/Database:** Supabase (for development: a local Supabase in Docker, started with the Supabase CLI)
 - **Version Control:** Git & GitHub
-
-## ⏰ Timeline
-
-- **Duration:** 2 months
-- **Start Date:** 2026-03-14
-- **Status:** In Development
 
 ## 📋 Setup Instructions
 
-### Prerequisites
-- Flutter SDK (v3.0+)
-- Dart SDK
-- Git
-- Supabase account
+Follow [docs/DESIGN_LEAD_HANDOFF.md](docs/DESIGN_LEAD_HANDOFF.md) for the Admin Panel, Super Admin
+and Donation Website. The mobile app is not covered by that guide.
 
-### Mobile App Setup
-```bash
-cd mobile
-flutter pub get
-flutter run
-```
+## ⚠️ Documents you should not follow for setup
 
-### Admin Dashboard Setup
-```bash
-cd admin-dashboard
-flutter pub get
-flutter run -d chrome
-```
-
-### SuperAdmin Dashboard Setup
-```bash
-cd superadmin-dashboard
-flutter pub get
-flutter run -d chrome
-```
-
-### Donation Drive Setup
-```bash
-cd donation-drive
-# Open index.html in browser
-```
-
-## 📅 Development Phases
-
-### Phase 1: Setup & Authentication (Week 1-2)
-- [ ] Project structure
-- [ ] Mobile login/signup
-- [ ] Admin login
-- [ ] Supabase setup
-
-### Phase 2: Core Features (Week 3-5)
-- [ ] Appointment scheduling
-- [ ] Medical records
-- [ ] Patient profile
-
-### Phase 3: Additional Features (Week 6-7)
-- [ ] Donation drive
-- [ ] Notifications
-- [ ] Analytics
-
-### Phase 4: Testing & Deployment (Week 8)
-- [ ] QA & bug fixes
-- [ ] Deployment
-- [ ] Documentation
+| Document | Why |
+|---|---|
+| Earlier versions of this README | Described folders that do not exist (`mobile/`, `admin-dashboard/`, `superadmin-dashboard/`, `donation-drive/`) and an HTML donation site |
+| `QUICK_REFERENCE.md`, `IMPLEMENTATION_SUMMARY.md` | Historical feature notes, not current setup instructions |
+| `Donation/DONATION_SANDBOX_GUIDE.md`, sections 4 and 5 | They run SQL and deploy functions on the **live** Supabase project. Locally, those database changes are already in `supabase/migrations/` |
 
 ## 👥 Contributors
 
@@ -116,5 +71,7 @@ cd donation-drive
 
 ## 📄 License
 
-MIT License # dialysis-capstone
+MIT License
+
+# dialysis-capstone
 Monorepo for dialysis management system - mobile app, admin dashboard, super admin dashboard, and donation drive

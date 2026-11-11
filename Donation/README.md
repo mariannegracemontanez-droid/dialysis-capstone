@@ -1,17 +1,9 @@
-# donation_app
+# donation_app — CureNurture Donation Website
 
-A new Flutter project.
+Flutter web app for donors. Payments are simulated; no real money is charged or transferred.
 
-## Getting Started
+**Setup and running:** follow [docs/DESIGN_LEAD_HANDOFF.md](../docs/DESIGN_LEAD_HANDOFF.md)
+(local Supabase, `.env` from `.env.example`, data import, development logins, and the run command).
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+`DONATION_SANDBOX_GUIDE.md` explains how the simulated donation flow works. Do **not** follow its
+sections 4 and 5 for local setup: they act on the live Supabase project.

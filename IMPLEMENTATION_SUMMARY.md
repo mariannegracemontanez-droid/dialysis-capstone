@@ -1,5 +1,9 @@
 # Dialysis Capstone Admin Panel - Enhancement Summary
 
+> **Historical feature notes — not current setup instructions.** This file records an earlier
+> stage of the Admin Panel and may not match the current code. For setup and running, follow
+> [docs/DESIGN_LEAD_HANDOFF.md](docs/DESIGN_LEAD_HANDOFF.md).
+
 ## ✅ All Enhancements Complete
 
 I've successfully enhanced the admin panel with all requested features. Here's a comprehensive overview:

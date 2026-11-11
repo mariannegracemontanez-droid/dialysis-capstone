@@ -15,6 +15,19 @@ either created on your machine or delivered separately, as described below.
 
 ---
 
+## 0. Documents you should not follow
+
+These files are in the repository but are **not** setup instructions for this handoff:
+
+| Document | Why not to follow it |
+|---|---|
+| Older copies of the root `README.md` / `docs/README.md` | They described folders that do not exist (`mobile/`, `admin-dashboard/`, `superadmin-dashboard/`, `donation-drive/`), an HTML donation site and a hosted "Supabase account" |
+| `QUICK_REFERENCE.md`, `IMPLEMENTATION_SUMMARY.md` | Historical feature notes about an earlier Admin Panel; may not match the current code |
+| `Donation/DONATION_SANDBOX_GUIDE.md` **sections 4 and 5** | Live Supabase operations: SQL in the hosted project's SQL Editor, `supabase link`, `supabase secrets set`, `supabase functions deploy`. Locally, the database changes are already in `supabase/migrations/` and PayMongo stays off. (The rest of that file is useful background on how simulated donations work.) |
+| Anything about `mobile-app/` | Out of scope for this handoff |
+
+Follow only this guide.
+
 ## 1. Architecture
 
 | Part | What it is | Talks to |
@@ -49,16 +62,117 @@ Migration sequence (applied automatically by `supabase start` / `supabase db res
 | 6 | `20261110000006_donation_eligibility_v6.sql` | Eligibility: every centre except `closed`, with an active admin |
 | 7 | `20261110000007_storage_buckets_and_policies.sql` | Private buckets `medical_docs`, `patient_profiles`, `donation_receipts` + access rules |
 
-## 3. Tools (versions the project is verified with)
+## 3. Tools: versions and installation (Windows)
 
-| Tool | Version | Notes |
-|---|---|---|
-| Git for Windows | 2.5x | Also provides **GnuPG** (`C:\Program Files\Git\usr\bin\gpg.exe`) |
-| Flutter | 3.47.x stable (Dart 3.13) | Apps require Dart ≥ 3.10.8 / ≥ 3.11.1 |
-| Docker Desktop | 29.x | WSL 2 backend |
-| Supabase CLI | 3.x | `supabase --version` |
-| Browser | Microsoft Edge or Chrome | |
-| VS Code (or Android Studio) | current | Flutter + Dart extensions |
+### 3.1 Versions
+
+**Recommended = the exact versions tested** with this project on the project owner's Windows
+machine. Newer versions may work but have **not** been tested with this project and are not
+guaranteed to be compatible.
+
+| Tool | Minimum required | Tested (recommended) | Newer versions |
+|---|---|---|---|
+| Git for Windows | none stated by the project | 2.56.0 (includes GnuPG 2.4.9, `C:\Program Files\Git\usr\bin\gpg.exe`) | not tested |
+| Flutter (stable) | Dart ≥ 3.10.8 (Admin Panel) and ≥ 3.11.1 (Super Admin, Donation), from each app's `pubspec.yaml` | 3.47.6 (Dart 3.13) | not tested |
+| WSL | 2.1.5 or later (Docker Desktop requirement) | WSL 2 backend | — |
+| Docker Desktop | Docker's own requirements (see 3.4) | Docker Engine 29.9.2 | not tested |
+| Supabase CLI | none stated by the project | 3.0.0 | not tested |
+| Browser | Microsoft Edge or Google Chrome | Edge | — |
+| Editor | — | VS Code with the Flutter and Dart extensions | — |
+
+Install the tools in the order below. Use **Windows PowerShell**.
+
+### 3.2 Git for Windows
+
+Download and run the installer from the official page: <https://git-scm.com/install/windows>.
+Git for Windows also provides GnuPG, which decrypts the data package (§7).
+
+```powershell
+git --version
+```
+
+### 3.3 WSL 2 (needed by Docker Desktop)
+
+Official guide: <https://learn.microsoft.com/en-us/windows/wsl/install>. Open PowerShell **as
+administrator** (right-click → "Run as administrator"), run the command, then **restart** Windows:
+
+```powershell
+wsl --install
+```
+
+Check afterwards (if WSL was already installed, the official guide explains the alternatives):
+
+```powershell
+wsl --version
+wsl.exe --list --verbose
+```
+
+### 3.4 Docker Desktop (WSL 2 backend)
+
+Official guide: <https://docs.docker.com/desktop/setup/install/windows-install/>. Its WSL 2
+requirements: Windows 11 version 23H2 (build 22631) or later (or the Windows 10 editions listed
+there), WSL 2.1.5 or later, hardware virtualization enabled in BIOS/UEFI, and 8 GB RAM.
+Install it with the WSL 2 backend, start Docker Desktop, and keep it **running** whenever you
+use the project.
+
+```powershell
+docker version
+```
+
+Licensing: Docker Desktop is licensed under the Docker Subscription Service Agreement; check
+whether its terms apply to you: <https://docs.docker.com/subscription/desktop-license/>.
+
+### 3.5 Flutter (web)
+
+Official guides:
+- Install with VS Code (Flutter's recommended method): <https://docs.flutter.dev/install/with-vs-code>
+- Manual install: <https://docs.flutter.dev/install/manual>; add Flutter to PATH:
+  <https://docs.flutter.dev/install/add-to-path>
+- Web setup (needs Edge or Chrome): <https://docs.flutter.dev/platform-integration/web/setup>
+- To match the **tested** version exactly, download Flutter **3.47.6** for Windows from the SDK
+  archive (<https://docs.flutter.dev/install/archive>, Stable channel → Windows) and follow the
+  manual install. The VS Code method installs the newest stable release, which has not been
+  tested with this project.
+
+Close and reopen PowerShell after installing, then check:
+
+```powershell
+flutter --version
+flutter doctor
+flutter devices
+```
+
+`flutter doctor` needs a ✓ for Flutter; Android/Xcode warnings can be ignored (web only).
+`flutter devices` must list **Edge (web)** or **Chrome (web)**.
+
+### 3.6 Supabase CLI (via Scoop)
+
+Official guide: <https://supabase.com/docs/guides/local-development/cli/getting-started>
+(Windows method: Scoop). First install Scoop (<https://github.com/ScoopInstaller/Scoop>) from a
+**regular, non-administrator** PowerShell:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+```
+
+Then install the Supabase CLI:
+
+```powershell
+scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
+scoop install supabase
+```
+
+Close and reopen PowerShell, then check (the scripts in `tools\handoff\` call `supabase` by name,
+so it must work from any folder):
+
+```powershell
+supabase --version
+```
+
+Scoop installs the current Supabase CLI release, which may be newer than the tested 3.0.0.
+
+### 3.7 Ports
 
 Ports used on your machine: API **54321**, database **54322**, Studio **54323**, mail
 **54324**. (A Windows PostgreSQL service on 5432, if you have one, is not affected.)
@@ -162,6 +276,12 @@ cd super_admin_app; flutter pub get; flutter run -d edge --web-hostname 127.0.0.
 cd Donation;        flutter pub get; flutter run -d edge --web-hostname 127.0.0.1 --web-port 5180
 ```
 
+URLs (from the commands above): Admin Panel <http://127.0.0.1:5181>, Super Admin
+<http://127.0.0.1:5182>, Donation Website <http://127.0.0.1:5180>.
+
+**Optional — Google Chrome instead of Edge:** use the same commands with `-d chrome` in place of
+`-d edge`; the hostname and ports stay the same.
+
 - **Admin Panel:** log in with an admin from the credentials file — you see that centre only.
 - **Super Admin:** log in with a superadmin — all centres, donation monitoring, history.
 - **Donation Website:** donate anonymously or sign in as the donor; payment is simulated.
@@ -200,17 +320,30 @@ orphan rows*. Then also check in the apps:
 | Login fails right after import | Run `create_dev_credentials.ps1` (§10); use the emails/passwords in the credentials file |
 | "Decryption failed" | Wrong passphrase or damaged file; ask for the file/passphrase again |
 | `gpg not found` | Install Git for Windows (it includes GnuPG) |
+| `supabase` (or `flutter`) "is not recognized" | Close and reopen PowerShell after installing (§3.5, §3.6); check with `supabase --version` / `flutter --version` |
 | Port already in use | Stop the other process, or change the port in `supabase\config.toml` |
 | Medical documents do not open | Expected: original files are not available (§8) |
 | Hide `mobile-app/` locally (optional) | `git sparse-checkout set --no-cone "/*" "!/mobile-app/"` |
 
-## 17. Branch workflow
+## 17. Branch workflow (fork and pull request)
 
-1. Work only on your branch (`design-lead-work`); keep `main` untouched.
-2. Preserve existing behaviour and business rules unless a change is agreed.
-3. Commit small, focused changes; `git push -u origin design-lead-work`.
-4. Open a pull request; the project owner reviews and merges into `main`.
-5. Before starting new work: `git fetch origin` and `git merge origin/main` into your branch.
+You work in **your own fork** of the public repository; you do not need write access to the
+owner's repository. GitHub's guide: <https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo>.
+
+1. On GitHub, open <https://github.com/mariannegracemontanez-droid/dialysis-capstone> and click
+   **Fork** to create `https://github.com/<your-github-username>/dialysis-capstone`.
+2. Keep the clone from §4 (`origin` = the owner's repository, used to receive updates) and add
+   your fork as a second remote, once:
+   ```powershell
+   git remote add fork https://github.com/<your-github-username>/dialysis-capstone.git
+   ```
+3. Work only on your branch (`design-lead-work`); keep `main` untouched.
+4. Preserve existing behaviour and business rules unless a change is agreed.
+5. Commit small, focused changes, then push the branch to **your fork**:
+   `git push -u fork design-lead-work`.
+6. On GitHub, open a **pull request** from `<your-github-username>:design-lead-work` into the
+   owner's `main`. The project owner reviews and merges it.
+7. Before starting new work: `git fetch origin` and `git merge origin/main` into your branch.
 
 Avoid conflicts: agree who edits which screens; do not reformat whole files; never commit
 `.env`, `handoff-data\`, credentials or data exports (they are git-ignored — keep it so).

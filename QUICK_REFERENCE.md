@@ -1,5 +1,9 @@
 # Quick Reference Guide - Admin Panel Implementation
 
+> **Historical feature notes — not current setup instructions.** This file records an earlier
+> stage of the Admin Panel and may not match the current code. For setup and running, follow
+> [docs/DESIGN_LEAD_HANDOFF.md](docs/DESIGN_LEAD_HANDOFF.md).
+
 ## 🎯 Core Features
 
 ### Dashboard Page Features

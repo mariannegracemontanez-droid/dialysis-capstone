@@ -1,16 +1,7 @@
-# admin_panel
+# admin_panel — CureNurture Admin Panel
 
-A new Flutter project.
+Flutter web app for each dialysis centre's admin.
 
-## Getting Started
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+**Setup and running:** follow [docs/DESIGN_LEAD_HANDOFF.md](../docs/DESIGN_LEAD_HANDOFF.md)
+(local Supabase, `.env` from `.env.example`, data import, development logins, and the run command).
+This app uses the shared package in `packages/curenurture_notice/`.

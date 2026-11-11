@@ -1,17 +1,8 @@
-# super_admin_app
+# super_admin_app — CureNurture Super Admin
 
-A new Flutter project.
+Flutter web app for system oversight (super admin).
 
-## Getting Started
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+**Setup and running:** follow [docs/DESIGN_LEAD_HANDOFF.md](../docs/DESIGN_LEAD_HANDOFF.md)
+(local Supabase, `assets/.env` and `.env` from their `.env.example` files, data import,
+development logins, and the run command).
+This app uses the shared package in `packages/curenurture_notice/`.
