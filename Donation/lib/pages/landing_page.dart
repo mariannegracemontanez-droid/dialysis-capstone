@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
@@ -10,6 +9,7 @@ import '../services/public_donation_service.dart';
 import '../theme/brand.dart';
 import '../widgets/decor.dart';
 import '../widgets/motion.dart';
+import '../widgets/site_nav.dart';
 import '../widgets/ui.dart';
 import 'donation_option_page.dart';
 import 'login_page.dart';
@@ -192,9 +192,7 @@ class _LandingPageState extends State<LandingPage>
   /// The floating navigation capsule: its top margin and height. The hero
   /// starts underneath it, and in-page scrolling stops this far below the
   /// top so a section's heading is never hidden behind the bar.
-  static const double _navTopMargin = 12;
-  static const double _navHeight = 64;
-  static const double _navReserve = _navTopMargin + _navHeight;
+  static const double _navReserve = SiteNav.reserve;
 
   /// Smooth-scrolls so the section starts just below the floating bar.
   void _scrollTo(GlobalKey key) {
@@ -407,52 +405,6 @@ class _LandingPageState extends State<LandingPage>
     );
   }
 
-  Widget _brandMark() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          height: 40,
-          width: 40,
-          padding: const EdgeInsets.all(4),
-          decoration: Brand.iconBox(Brand.sky, radius: 13),
-          child: Image.asset(
-            'lib/assets/image/CureNurture_logo.png',
-            fit: BoxFit.contain,
-            semanticLabel: 'CureNurture logo',
-          ),
-        ),
-        const SizedBox(width: 10),
-        const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Cure',
-              style: TextStyle(
-                fontFamily: Brand.displayFont,
-                fontSize: 19,
-                fontWeight: FontWeight.w700,
-                color: Brand.teal,
-                height: 1,
-              ),
-            ),
-            Text(
-              'NURTURE',
-              style: TextStyle(
-                fontFamily: Brand.displayFont,
-                fontSize: 9.5,
-                fontWeight: FontWeight.w700,
-                color: Brand.brandDeep,
-                letterSpacing: 1.8,
-                height: 1.3,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
 
   /// The navigation bar: a frosted, soft-white capsule floating over the
   /// top of the page. It sits in a layer above the scroll view, so the
@@ -472,7 +424,6 @@ class _LandingPageState extends State<LandingPage>
         // they move into the menu. _NavBarLayout places them from measured
         // widths, so the bar cannot overflow whatever font is used.
         final showLinks = width >= 1180;
-        final side = mobile ? 12.0 : math.max(16.0, Brand.gutter(width) - 12);
 
         final links = Row(
           mainAxisSize: MainAxisSize.min,
@@ -492,7 +443,7 @@ class _LandingPageState extends State<LandingPage>
           actions = Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _NavDonateButton(
+              NavDonateButton(
                 // Shortened on the narrowest phones so the brand mark,
                 // donate action and menu always fit on one line.
                 label: width < 430 ? 'Give' : 'Donate',
@@ -509,7 +460,7 @@ class _LandingPageState extends State<LandingPage>
             children: [
               _signUpButton(),
               const SizedBox(width: 10),
-              _NavDonateButton(
+              NavDonateButton(
                 label: 'Donate Now',
                 width: _navActionWidth,
                 height: _navActionHeight,
@@ -549,7 +500,7 @@ class _LandingPageState extends State<LandingPage>
                 onPressed: () => _logout(context),
               ),
               const SizedBox(width: 4),
-              _NavDonateButton(
+              NavDonateButton(
                 label: 'Donate Now',
                 width: _navActionWidth,
                 height: _navActionHeight,
@@ -564,7 +515,7 @@ class _LandingPageState extends State<LandingPage>
             ? CustomMultiChildLayout(
                 delegate: _NavBarLayout(),
                 children: [
-                  LayoutId(id: _NavSlot.brand, child: _brandMark()),
+                  LayoutId(id: _NavSlot.brand, child: const BrandMark()),
                   LayoutId(
                     id: _NavSlot.links,
                     child: FittedBox(fit: BoxFit.scaleDown, child: links),
@@ -574,7 +525,7 @@ class _LandingPageState extends State<LandingPage>
               )
             : Row(
                 children: [
-                  _brandMark(),
+                  const BrandMark(),
                   Expanded(
                     child: Align(
                       alignment: Alignment.centerRight,
@@ -584,51 +535,7 @@ class _LandingPageState extends State<LandingPage>
                 ],
               );
 
-        const radius = BorderRadius.all(Radius.circular(_navHeight / 2));
-
-        return Padding(
-          padding: EdgeInsets.fromLTRB(side, _navTopMargin, side, 0),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: Brand.maxContent + 56),
-              child: DecoratedBox(
-                // The shadow sits outside the clip so the capsule reads as
-                // gently raised over both the navy hero and light sections.
-                decoration: BoxDecoration(
-                  borderRadius: radius,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Brand.ink.withValues(alpha: 0.10),
-                      blurRadius: 28,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: radius,
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                    child: Container(
-                      height: _navHeight,
-                      padding: EdgeInsets.only(
-                        left: mobile ? 10 : 12,
-                        right: mobile ? 4 : 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.80),
-                        borderRadius: radius,
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.70),
-                        ),
-                      ),
-                      child: content,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
+        return NavCapsule(child: content);
       },
     );
   }
@@ -659,20 +566,26 @@ class _LandingPageState extends State<LandingPage>
                   bottom: mobile ? 44 : 72,
                 ),
                 child: ContentColumn(
+                  // Slightly wider than the reading column, so the text sits
+                  // nearer the left edge and the illustration nearer the
+                  // right (the About page hero uses the same width).
+                  maxWidth: Brand.maxContent + 80,
                   child: FadeTransition(
                     opacity: _fadeAnimation,
                     child: SlideTransition(
                       position: _slideAnimation,
                       // Side by side from 1000px; below that the text comes
-                      // first and the Ongoing Care visual follows, capped in
-                      // width so it scales in proportion.
+                      // first and the Ongoing Care visual follows, aligned to
+                      // the same left edge and capped so it scales in
+                      // proportion.
                       child: width < 1000
                           ? Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 _heroText(mobile: mobile),
                                 SizedBox(height: mobile ? 40 : 48),
-                                Center(
+                                Align(
+                                  alignment: Alignment.centerLeft,
                                   child: ConstrainedBox(
                                     constraints: const BoxConstraints(
                                       maxWidth: 560,
@@ -683,12 +596,18 @@ class _LandingPageState extends State<LandingPage>
                               ],
                             )
                           : Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
+                              // Two equal columns with one fixed gap: a clear
+                              // 50/50 partition. Both columns start at the
+                              // same top edge, so their labels ("Compassion
+                              // in action" and "Ongoing care") sit on one
+                              // line. Centring them vertically put the two
+                              // labels at different heights, because the
+                              // columns differ in height.
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Expanded(flex: 6, child: _heroText()),
-                                const SizedBox(width: 56),
+                                Expanded(child: _heroText()),
+                                const SizedBox(width: 64),
                                 Expanded(
-                                  flex: 5,
                                   child: _heroCareVisual(compact: false),
                                 ),
                               ],
@@ -1110,36 +1029,6 @@ class _LandingPageState extends State<LandingPage>
                           label: 'Dialysis centres you can support',
                         ),
                     ]),
-                  const SizedBox(height: 24),
-                  Container(height: 1, color: Brand.borderSoft),
-                  const SizedBox(height: 18),
-                  // The icon is part of the text run, so it stays beside the
-                  // first word however the sentence wraps.
-                  Text.rich(
-                    TextSpan(
-                      children: [
-                        const WidgetSpan(
-                          alignment: PlaceholderAlignment.middle,
-                          child: Padding(
-                            padding: EdgeInsets.only(right: 6),
-                            child: Icon(
-                              Icons.info_outline_rounded,
-                              size: 15,
-                              color: Brand.textMuted,
-                            ),
-                          ),
-                        ),
-                        TextSpan(
-                          text:
-                              'These figures come directly from verified '
-                              'donation records in the CureNurture system, and '
-                              'update as new donations are recorded.',
-                          style: Brand.body(12.5, color: Brand.textMuted),
-                        ),
-                      ],
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
                 ],
               ),
             );
@@ -1883,40 +1772,15 @@ class _LandingPageState extends State<LandingPage>
                       ),
                     ),
                     const SizedBox(height: 34),
-                    if (mobile) ...[
-                      DonateButton(
+                    // One centred action (Learn More removed from this band).
+                    Center(
+                      child: DonateButton(
                         label: 'Donate Now',
                         onPressed: () => _openDonation(context),
-                        expand: true,
+                        expand: mobile,
                         large: true,
                       ),
-                      const SizedBox(height: 12),
-                      GhostButton(
-                        label: 'Learn More',
-                        icon: Icons.arrow_forward_rounded,
-                        light: true,
-                        expand: true,
-                        onPressed: () => _openMoreDetails(context),
-                      ),
-                    ] else
-                      Wrap(
-                        spacing: 14,
-                        runSpacing: 14,
-                        alignment: WrapAlignment.center,
-                        children: [
-                          DonateButton(
-                            label: 'Donate Now',
-                            onPressed: () => _openDonation(context),
-                            large: true,
-                          ),
-                          GhostButton(
-                            label: 'Learn More',
-                            icon: Icons.arrow_forward_rounded,
-                            light: true,
-                            onPressed: () => _openMoreDetails(context),
-                          ),
-                        ],
-                      ),
+                    ),
                   ],
                 ),
               ),
@@ -2372,107 +2236,3 @@ class _NavLinkState extends State<_NavLink> {
   }
 }
 
-/// Donate Now at the navigation bar's compact size.
-///
-/// The site's existing coral primary style - coral fill, white bold label,
-/// coral glow - with hover (brighter coral, lifted), pressed (deeper coral,
-/// settled) and focus (navy ring) states. The shared DonateButton is not
-/// used here because its fixed height and padding are sized for page
-/// sections, not a 64px bar; that widget is left unchanged.
-class _NavDonateButton extends StatefulWidget {
-  const _NavDonateButton({
-    required this.label,
-    required this.width,
-    required this.height,
-    required this.onPressed,
-  });
-
-  final String label;
-  final double width;
-  final double height;
-  final VoidCallback onPressed;
-
-  @override
-  State<_NavDonateButton> createState() => _NavDonateButtonState();
-}
-
-class _NavDonateButtonState extends State<_NavDonateButton> {
-  bool _hovered = false;
-
-  /// A deeper shade of the brand coral for the pressed state.
-  static const Color _coralPressed = Color(0xFFB83E2E);
-
-  @override
-  Widget build(BuildContext context) {
-    final reduced = Motion.reduced(context);
-
-    return AnimatedContainer(
-      duration: reduced ? Duration.zero : const Duration(milliseconds: 180),
-      width: widget.width,
-      height: widget.height,
-      transform: Matrix4.translationValues(0, _hovered && !reduced ? -1.5 : 0, 0),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: _hovered
-            ? [
-                BoxShadow(
-                  color: Brand.coral.withValues(alpha: 0.40),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
-                ),
-              ]
-            : [
-                BoxShadow(
-                  color: Brand.coral.withValues(alpha: 0.26),
-                  blurRadius: 14,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-      ),
-      child: Semantics(
-        button: true,
-        label: 'Donate now',
-        excludeSemantics: true,
-        child: ElevatedButton.icon(
-          onPressed: widget.onPressed,
-          onHover: (v) => setState(() => _hovered = v),
-          icon: const Icon(Icons.volunteer_activism_rounded, size: 17),
-          label: Text(widget.label, maxLines: 1, softWrap: false),
-          style: ButtonStyle(
-            backgroundColor: WidgetStateProperty.resolveWith((states) {
-              if (states.contains(WidgetState.pressed)) return _coralPressed;
-              if (states.contains(WidgetState.hovered)) {
-                return Brand.coralBright;
-              }
-              return Brand.coral;
-            }),
-            foregroundColor: const WidgetStatePropertyAll(Colors.white),
-            overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-            elevation: const WidgetStatePropertyAll(0),
-            padding: const WidgetStatePropertyAll(
-              EdgeInsets.symmetric(horizontal: 12),
-            ),
-            iconSize: const WidgetStatePropertyAll(17),
-            textStyle: const WidgetStatePropertyAll(
-              TextStyle(
-                fontFamily: Brand.displayFont,
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            animationDuration: const Duration(milliseconds: 180),
-            shape: WidgetStateProperty.resolveWith((states) {
-              final focused = states.contains(WidgetState.focused);
-              return RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: focused
-                    ? const BorderSide(color: Brand.brandDeep, width: 2.2)
-                    : BorderSide.none,
-              );
-            }),
-          ),
-        ),
-      ),
-    );
-  }
-}

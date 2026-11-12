@@ -5,6 +5,7 @@ import '../theme/brand.dart';
 import '../widgets/decor.dart';
 import '../widgets/donation_steps.dart';
 import '../widgets/motion.dart';
+import '../widgets/site_nav.dart';
 import '../widgets/ui.dart';
 import 'donation_page.dart';
 import 'login_page.dart';
@@ -91,42 +92,17 @@ class _DonationOptionPageState extends State<DonationOptionPage> {
     }
   }
 
-  PreferredSizeWidget _buildHeader() {
-    return AppBar(
-      backgroundColor: Brand.white,
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      surfaceTintColor: Colors.transparent,
-      toolbarHeight: 74,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_rounded, color: Brand.brandDeep),
-        tooltip: 'Back',
-        onPressed: () => Navigator.pop(context),
-      ),
-      titleSpacing: 0,
-      title: Row(
+  /// The site's floating capsule navigation - the same bar as the landing,
+  /// About and donation form pages: back button and logo.
+  Widget _buildNavBar() {
+    return NavCapsule(
+      child: Row(
         children: [
-          Image.asset(
-            'lib/assets/image/CureNurture_logo.png',
-            width: 36,
-            height: 36,
-            semanticLabel: 'CureNurture logo',
-          ),
-          const SizedBox(width: 10),
-          const Text(
-            'CureNurture',
-            style: TextStyle(
-              fontFamily: Brand.displayFont,
-              color: Brand.brandDeep,
-              fontWeight: FontWeight.w700,
-              fontSize: 17,
-            ),
-          ),
+          NavBackButton(onPressed: () => Navigator.pop(context)),
+          const SizedBox(width: 12),
+          const BrandMark(),
+          const Spacer(),
         ],
-      ),
-      bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(1),
-        child: Container(height: 1, color: Brand.border),
       ),
     );
   }
@@ -278,8 +254,9 @@ class _DonationOptionPageState extends State<DonationOptionPage> {
 
     return Scaffold(
       backgroundColor: Brand.canvas,
-      appBar: _buildHeader(),
-      body: RevealScope(
+      body: Stack(
+        children: [
+          RevealScope(
         child: SingleChildScrollView(
         child: Column(
           children: [
@@ -292,8 +269,10 @@ class _DonationOptionPageState extends State<DonationOptionPage> {
                 children: [
                   const Positioned.fill(child: FlowBackdrop(opacity: 0.8)),
                   Padding(
-                    padding: EdgeInsets.symmetric(
-                      vertical: mobile ? 40 : 54,
+                    padding: EdgeInsets.only(
+                      // The floating navigation sits over the top of the band.
+                      top: SiteNav.reserve + (mobile ? 36 : 50),
+                      bottom: mobile ? 40 : 54,
                     ),
                     child: ContentColumn(
                       maxWidth: 860,
@@ -424,6 +403,9 @@ class _DonationOptionPageState extends State<DonationOptionPage> {
           ],
         ),
         ),
+          ),
+          Positioned(top: 0, left: 0, right: 0, child: _buildNavBar()),
+        ],
       ),
     );
   }

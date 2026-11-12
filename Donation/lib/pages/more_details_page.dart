@@ -1,9 +1,19 @@
 import 'package:flutter/material.dart';
 
 import '../theme/brand.dart';
+import '../widgets/decor.dart';
+import '../widgets/motion.dart';
+import '../widgets/site_nav.dart';
 import '../widgets/ui.dart';
 import 'donation_option_page.dart';
 
+/// "About CureNurture" - the page behind the landing page's Learn More.
+///
+/// Presentation only. It is built from the same design system as the
+/// landing page (Brand tokens, ContentColumn, SectionHeading, InfoCard,
+/// the donate button) so the two read as one site. Navigation is
+/// unchanged: back returns to the landing page, Donate Now opens the
+/// existing donation flow.
 class MoreDetailsPage extends StatefulWidget {
   const MoreDetailsPage({super.key});
 
@@ -17,13 +27,7 @@ class _MoreDetailsPageState extends State<MoreDetailsPage>
   late final Animation<double> _fadeAnimation;
   late final Animation<Offset> _slideAnimation;
 
-  // Shared palette, so the mission page matches the landing page it is
-  // reached from.
-  final Color _darkTeal = Brand.brandDeep;
-  final Color _primaryTeal = Brand.teal;
-  final Color _accentBlue = Brand.coral;
-  final Color _surface = Brand.canvas;
-  final Color _softBlue = Brand.sky;
+  static const Color _turquoise = Color(0xFF7FD0D9);
 
   @override
   void initState() {
@@ -40,7 +44,7 @@ class _MoreDetailsPageState extends State<MoreDetailsPage>
     );
 
     _slideAnimation =
-        Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero).animate(
+        Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero).animate(
           CurvedAnimation(
             parent: _animationController,
             curve: Curves.easeOutCubic,
@@ -56,166 +60,145 @@ class _MoreDetailsPageState extends State<MoreDetailsPage>
     super.dispose();
   }
 
-  PreferredSizeWidget _buildHeader() {
-    return AppBar(
-      backgroundColor: Colors.white,
-      elevation: 0,
-      surfaceTintColor: Colors.transparent,
-      toolbarHeight: 74,
-      leading: IconButton(
-        icon: Icon(Icons.arrow_back_rounded, color: _darkTeal),
-        onPressed: () => Navigator.of(context).pop(),
-      ),
-      titleSpacing: 0,
-      title: Row(
+  void _openDonation() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const DonationOptionPage()),
+    );
+  }
+
+  // ---------------------------------------------------------------- header
+
+  /// The same floating capsule as the landing page: back button and logo on
+  /// the left, the compact Donate Now on the right.
+  Widget _buildNavBar(double width) {
+    final mobile = Brand.isMobile(width);
+
+    return NavCapsule(
+      child: Row(
         children: [
-          Image.asset(
-            'lib/assets/image/CureNurture_logo.png',
-            width: 36,
-            height: 36,
+          NavBackButton(onPressed: () => Navigator.of(context).pop()),
+          const SizedBox(width: 12),
+          const BrandMark(),
+          const Spacer(),
+          NavDonateButton(
+            label: mobile ? (width < 430 ? 'Give' : 'Donate') : 'Donate Now',
+            width: mobile ? (width < 430 ? 96 : 120) : 150,
+            height: 42,
+            onPressed: _openDonation,
           ),
-          const SizedBox(width: 10),
-          Text(
-            'Cure Nurture',
-            style: TextStyle(color: _darkTeal, fontWeight: FontWeight.w900),
-          ),
+          if (mobile) const SizedBox(width: 8),
         ],
       ),
     );
   }
 
-  Widget _animatedEntry({required Widget child, int delay = 0}) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
-      duration: Duration(milliseconds: 550 + delay),
-      curve: Curves.easeOutCubic,
-      builder: (context, value, _) {
-        return Opacity(
-          opacity: value,
-          child: Transform.translate(
-            offset: Offset(0, 24 * (1 - value)),
-            child: child,
-          ),
-        );
-      },
-    );
-  }
+  // ------------------------------------------------------------------ hero
 
-  Widget _buildHero() {
+  Widget _buildHero(double width) {
+    final mobile = Brand.isMobile(width);
+    final stacked = width < 1000;
+
+    final text = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Eyebrow('About CureNurture', light: true),
+        SizedBox(height: mobile ? 20 : 24),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 580),
+          child: Text(
+            'Care That Goes Beyond Every Treatment.',
+            style: Brand.display(
+              mobile ? 34 : (Brand.isTablet(width) ? 44 : 52),
+              color: Colors.white,
+            ),
+          ),
+        ),
+        SizedBox(height: mobile ? 16 : 20),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 540),
+          child: Text(
+            'CureNurture connects compassionate donors with dialysis patients '
+            'who need support for treatment, medication, transportation, and '
+            'other essential care needs.',
+            style: Brand.body(
+              mobile ? 15.5 : 17,
+              color: Colors.white.withValues(alpha: 0.86),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    // The page's three existing highlights are the right column's visual:
+    // three translucent cards on the gradient, evenly spaced.
+    final highlights = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _heroPoint(
+          icon: Icons.health_and_safety_rounded,
+          title: 'Patient-centered',
+          text: 'Built around dialysis patients and their families.',
+        ),
+        const SizedBox(height: 14),
+        _heroPoint(
+          icon: Icons.volunteer_activism_rounded,
+          title: 'Community-powered',
+          text: 'Driven by donors who want to create real impact.',
+        ),
+        const SizedBox(height: 14),
+        _heroPoint(
+          icon: Icons.verified_rounded,
+          title: 'Transparent giving',
+          text: 'Donation activity is verified for donor confidence.',
+        ),
+      ],
+    );
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 58),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [_darkTeal, _primaryTeal],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1180),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final mobile = constraints.maxWidth < 850;
-
-              final text = Column(
-                crossAxisAlignment: mobile
-                    ? CrossAxisAlignment.center
-                    : CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
+      decoration: const BoxDecoration(gradient: Brand.deepGradient),
+      child: Stack(
+        children: [
+          const Positioned.fill(child: ClipRect(child: FlowBackdrop())),
+          Padding(
+            padding: EdgeInsets.only(
+              // The floating navigation sits over the top of the hero.
+              top: (mobile ? 52 : 80) + SiteNav.reserve,
+              bottom: mobile ? 52 : 80,
+            ),
+            child: ContentColumn(
+              // Same hero width as the landing page.
+              maxWidth: Brand.maxContent + 80,
+              child: stacked
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        text,
+                        SizedBox(height: mobile ? 32 : 40),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 560),
+                            child: highlights,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      // Two equal columns with one fixed gap, centred
+                      // vertically - the same 50/50 partition as the landing
+                      // page hero.
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(child: text),
+                        const SizedBox(width: 64),
+                        Expanded(child: highlights),
+                      ],
                     ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.14),
-                      borderRadius: BorderRadius.circular(100),
-                      border: Border.all(color: Colors.white.withOpacity(0.18)),
-                    ),
-                    child: const Text(
-                      'ABOUT THE MISSION',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.4,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                  const Text(
-                    'More than a donation platform — a bridge to continued care.',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 42,
-                      height: 1.12,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.6,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Text(
-                    'CureNurture helps connect compassionate donors with dialysis patients who need support for treatment, medication, transportation, and other essential care needs.',
-                    textAlign: mobile ? TextAlign.center : TextAlign.left,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.82),
-                      fontSize: 16,
-                      height: 1.7,
-                    ),
-                  ),
-                ],
-              );
-
-              final highlights = Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: Colors.white.withOpacity(0.18)),
-                ),
-                child: Column(
-                  children: [
-                    _heroPoint(
-                      icon: Icons.health_and_safety_rounded,
-                      title: 'Patient-centered',
-                      text:
-                          'Built around dialysis patients and their families.',
-                    ),
-                    const SizedBox(height: 14),
-                    _heroPoint(
-                      icon: Icons.volunteer_activism_rounded,
-                      title: 'Community-powered',
-                      text: 'Driven by donors who want to create real impact.',
-                    ),
-                    const SizedBox(height: 14),
-                    _heroPoint(
-                      icon: Icons.verified_rounded,
-                      title: 'Transparent giving',
-                      text:
-                          'Donation activity is verified for donor confidence.',
-                    ),
-                  ],
-                ),
-              );
-
-              if (mobile) {
-                return Column(
-                  children: [text, const SizedBox(height: 28), highlights],
-                );
-              }
-
-              return Row(
-                children: [
-                  Expanded(flex: 6, child: text),
-                  const SizedBox(width: 44),
-                  Expanded(flex: 4, child: highlights),
-                ],
-              );
-            },
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -225,625 +208,599 @@ class _MoreDetailsPageState extends State<MoreDetailsPage>
     required String title,
     required String text,
   }) {
-    return Row(
-      children: [
-        Container(
-          height: 48,
-          width: 48,
+    return HoverLift(
+      lift: 3,
+      builder: (context, hovered) {
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.16),
-            borderRadius: BorderRadius.circular(16),
+            color: Colors.white.withValues(alpha: hovered ? 0.13 : 0.09),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: hovered ? 0.30 : 0.16),
+            ),
           ),
-          child: Icon(icon, color: Colors.white),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
+              Container(
+                height: 52,
+                width: 52,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.10),
+                  border: Border.all(color: _turquoise.withValues(alpha: 0.50)),
                 ),
+                child: Icon(icon, color: _turquoise, size: 25),
               ),
-              const SizedBox(height: 4),
-              Text(
-                text,
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.72),
-                  fontSize: 12.5,
-                  height: 1.35,
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: Brand.heading(17, color: Colors.white)),
+                    const SizedBox(height: 4),
+                    Text(
+                      text,
+                      style: Brand.body(
+                        14,
+                        color: Colors.white.withValues(alpha: 0.78),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 
-  Widget _buildIntro() {
-    return Column(
-      children: [
-        Text(
-          'Why CureNurture Exists',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: _darkTeal,
-            fontSize: 34,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 12),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: Text(
-            'Dialysis is not a one-time treatment. It is a continuous need that can become financially exhausting. CureNurture was created to make support easier, clearer, and more accessible for patients who need help to continue care.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.blueGrey.shade600,
-              fontSize: 15.5,
-              height: 1.7,
-            ),
-          ),
-        ),
-      ],
+  // --------------------------------------------------------------- shared
+
+  /// A section band: full-width background, standard vertical rhythm, the
+  /// site's content column.
+  Widget _section({
+    required double width,
+    required Color color,
+    required Widget child,
+  }) {
+    return Container(
+      width: double.infinity,
+      color: color,
+      padding: EdgeInsets.symmetric(vertical: Brand.sectionGap(width)),
+      child: ContentColumn(child: child),
     );
   }
 
+  /// White card with a ringed icon, title, body and optional checklist -
+  /// the same treatment as the landing page's cards.
   Widget _missionCard({
     required IconData icon,
+    required Color accent,
+    required Color accentSoft,
     required String title,
     required String body,
     List<String>? bullets,
   }) {
-    return _animatedEntry(
-      child: Container(
-        padding: const EdgeInsets.all(28),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: const Color(0xFFE3EEF4)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.045),
-              blurRadius: 28,
-              offset: const Offset(0, 18),
+    return HoverLift(
+      lift: 6,
+      builder: (context, hovered) {
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 240),
+          padding: const EdgeInsets.all(28),
+          decoration: BoxDecoration(
+            color: Brand.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: hovered ? accent.withValues(alpha: 0.40) : Brand.border,
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              height: 58,
-              width: 58,
-              decoration: BoxDecoration(
-                color: _softBlue,
-                borderRadius: BorderRadius.circular(20),
+            boxShadow: hovered ? Brand.shadowCard : Brand.shadowSoft,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 54,
+                width: 54,
+                decoration: BoxDecoration(
+                  color: accentSoft,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: accent.withValues(alpha: 0.22)),
+                ),
+                child: Icon(icon, color: accent, size: 26),
               ),
-              child: Icon(icon, color: _primaryTeal, size: 30),
-            ),
-            const SizedBox(height: 22),
-            Text(
-              title,
-              style: TextStyle(
-                color: _darkTeal,
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              body,
-              style: TextStyle(
-                color: Colors.blueGrey.shade700,
-                fontSize: 15,
-                height: 1.7,
-              ),
-            ),
-            if (bullets != null && bullets.isNotEmpty) ...[
-              const SizedBox(height: 18),
-              ...bullets.map((item) => _bulletItem(item)),
+              const SizedBox(height: 20),
+              Text(title, style: Brand.heading(21)),
+              const SizedBox(height: 10),
+              Text(body, style: Brand.body(15)),
+              if (bullets != null && bullets.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                for (final item in bullets) _bulletItem(item),
+              ],
             ],
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
   Widget _bulletItem(String text) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 11),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.check_circle_rounded, color: _primaryTeal, size: 19),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                color: Colors.blueGrey.shade700,
-                height: 1.45,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildImpactSection() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(32),
-      decoration: BoxDecoration(
-        color: _softBlue,
-        borderRadius: BorderRadius.circular(34),
-        border: Border.all(color: const Color(0xFFD8EAF0)),
-      ),
-      child: Column(
-        children: [
-          Text(
-            'What Your Support Can Provide',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: _darkTeal,
-              fontSize: 28,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Every contribution can help reduce the burden carried by patients and their families.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.blueGrey.shade600, height: 1.6),
-          ),
-          const SizedBox(height: 28),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final mobile = constraints.maxWidth < 760;
-
-              final items = [
-                _impactItem(
-                  icon: Icons.medical_services_rounded,
-                  title: 'Dialysis Sessions',
-                  text: 'Assistance for regular treatment sessions.',
-                ),
-                _impactItem(
-                  icon: Icons.medication_rounded,
-                  title: 'Medication',
-                  text: 'Support for prescribed medicine and supplies.',
-                ),
-                _impactItem(
-                  icon: Icons.directions_car_rounded,
-                  title: 'Transportation',
-                  text: 'Help with travel to clinics or hospitals.',
-                ),
-                _impactItem(
-                  icon: Icons.favorite_rounded,
-                  title: 'Daily Stability',
-                  text: 'Relief for families managing ongoing care.',
-                ),
-              ];
-
-              if (mobile) {
-                return Column(
-                  children: items
-                      .map(
-                        (item) => Padding(
-                          padding: const EdgeInsets.only(bottom: 14),
-                          child: item,
-                        ),
-                      )
-                      .toList(),
-                );
-              }
-
-              return Row(
-                children: [
-                  Expanded(child: items[0]),
-                  const SizedBox(width: 14),
-                  Expanded(child: items[1]),
-                  const SizedBox(width: 14),
-                  Expanded(child: items[2]),
-                  const SizedBox(width: 14),
-                  Expanded(child: items[3]),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _impactItem({
-    required IconData icon,
-    required String title,
-    required String text,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE3EEF4)),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: _primaryTeal, size: 34),
-          const SizedBox(height: 14),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: _darkTeal,
-              fontWeight: FontWeight.w900,
-              fontSize: 15,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            text,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.blueGrey.shade600,
-              fontSize: 12.8,
-              height: 1.45,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProcessSection() {
-    return Column(
-      children: [
-        Text(
-          'How the Donation Flow Works',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: _darkTeal,
-            fontSize: 30,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'CureNurture keeps the giving process clear from donor submission to verification.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.blueGrey.shade600, height: 1.6),
-        ),
-        const SizedBox(height: 28),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final mobile = constraints.maxWidth < 800;
-
-            final steps = [
-              _processStep(
-                number: '1',
-                icon: Icons.edit_note_rounded,
-                title: 'Submit Donation Details',
-                text:
-                    'Donors provide their information, amount, and payment method.',
-              ),
-              _processStep(
-                number: '2',
-                icon: Icons.receipt_long_rounded,
-                title: 'Upload Proof',
-                text: 'A receipt or screenshot is submitted after payment.',
-              ),
-              _processStep(
-                number: '3',
-                icon: Icons.verified_rounded,
-                title: 'Admin Verification',
-                text:
-                    'Donation proof is reviewed before being marked verified.',
-              ),
-            ];
-
-            if (mobile) {
-              return Column(
-                children: steps
-                    .map(
-                      (step) => Padding(
-                        padding: const EdgeInsets.only(bottom: 14),
-                        child: step,
-                      ),
-                    )
-                    .toList(),
-              );
-            }
-
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: steps[0]),
-                const SizedBox(width: 16),
-                Expanded(child: steps[1]),
-                const SizedBox(width: 16),
-                Expanded(child: steps[2]),
-              ],
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _processStep({
-    required String number,
-    required IconData icon,
-    required String title,
-    required String text,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0xFFE3EEF4)),
-      ),
-      child: Column(
-        children: [
           Container(
-            height: 54,
-            width: 54,
-            decoration: BoxDecoration(color: _softBlue, shape: BoxShape.circle),
-            child: Center(
-              child: Text(
-                number,
-                style: TextStyle(
-                  color: _primaryTeal,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 18,
-                ),
-              ),
+            height: 22,
+            width: 22,
+            margin: const EdgeInsets.only(top: 1),
+            decoration: const BoxDecoration(
+              color: Brand.mintSoft,
+              shape: BoxShape.circle,
             ),
+            child: const Icon(Icons.check_rounded, size: 14, color: Brand.mint),
           ),
-          const SizedBox(height: 18),
-          Icon(icon, color: _primaryTeal, size: 32),
-          const SizedBox(height: 14),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: _darkTeal,
-              fontWeight: FontWeight.w900,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            text,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.blueGrey.shade600,
-              height: 1.55,
-              fontSize: 13.5,
-            ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(text, style: Brand.label(14.5, color: Brand.textBody)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCta() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(34),
+  // ---------------------------------------------------- why it exists
+
+  Widget _buildWhy(double width) {
+    return _section(
+      width: width,
+      color: Brand.white,
+      child: Column(
+        children: [
+          const SectionHeading(
+            eyebrow: 'Our mission',
+            title: 'Why CureNurture Exists',
+            subtitle:
+                'Dialysis is not a one-time treatment. It is a continuous need '
+                'that can become financially exhausting. CureNurture was '
+                'created to make support easier, clearer, and more accessible '
+                'for patients who need help to continue care.',
+          ),
+          const SizedBox(height: 44),
+          ResponsiveRow(
+            breakpoint: 860,
+            gap: 22,
+            stagger: true,
+            equalHeight: true,
+            children: [
+              _missionCard(
+                icon: Icons.flag_rounded,
+                accent: Brand.teal,
+                accentSoft: Brand.tealSoft,
+                title: 'Our Purpose',
+                body:
+                    'CureNurture was created to bridge the gap between patients '
+                    'who urgently need financial assistance and donors who want '
+                    'their generosity to create real impact.',
+                bullets: const [
+                  'Financial support for dialysis sessions',
+                  'Help with medical supplies and medication',
+                  'Transportation assistance for clinic visits',
+                  'Emergency support for urgent care needs',
+                ],
+              ),
+              _missionCard(
+                icon: Icons.favorite_rounded,
+                accent: Brand.coral,
+                accentSoft: Brand.coralSoft,
+                title: 'Why We Do It',
+                body:
+                    'Kidney failure is a life-altering reality. Patients often '
+                    'need ongoing dialysis, and the repeated cost of treatment '
+                    'can deeply affect families. CureNurture exists to bring '
+                    'relief, hope, and dignity.',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ------------------------------------------------------- what it provides
+
+  Widget _buildProvides(double width) {
+    return _section(
+      width: width,
+      color: Brand.canvas,
+      child: const Column(
+        children: [
+          SectionHeading(
+            eyebrow: 'Where it helps',
+            title: 'What Your Support Can Provide',
+            subtitle:
+                'Every contribution can help reduce the burden carried by '
+                'patients and their families.',
+          ),
+          SizedBox(height: 44),
+          ResponsiveRow(
+            breakpoint: 900,
+            gap: 20,
+            stagger: true,
+            equalHeight: true,
+            children: [
+              InfoCard(
+                icon: Icons.medical_services_rounded,
+                title: 'Dialysis Sessions',
+                text: 'Assistance for regular treatment sessions.',
+                accent: Brand.teal,
+                accentSoft: Brand.tealSoft,
+              ),
+              InfoCard(
+                icon: Icons.medication_rounded,
+                title: 'Medication',
+                text: 'Support for prescribed medicine and supplies.',
+                accent: Brand.coral,
+                accentSoft: Brand.coralSoft,
+              ),
+              InfoCard(
+                icon: Icons.directions_car_rounded,
+                title: 'Transportation',
+                text: 'Help with travel to clinics or hospitals.',
+                accent: Brand.brand,
+                accentSoft: Brand.sky,
+              ),
+              InfoCard(
+                icon: Icons.favorite_rounded,
+                title: 'Daily Stability',
+                text: 'Relief for families managing ongoing care.',
+                accent: Brand.lavender,
+                accentSoft: Brand.lavenderSoft,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------- vision and trust
+
+  Widget _buildVisionTrust(double width) {
+    return _section(
+      width: width,
+      color: Brand.white,
+      child: Column(
+        children: [
+          const SectionHeading(
+            eyebrow: 'What guides us',
+            title: 'Our Vision and Commitment',
+          ),
+          const SizedBox(height: 44),
+          ResponsiveRow(
+            breakpoint: 860,
+            gap: 22,
+            stagger: true,
+            equalHeight: true,
+            children: [
+              _missionCard(
+                icon: Icons.visibility_rounded,
+                accent: Brand.brand,
+                accentSoft: Brand.sky,
+                title: 'Our Vision',
+                body:
+                    'We envision a community where no dialysis patient loses '
+                    'access to essential treatment because of financial '
+                    'limitations.',
+              ),
+              _missionCard(
+                icon: Icons.shield_rounded,
+                accent: Brand.mint,
+                accentSoft: Brand.mintSoft,
+                title: 'Transparency & Trust',
+                body:
+                    'Trust is at the center of CureNurture. Donation records go '
+                    'through verification so donors can feel confident that '
+                    'their support is handled responsibly.',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------ the flow
+
+  Widget _buildProcess(double width) {
+    const steps = [
+      (
+        number: '1',
+        icon: Icons.edit_note_rounded,
+        title: 'Submit Donation Details',
+        text: 'Donors provide their information, amount, and payment method.',
+      ),
+      (
+        number: '2',
+        icon: Icons.receipt_long_rounded,
+        title: 'Upload Proof',
+        text: 'A receipt or screenshot is submitted after payment.',
+      ),
+      (
+        number: '3',
+        icon: Icons.verified_rounded,
+        title: 'Admin Verification',
+        text: 'Donation proof is reviewed before being marked verified.',
+      ),
+    ];
+
+    final horizontal = width >= 860;
+
+    Widget stepCard(int i) {
+      final s = steps[i];
+      return Container(
+        padding: const EdgeInsets.fromLTRB(24, 26, 24, 26),
+        decoration: Brand.card(),
+        child: Column(
+          crossAxisAlignment: horizontal
+              ? CrossAxisAlignment.center
+              : CrossAxisAlignment.start,
+          children: [
+            Icon(s.icon, color: Brand.teal, size: 30),
+            const SizedBox(height: 14),
+            Text(
+              s.title,
+              textAlign: horizontal ? TextAlign.center : TextAlign.start,
+              style: Brand.heading(18),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              s.text,
+              textAlign: horizontal ? TextAlign.center : TextAlign.start,
+              style: Brand.body(14.5),
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget numberBadge(int i) => Container(
+          height: 48,
+          width: 48,
+          decoration: BoxDecoration(
+            gradient: Brand.brandGradient,
+            shape: BoxShape.circle,
+            boxShadow: Brand.shadowSoft,
+          ),
+          child: Center(
+            child: Text(
+              steps[i].number,
+              style: const TextStyle(
+                fontFamily: Brand.displayFont,
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        );
+
+    final connector = Container(
+      height: 2,
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [_darkTeal, _primaryTeal],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+          colors: [
+            Brand.teal.withValues(alpha: 0.15),
+            Brand.teal.withValues(alpha: 0.55),
+            Brand.teal.withValues(alpha: 0.15),
+          ],
         ),
-        borderRadius: BorderRadius.circular(34),
       ),
+    );
+
+    final Widget body;
+    if (horizontal) {
+      // Number badges on one line joined by subtle connectors, with each
+      // step's card directly beneath its badge.
+      body = Column(
+        children: [
+          Row(
+            children: [
+              for (int i = 0; i < steps.length; i++) ...[
+                Expanded(
+                  child: Row(
+                    children: [
+                      Expanded(child: i == 0 ? const SizedBox() : connector),
+                      numberBadge(i),
+                      Expanded(
+                        child: i == steps.length - 1
+                            ? const SizedBox()
+                            : connector,
+                      ),
+                    ],
+                  ),
+                ),
+                if (i < steps.length - 1) const SizedBox(width: 20),
+              ],
+            ],
+          ),
+          const SizedBox(height: 22),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (int i = 0; i < steps.length; i++) ...[
+                  Expanded(child: Reveal(delayMs: i * 90, child: stepCard(i))),
+                  if (i < steps.length - 1) const SizedBox(width: 20),
+                ],
+              ],
+            ),
+          ),
+        ],
+      );
+    } else {
+      // Vertical timeline: badge and a connecting line on the left.
+      body = Column(
+        children: [
+          for (int i = 0; i < steps.length; i++)
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Column(
+                    children: [
+                      numberBadge(i),
+                      if (i < steps.length - 1)
+                        Expanded(
+                          child: Container(
+                            width: 2,
+                            margin: const EdgeInsets.symmetric(vertical: 6),
+                            color: Brand.teal.withValues(alpha: 0.30),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        bottom: i < steps.length - 1 ? 18 : 0,
+                      ),
+                      child: Reveal(delayMs: i * 90, child: stepCard(i)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      );
+    }
+
+    return _section(
+      width: width,
+      color: Brand.canvas,
       child: Column(
         children: [
-          const Icon(
-            Icons.volunteer_activism_rounded,
-            color: Colors.white,
-            size: 44,
+          const SectionHeading(
+            eyebrow: 'How it works',
+            title: 'How the Donation Flow Works',
+            subtitle:
+                'CureNurture keeps the giving process clear from donor '
+                'submission to verification.',
           ),
-          const SizedBox(height: 18),
-          const Text(
-            'Every act of giving can become life-sustaining care.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 28,
-              height: 1.18,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            'Together, we nurture healing. Together, we save lives.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.78),
-              height: 1.6,
-            ),
-          ),
-          const SizedBox(height: 26),
-          // This block used to end without anywhere to go. It now opens the
-          // same donation flow the landing page does - no new route, just a
-          // second way into the existing one.
-          DonateButton(
-            label: 'Donate Now',
-            large: true,
-            expand: Brand.isMobile(MediaQuery.of(context).size.width),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const DonationOptionPage(),
+          const SizedBox(height: 44),
+          body,
+        ],
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------ final CTA
+
+  Widget _buildCta(double width) {
+    final mobile = Brand.isMobile(width);
+
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(gradient: Brand.deepGradient),
+      child: Stack(
+        children: [
+          const Positioned.fill(child: ClipRect(child: FlowBackdrop())),
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: mobile ? 64 : 92),
+            child: ContentColumn(
+              maxWidth: 820,
+              child: Reveal(
+                child: Column(
+                  children: [
+                    Container(
+                      height: 72,
+                      width: 72,
+                      decoration: BoxDecoration(
+                        gradient: Brand.coralGradient,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: Brand.shadowCoral,
+                      ),
+                      child: const Icon(
+                        Icons.volunteer_activism_rounded,
+                        color: Colors.white,
+                        size: 36,
+                      ),
+                    ),
+                    const SizedBox(height: 26),
+                    Text(
+                      'Every act of giving can become life-sustaining care.',
+                      textAlign: TextAlign.center,
+                      style: Brand.display(
+                        mobile ? 28 : 40,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Together, we nurture healing. Together, we save lives.',
+                      textAlign: TextAlign.center,
+                      style: Brand.body(
+                        mobile ? 15 : 17,
+                        color: Colors.white.withValues(alpha: 0.84),
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    // Opens the same donation flow as the landing page.
+                    Center(
+                      child: DonateButton(
+                        label: 'Donate Now',
+                        large: true,
+                        expand: mobile,
+                        onPressed: _openDonation,
+                      ),
+                    ),
+                  ],
                 ),
-              );
-            },
+              ),
+            ),
           ),
         ],
       ),
     );
   }
+
+  // ---------------------------------------------------------------- build
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+
     return Scaffold(
-      backgroundColor: _surface,
-      appBar: _buildHeader(),
-      body: SingleChildScrollView(
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: SlideTransition(
-            position: _slideAnimation,
-            child: Column(
-              children: [
-                _buildHero(),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 28,
-                    vertical: 46,
-                  ),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1120),
-                      child: Column(
-                        children: [
-                          _buildIntro(),
-                          const SizedBox(height: 32),
-                          LayoutBuilder(
-                            builder: (context, constraints) {
-                              final mobile = constraints.maxWidth < 850;
-
-                              if (mobile) {
-                                return Column(
-                                  children: [
-                                    _missionCard(
-                                      icon: Icons.flag_rounded,
-                                      title: 'Our Purpose',
-                                      body:
-                                          'CureNurture was created to bridge the gap between patients who urgently need financial assistance and donors who want their generosity to create real impact.',
-                                      bullets: const [
-                                        'Financial support for dialysis sessions',
-                                        'Help with medical supplies and medication',
-                                        'Transportation assistance for clinic visits',
-                                        'Emergency support for urgent care needs',
-                                      ],
-                                    ),
-                                    const SizedBox(height: 32),
-                                    _missionCard(
-                                      icon: Icons.favorite_rounded,
-                                      title: 'Why We Do It',
-                                      body:
-                                          'Kidney failure is a life-altering reality. Patients often need ongoing dialysis, and the repeated cost of treatment can deeply affect families. CureNurture exists to bring relief, hope, and dignity.',
-                                    ),
-                                  ],
-                                );
-                              }
-
-                              return Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: _missionCard(
-                                      icon: Icons.flag_rounded,
-                                      title: 'Our Purpose',
-                                      body:
-                                          'CureNurture was created to bridge the gap between patients who urgently need financial assistance and donors who want their generosity to create real impact.',
-                                      bullets: const [
-                                        'Financial support for dialysis sessions',
-                                        'Help with medical supplies and medication',
-                                        'Transportation assistance for clinic visits',
-                                        'Emergency support for urgent care needs',
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 22),
-                                  Expanded(
-                                    child: _missionCard(
-                                      icon: Icons.favorite_rounded,
-                                      title: 'Why We Do It',
-                                      body:
-                                          'Kidney failure is a life-altering reality. Patients often need ongoing dialysis, and the repeated cost of treatment can deeply affect families. CureNurture exists to bring relief, hope, and dignity.',
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 26),
-                          _buildImpactSection(),
-                          const SizedBox(height: 34),
-                          LayoutBuilder(
-                            builder: (context, constraints) {
-                              final mobile = constraints.maxWidth < 850;
-
-                              if (mobile) {
-                                return Column(
-                                  children: [
-                                    _missionCard(
-                                      icon: Icons.visibility_rounded,
-                                      title: 'Our Vision',
-                                      body:
-                                          'We envision a community where no dialysis patient loses access to essential treatment because of financial limitations.',
-                                    ),
-                                    const SizedBox(height: 20),
-                                    _missionCard(
-                                      icon: Icons.shield_rounded,
-                                      title: 'Transparency & Trust',
-                                      body:
-                                          'Trust is at the center of CureNurture. Donation records go through verification so donors can feel confident that their support is handled responsibly.',
-                                    ),
-                                  ],
-                                );
-                              }
-
-                              return Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: _missionCard(
-                                      icon: Icons.visibility_rounded,
-                                      title: 'Our Vision',
-                                      body:
-                                          'We envision a community where no dialysis patient loses access to essential treatment because of financial limitations.',
-                                    ),
-                                  ),
-                                  const SizedBox(width: 22),
-                                  Expanded(
-                                    child: _missionCard(
-                                      icon: Icons.shield_rounded,
-                                      title: 'Transparency & Trust',
-                                      body:
-                                          'Trust is at the center of CureNurture. Donation records go through verification so donors can feel confident that their support is handled responsibly.',
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 34),
-                          _buildProcessSection(),
-                          const SizedBox(height: 34),
-                          _buildCta(),
-                        ],
-                      ),
+      backgroundColor: Brand.canvas,
+      // The navigation capsule floats above the page, as on the landing
+      // page, so the hero runs underneath it.
+      body: Stack(
+        children: [
+          RevealScope(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: SlideTransition(
+                      position: _slideAnimation,
+                      child: _buildHero(width),
                     ),
                   ),
-                ),
-              ],
+                  _buildWhy(width),
+                  _buildProvides(width),
+                  _buildVisionTrust(width),
+                  _buildProcess(width),
+                  _buildCta(width),
+                ],
+              ),
             ),
           ),
-        ),
+          Positioned(top: 0, left: 0, right: 0, child: _buildNavBar(width)),
+        ],
       ),
     );
   }
